@@ -7,13 +7,53 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Documentation-only changes (Markdown, docs/, LICENSE, NOTICE) skip the build and test jobs below, so they cost
+  # almost no runner minutes. The aggregate "CI passed" check still runs and reports, because main requires it.
+  # If the list of changed files cannot be read, or is empty, everything runs.
+  changes:
+    name: changed files
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          files=""
+          if [ "$EVENT" = "pull_request" ]; then
+            files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') || files=""
+          elif [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            files=$(gh api "repos/$REPO/compare/$BEFORE...$SHA" --jq '.files[] | .filename, (.previous_filename // empty)') || files=""
+          fi
+          if [ -z "$files" ]; then
+            echo "No changed-file list; running everything."
+            code=true
+          elif echo "$files" | grep -qvxE '(docs/.*|LICENSE|NOTICE|.*\.md)'; then
+            echo "Code changed; running everything."
+            code=true
+          else
+            echo "Documentation only; skipping the build and test jobs:"
+            echo "$files"
+            code=false
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   hub:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: hub (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -34,6 +74,8 @@ jobs:
         run: mvn -B -ntp test
 
   agent:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: agent (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -75,6 +117,8 @@ jobs:
   # The service installers are only ever dry-run here: the plan is printed, bad input is refused and nothing on the
   # runner changes. The real install and uninstall tests are in installer-smoke.yml and run only when started by hand.
   installer-dry-run:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: installer dry run (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -102,15 +146,29 @@ jobs:
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File hub\service\windows\dry-run-test.ps1
 
   # One stable name to require on main, so the matrix above can change without touching branch protection.
+  # For a code change every job must succeed; for a documentation-only change they must all have been skipped.
   ci-ok:
     name: CI passed
     if: always()
-    needs: [hub, agent, installer-dry-run]
+    needs: [changes, hub, agent, installer-dry-run]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          HUB: ${{ needs.hub.result }}
+          AGENT: ${{ needs.agent.result }}
+          DRY_RUN: ${{ needs.installer-dry-run.result }}
         run: |
-          echo "hub: ${{ needs.hub.result }}, agent: ${{ needs.agent.result }}, installer-dry-run: ${{ needs.installer-dry-run.result }}"
-          if [ "${{ needs.hub.result }}" != "success" ] || [ "${{ needs.agent.result }}" != "success" ] || [ "${{ needs.installer-dry-run.result }}" != "success" ]; then
-            exit 1
+          echo "changes: $CHANGES (code=$CODE), hub: $HUB, agent: $AGENT, installer-dry-run: $DRY_RUN"
+          [ "$CHANGES" = "success" ] || exit 1
+          if [ "$CODE" = "true" ]; then
+            want=success
+          else
+            echo "Documentation-only change: the build and test jobs were skipped."
+            want=skipped
           fi
+          for result in "$HUB" "$AGENT" "$DRY_RUN"; do
+            [ "$result" = "$want" ] || exit 1
+          done
