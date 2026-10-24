@@ -19,5 +19,7 @@ public record HubProperties(
         /** Exact origins (scheme://host[:port]) allowed to call the API from a browser. Empty means CORS is off. */
         @DefaultValue List<String> corsAllowedOrigins,
         /** Lets Slack and Discord alert URLs use http. Off by default; only for tests and local receivers. */
-        @DefaultValue("false") boolean allowInsecureAlertUrls) {
+        @DefaultValue("false") boolean allowInsecureAlertUrls,
+        /** Most dashboards that may hold the live WebSocket open at once; more are told to try again later. */
+        @DefaultValue("50") int liveMaxSessions) {
 }

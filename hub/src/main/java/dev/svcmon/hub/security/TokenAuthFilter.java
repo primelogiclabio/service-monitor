@@ -6,6 +6,7 @@ import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
 
+import dev.svcmon.hub.live.LiveHandler;
 import dev.svcmon.hub.model.Scope;
 import dev.svcmon.hub.model.TokenRecord;
 import jakarta.servlet.FilterChain;
@@ -18,7 +19,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Bearer-token check for everything under /api/ except the health probe.
+ * Bearer-token check for everything under /api/ except the health probe and the live WebSocket, which cannot
+ * send a header and checks its token in its first frame instead.
  * Reads need READ or ADMIN, writes need ADMIN, /agent/register needs an ENROLL token and the other
  * /agent/ calls need the agent's own token.
  */
@@ -41,7 +43,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String path = req.getRequestURI();
-        if (!path.startsWith("/api/") || path.equals(HEALTH) || isPreflight(req)) {
+        if (!path.startsWith("/api/") || path.equals(HEALTH) || path.equals(LiveHandler.PATH) || isPreflight(req)) {
             chain.doFilter(req, resp);
             return;
         }

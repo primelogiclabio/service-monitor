@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 class AlertChannelServiceTest {
 
     private static HubProperties props(boolean insecureUrls) {
-        return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), insecureUrls);
+        return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), insecureUrls, 50);
     }
 
     private final AlertChannelService strict = new AlertChannelService(null, null, props(false));
