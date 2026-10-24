@@ -215,7 +215,7 @@ checks:
     <tr><td>Network checks</td><td><code>java.net.http.HttpClient</code>, <code>Socket</code> with timeout</td><td>Built into the JDK.</td></tr>
     <tr><td>Storage</td><td>SQLite via <code>xerial/sqlite-jdbc</code>, Flyway migrations</td><td>The JAR bundles native libraries for Windows, macOS, Linux and several ARM/x86 architectures; no separate SQLite install. Licenses: Apache-2.0 and BSD-2-Clause.</td></tr>
     <tr><td>Agent link</td><td>HTTPS requests from agent to hub (register, fetch config, post reports), JSON, bearer tokens</td><td>Outbound only. A WebSocket stream may replace polling later. The protocol is language-neutral, so the agent can be Go or Java.</td></tr>
-    <tr><td>Alerts</td><td>Own senders: email, webhook, Slack, Discord, Telegram, ntfy</td><td>Each is a simple HTTP call or SMTP.</td></tr>
+    <tr><td>Alerts</td><td>Own senders: webhook (optionally HMAC-signed), Slack, Discord and email (built); Telegram and ntfy can follow</td><td>Each is a simple HTTP call or SMTP. A watchdog also alerts when an agent goes silent.</td></tr>
     <tr><td>Agent</td><td>Go with <code>gopsutil</code>, <code>x/sys/windows/svc</code></td><td>One static binary, no runtime. <code>gopsutil</code> (BSD) covers CPU, memory and disk on Linux, Windows and macOS; <code>x/sys/windows/svc</code> builds Windows services.</td></tr>
     <tr><td>CLI</td><td><code>svcmon</code> (Go) or picocli (Java)</td><td>Talks to the API with a scoped token. A Go binary starts instantly.</td></tr>
     <tr><td>UI (optional)</td><td>Svelte single-page app in its own repository (service-monitor-ui), charts with uPlot</td><td>Built with Node at build time only. The hub serves the built files from <code>svcmon.ui-dir</code>, or the app is hosted elsewhere and the hub allows its address with <code>svcmon.cors-allowed-origins</code>. Thymeleaf plus htmx is the zero-JS alternative.</td></tr>
@@ -280,7 +280,7 @@ checks:
     <li>The CLI and console use scoped API tokens. The console holds only read-scoped tokens for hubs.</li>
     <li>The hub (behind the load balancer) is the only exposed component; monitored servers open nothing. Because agents are internal, the load balancer can refuse <code>/api/v1/agent/*</code> from outside. It must also overwrite any client-supplied <code>X-Forwarded-For</code> header, which the hub trusts from private-range proxies so rejected requests are logged with the real client address.</li>
     <li>The admin's allowlist limits what an agent reports.</li>
-    <li>Alert channels start with email, webhook, Slack, Discord, Telegram and ntfy. The Shoutrrr project (Go, MIT) lists around thirty services and is a useful reference for what to add later.</li>
+    <li>Alert channels: webhook, Slack, Discord and email are built, with secrets masked in every response. The Shoutrrr project (Go, MIT) lists around thirty services and is a useful reference for what to add later, such as Telegram and ntfy.</li>
   </ul>
 </section>
 
@@ -294,7 +294,7 @@ checks:
     <li>Optional web UI.</li>
     <li>Console role (multi-hub). The API is designed for it from the start: stable hub ID, read-scoped tokens, aggregate-friendly endpoints.</li>
   </ol>
-  <div class="callout"><b>Status:</b> steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 23 tests) and the Go <code>svcmon</code> binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels and the console role are not built. The web UI is built in its own repository and the hub can serve it or allow it from another address.</div>
+  <div class="callout"><b>Status:</b> steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 69 tests) and the Go <code>svcmon</code> binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address.</div>
 </section>
 
 <section id="open">

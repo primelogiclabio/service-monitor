@@ -1,0 +1,65 @@
+# service-monitor
+
+A free, cross-platform monitor: a Java hub, a small Go agent and CLI, and a separate web dashboard. This file is the working agreement for anyone (human or Claude) changing the code. `README.md` is the user guide and `docs/service-monitor-design.md` explains why it is built this way; read the design doc before changing architecture.
+
+## Layout
+
+| Path | What | Stack |
+|---|---|---|
+| `hub/` | The hub: scheduler, SQLite, REST API, tokens, alerts, optional UI hosting | Java 21, Spring Boot 4.1, Maven, Flyway |
+| `agent/` | `svcmon`: the agent (service, CPU, memory, disk, network checks) and the CLI, one binary | Go 1.27, stdlib plus gopsutil, pro-bing, x/sys |
+| `docs/` | Design document, Markdown and self-contained HTML (keep both in sync) | |
+| `../service-monitor-ui` | The web dashboard: its own repository, `primelogiclabio/service-monitor-ui` | Svelte 5, Vite 6, uPlot |
+
+Both repos are public, Apache-2.0, under the GitHub organisation `primelogiclabio`.
+
+## Ideas that must not be broken
+
+- **Agents only connect out** to the hub. Monitored servers open no inbound ports.
+- **The admin lists what is monitored.** Nothing is auto-discovered into monitoring; `svcmon agent services` only lists what exists.
+- **TLS is terminated at a load balancer.** The hub speaks plain HTTP on the internal network and only the hub is exposed. Keep working behind `X-Forwarded-*`.
+- **Secrets never leave the hub unmasked and never appear in errors or logs:** API tokens (only SHA-256 hashes are stored), alert webhook URLs, header values, signing secrets, the SMTP password. Updates that send a masked value back keep the stored one.
+- **Validate strictly and reject unknown settings**, so a typo fails loudly. Treat names and messages from agents as untrusted (Slack markup is escaped, Discord mentions off, mail headers cannot be injected).
+- **Everything is free and open source**, and the hub and agent must run on Windows, Linux and macOS.
+- The hub is headless and API-first; the CLI and the dashboard are clients of the same API.
+
+## Build and test
+
+Run these from the folder shown. Windows is the main development machine, in PowerShell.
+
+- Hub: `cd hub; mvn -B -ntp test` (Java 21; `mvn -B -ntp -DskipTests package` builds `hub/target/svcmon-hub-0.1.0-SNAPSHOT.jar`). Integration tests start the real hub on random ports with temp data folders; alert tests use a local HTTP receiver and a fake SMTP server.
+- Agent and CLI: `cd agent` then `go vet ./...` and `go test ./... -count=1`. Go is **not on PATH**: call `F:\software\go\bin\go.exe` and set per process `GOPATH=F:\software\go-cache\gopath`, `GOCACHE=F:\software\go-cache\build`, `GOTOOLCHAIN=local` to keep caches off C:. Run `gofmt -l .` before committing (CI checks it; on Windows a CRLF working copy of an untouched file can show up in the list, which is not a real problem).
+- UI (separate repo): `npm test`, `npm run build`; set `npm_config_cache=F:\software\npm-cache`.
+- CI (`.github/workflows/ci.yml`) runs hub tests on Ubuntu and Windows, agent tests on Ubuntu, Windows and macOS, a gofmt check and a cross-compile of every platform. The aggregate check **CI passed** is required on `main`.
+- A test that proves a fix should fail on the old code; check that when you fix a bug.
+
+## Git and pull requests
+
+- `main` is protected in both repos: a pull request is required (zero approvals, admins included), force pushes and deletion are blocked, and **CI passed** must be green. Never push to `main`; work on a branch, open a PR with `gh pr create`.
+- **Do not merge a PR unless the person asked you to.** When asked: `gh pr merge <n> --squash --delete-branch` with a subject ending `(#n)`, then update local `main`.
+- End commit messages with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`; end PR bodies with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+- In PowerShell write the message to a file and use `git commit -F <file>` (a here-string passed as an argument is read as file names), and pass `--body-file` to `gh pr create`.
+- Do not poll CI. Read the PR with the app's PR status tool; if nothing wakes you on success, say CI is still running and stop. Turn on Auto-fix only when asked.
+- The git identity is set; do not change git config.
+
+## Conventions
+
+- Add tests with every change, in the style of the neighbouring tests. Keep comments for the non-obvious "why".
+- Docs: change `README.md`, `docs/service-monitor-design.md` and `docs/service-monitor-design.html` together; do not put test counts in prose that will go stale.
+- New hub settings go in `application.yml` (commented examples), the README configuration table, and `HubProperties`.
+- Database changes are new Flyway migrations (`hub/src/main/resources/db/migration`); never edit an applied one.
+- Prefer small, reviewable pull requests, one concern each.
+
+## Working on this machine
+
+- Windows 11, PowerShell. Java 21 at `F:\java\java21`, Maven 3.9, Node 20.11 (so Vite is pinned to 6), Go 1.27 at `F:\software\go`. Install large things on F:, not C:. Ask before installing software, installing a service, or doing anything that needs an elevated prompt; the shell is normally not elevated.
+- The agent installs itself with `svcmon agent install` (Windows service through the Service Control Manager, systemd unit, launchd daemon). Only the Windows not-elevated error was ever run locally; the Linux and macOS installers are compiled and untested.
+- A Windows jar that is running is locked: run a demo from a copy of the jar, not from `hub/target`.
+- To see the whole thing working: start the hub with `--svcmon.ui-dir=<ui repo>/dist`, then run the UI repo's `scripts/seed-demo.mjs --token <admin token> --live` against it. Only use that on a throwaway hub.
+- The PowerShell tool swallows a bare `--` argument and cuts a pipeline into `Select-Object -First n` short (it can stop a command before it writes its files); redirect output to a file and read it instead.
+
+## Known gaps
+
+- The multi-hub console role is not built. The dashboard has no alerts page yet (the API is ready).
+- Installing the hub itself as a service (WinSW on Windows, systemd on Linux) is requested but not built.
+- Linux and macOS agent installers and service checks have never run on real systems.

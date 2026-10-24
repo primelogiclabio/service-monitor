@@ -134,6 +134,25 @@ type IssuedToken struct {
 	ExpiresAt *int64 `json:"expiresAt,omitempty"`
 }
 
+// AlertChannel is an alert destination as the hub returns it: secrets in Config are masked.
+type AlertChannel struct {
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Type          string         `json:"type"`
+	Enabled       bool           `json:"enabled"`
+	Statuses      []string       `json:"statuses"`
+	Config        map[string]any `json:"config"`
+	LastAttemptAt *int64         `json:"lastAttemptAt,omitempty"`
+	LastSuccessAt *int64         `json:"lastSuccessAt,omitempty"`
+	LastError     string         `json:"lastError,omitempty"`
+	CreatedAt     int64          `json:"createdAt"`
+}
+
+type AlertTestResult struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
 type TokenView struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`

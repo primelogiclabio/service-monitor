@@ -112,7 +112,7 @@ checks:
 | Network checks | `java.net.http.HttpClient`, `Socket` with timeout | Built into the JDK. |
 | Storage | SQLite via `xerial/sqlite-jdbc`, Flyway migrations | The JAR bundles native libraries for Windows, macOS, Linux and several ARM/x86 architectures; no separate SQLite install. Licenses: Apache-2.0 and BSD-2-Clause. |
 | Agent link | HTTPS requests from agent to hub (register, fetch config, post reports), JSON, bearer tokens | Outbound only. A WebSocket stream may replace polling later. The protocol is language-neutral, so the agent can be Go or Java. |
-| Alerts | Own senders: email, webhook, Slack, Discord, Telegram, ntfy | Each is a simple HTTP call or SMTP. |
+| Alerts | Own senders: webhook (optionally HMAC-signed), Slack, Discord and email (built); Telegram and ntfy can follow | Each is a simple HTTP call or SMTP. A watchdog also alerts when an agent goes silent. |
 | Agent | Go with `gopsutil`, `x/sys/windows/svc` | One static binary, no runtime. `gopsutil` (BSD) covers CPU, memory and disk on Linux, Windows and macOS; `x/sys/windows/svc` builds Windows services. |
 | CLI | `svcmon` (Go) or picocli (Java) | Talks to the API with a scoped token. A Go binary starts instantly. |
 | UI (optional) | Svelte single-page app in its own repository (service-monitor-ui), charts with uPlot | Built with Node at build time only. The hub serves the built files from `svcmon.ui-dir`, or the app is hosted elsewhere and the hub allows its address with `svcmon.cors-allowed-origins`. Thymeleaf plus htmx is the zero-JS alternative. |
@@ -168,7 +168,7 @@ Keeping it safe:
 - The CLI and console use scoped API tokens. The console holds only read-scoped tokens for hubs.
 - The hub (behind the load balancer) is the only exposed component; monitored servers open nothing. Because agents are internal, the load balancer can refuse `/api/v1/agent/*` from outside. It must also overwrite any client-supplied `X-Forwarded-For` header, which the hub trusts from private-range proxies so rejected requests are logged with the real client address.
 - The admin's allowlist limits what an agent reports.
-- Alert channels start with email, webhook, Slack, Discord, Telegram and ntfy. The Shoutrrr project (Go, MIT) lists around thirty services and is a useful reference for what to add later.
+- Alert channels: webhook, Slack, Discord and email are built, with secrets masked in every response. The Shoutrrr project (Go, MIT) lists around thirty services and is a useful reference for what to add later, such as Telegram and ntfy.
 
 ## 9. Build order
 
@@ -179,7 +179,7 @@ Keeping it safe:
 5. Optional web UI.
 6. Console role (multi-hub). The API is designed for it from the start: stable hub ID, read-scoped tokens, aggregate-friendly endpoints.
 
-**Status:** steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 23 tests) and the Go `svcmon` binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels and the console role are not built. The web UI is built in its own repository and the hub can serve it or allow it from another address.
+**Status:** steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 69 tests) and the Go `svcmon` binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address.
 
 ## 10. Open questions and limits
 
