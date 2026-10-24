@@ -194,7 +194,7 @@ cd hub && mvn test        # includes agent enrollment over HTTP and real webhook
 cd agent && go test ./...
 ```
 
-CI runs both on every pull request, and also dry-runs the hub service installers (`hub/service/*/dry-run-test.*`). The real install tests (`smoke-test.*`) run only from the manually started **Installer smoke test** workflow; see [hub/service/README.md](hub/service/README.md).
+CI runs both on every pull request that changes more than documentation (Markdown-only, `docs/`, `LICENSE` and `NOTICE` changes skip the jobs), and also dry-runs the hub service installers (`hub/service/*/dry-run-test.*`). The real install tests (`smoke-test.*`) run only from the manually started **Installer smoke test** workflow; see [hub/service/README.md](hub/service/README.md).
 
 ## Layout
 
