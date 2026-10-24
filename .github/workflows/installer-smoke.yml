@@ -6,8 +6,6 @@ name: Installer smoke test
 # dry-runs the installers.
 on:
   workflow_dispatch:
-  push:
-    branches: [feature/installer-dry-run]
 
 permissions:
   contents: read
