@@ -1,8 +1,9 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-Installs the hub as a service on this machine, checks it, upgrades it, then removes it. CI runs it on a
-disposable runner; do not run it on a machine that already has a svcmon-hub service or data.
+Installs the hub as a service on this machine, checks it, upgrades it, then removes it. The last install comes from
+the release package (build-package.ps1), the others from the source checkout. CI runs it on a disposable runner;
+do not run it on a machine that already has a svcmon-hub service or data.
 
     .\smoke-test.ps1 [-JarPath path-to-jar]
 #>
@@ -19,6 +20,8 @@ $InstallDir = Join-Path $env:ProgramFiles $Name
 $DataDir = Join-Path $env:ProgramData $Name
 $install = Join-Path $PSScriptRoot 'install.ps1'
 $uninstall = Join-Path $PSScriptRoot 'uninstall.ps1'
+$buildPackage = Join-Path $PSScriptRoot 'build-package.ps1'
+$pkgDir = $null
 $jarArgs = @{}
 if ($JarPath) { $jarArgs.JarPath = $JarPath }
 
@@ -91,11 +94,27 @@ try {
     Check 'settings are kept' { Test-Path "$DataDir\application.yml" }
     Check 'database is kept' { Test-Path "$DataDir\data\svcmon.db" }
 
-    Write-Host '== reinstall over kept data, then purge'
-    $out = Capture { & $install @jarArgs }
+    # Everything above installed from the source checkout, which downloads WinSW. The release package is the route
+    # most people take: build it, unpack it and install from there, where the jar and WinSW sit beside install.ps1.
+    Write-Host '== reinstall over kept data from the release package, then purge'
+    $pkgDir = Join-Path ([System.IO.Path]::GetTempPath()) ('svcmon-pkg-' + [guid]::NewGuid().ToString('N'))
+    & $buildPackage @jarArgs -OutDir $pkgDir
+    $zip = @(Get-ChildItem -LiteralPath $pkgDir -Filter '*.zip')
+    Check 'the package was built' { $zip.Count -eq 1 }
+    Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath (Join-Path $pkgDir 'unpacked')
+    $pkgRoot = (Get-ChildItem -LiteralPath (Join-Path $pkgDir 'unpacked') -Directory)[0].FullName
+    $pkgInstall = Join-Path $pkgRoot 'install.ps1'
+    $plan = Capture { & $pkgInstall -DryRun }
+    Check 'the plan reinstalls over the kept data' { $plan -match 'Mode\s+reinstall' }
+    Check 'the plan takes the jar and WinSW from the package, with no download' { ($plan -match 'beside this script') -and ($plan -notmatch 'download WinSW') }
+    $out = Capture { & $pkgInstall }
     Write-Host $out
+    Check 'the packaged install does not download WinSW' { $out -notmatch 'Downloading' }
     Check 'reinstall prints no new token' { $out -notmatch 'svm_a_' }
     Check 'reinstall keeps the old token valid' { TokenWorks $token }
+    Check 'the service wrapper is the packaged WinSW' {
+        (Get-FileHash "$InstallDir\$Name.exe" -Algorithm SHA256).Hash -eq (Get-FileHash (Join-Path $pkgRoot 'WinSW-x64.exe') -Algorithm SHA256).Hash
+    }
     & $uninstall -Purge
     Check 'data folder is deleted' { -not (Test-Path $DataDir) }
     Check 'service is gone' { -not (Get-Service -Name $Name -ErrorAction SilentlyContinue) }
@@ -107,4 +126,6 @@ try {
         Get-ChildItem "$DataDir\logs" | ForEach-Object { Write-Host "--- $($_.Name)"; Get-Content $_.FullName -Tail 40 }
     }
     throw
+} finally {
+    if ($pkgDir -and (Test-Path -LiteralPath $pkgDir)) { Remove-Item -LiteralPath $pkgDir -Recurse -Force -ErrorAction SilentlyContinue }
 }

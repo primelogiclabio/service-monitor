@@ -1,6 +1,6 @@
 # Run the hub as a service
 
-Scripts that install the hub so it starts at boot, restarts if it crashes, and can be removed again. Both do the same job; run the one for your operating system from an elevated prompt (a dry run needs none). The hub needs Java 21 or newer, and a built jar (`cd hub; mvn -DskipTests package`) or one passed with `--jar` / `-JarPath`.
+Scripts that install the hub so it starts at boot, restarts if it crashes, and can be removed again. Both do the same job; run the one for your operating system from an elevated prompt (a dry run needs none). The hub needs Java 21 or newer, and a built jar (`cd hub; mvn -DskipTests package`) or one passed with `--jar` / `-JarPath`. On Windows you can instead use the [package](#windows-package-no-download) that has the jar and the service wrapper in it.
 
 | | Linux (systemd) | Windows (WinSW) |
 |---|---|---|
@@ -32,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File hub\service\windows\install.ps1 -DryRun
 
 ## What the install does
 
-1. Finds the jar and a Java 21+ (`--java`/`-JavaPath`, then `JAVA_HOME`, then `PATH`) and writes the absolute path into the service definition, because a service does not see your shell's `PATH`.
+1. Finds the jar (on Windows `-JarPath`, then the one beside the script, then `hub\target`) and a Java 21+ (`--java`/`-JavaPath`, then `JAVA_HOME`, then `PATH`) and writes the absolute path into the service definition, because a service does not see your shell's `PATH`.
 2. Creates the service user, the folders and a locked-down settings folder (only administrators, the service account and, on Linux, root can read it).
 3. Writes `application.yml` with the port and data folder, **only if there is none**. An existing database is never changed, and an existing settings file only changes its port line when you pass a new port, so running the install again is an upgrade.
 4. Registers and starts the service, waits for `GET /api/v1/health`, and for a new database prints the **admin token once**. The token is put in the new settings file for the first start only, checked, and removed again, so it never reaches the service log; only its hash is stored. Lose it and start the hub once with `--svcmon.new-admin-token=true`.
@@ -45,7 +45,13 @@ Settings changes: edit `application.yml` (every key of the configuration table i
 
 Every Windows service, WinSW's included, is registered by the Service Control Manager under `HKLM\SYSTEM\CurrentControlSet\Services\svcmon-hub`; no installer can avoid that. Nothing else is written: no MSI, no Add/Remove Programs entry, no settings in the registry (the settings are the YAML file). The uninstall removes the service key. Installing is the only step that needs an elevated prompt; day to day the hub needs no special rights.
 
-The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0 (`WinSW-x64.exe`, MIT license, about 18 MB; it is self-contained and needs no .NET Framework, and 64-bit Windows on ARM runs it emulated). `install.ps1` downloads that exact release from GitHub and refuses to use it unless its SHA-256 matches the value pinned in the script. For a machine without internet access download the file elsewhere and pass `-WinSWPath`. To move to a newer WinSW, change the version, file name and checksum at the top of `install.ps1` together, after checking the checksum against a copy you trust.
+The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0 (`WinSW-x64.exe`, MIT license, about 18 MB; it is self-contained and needs no .NET Framework, and 64-bit Windows on ARM runs it emulated). `install.ps1` takes it from, in this order: the file given with `-WinSWPath`; a `WinSW-x64.exe` beside the script (the [Windows package](#windows-package-no-download) has one); otherwise it downloads that exact release from GitHub, which is what running from a source checkout does. Whichever it uses must match the SHA-256 pinned in the script. A copy that does not match is an error that names both checksums; the installer never replaces it with a download. The dry run's WinSW step says which of the three it will use. To move to a newer WinSW, change the version, file name and checksum at the top of `install.ps1` together, after checking the checksum against a copy you trust; `build-package.ps1` reads them from there.
+
+## Windows package (no download)
+
+The "Windows hub package" workflow builds `svcmon-hub-<version>-windows-x64.zip` and keeps it as a workflow artifact for 14 days, next to a `.sha256` file. It runs only when someone starts it from the Actions tab and publishes nothing; there is no release yet. Unzip it anywhere, open an elevated PowerShell in the folder and run `.\install.ps1` (add `-DryRun` first). The folder holds the hub jar, `install.ps1`, `uninstall.ps1`, `svcmon-hub.xml`, `WinSW-x64.exe`, this README, `LICENSE`, `NOTICE` and WinSW's license text (`WinSW-LICENSE.txt`). The installer finds the jar and WinSW beside itself, so the install needs no internet access; only Java 21 is still yours to provide. All options of the table above work the same.
+
+WinSW is not stored in the git repository. The workflow downloads it, checks the SHA-256 pinned in `install.ps1` and stops if it does not match. To build the same package on your own machine run `hub\service\windows\build-package.ps1` after `cd hub; mvn -DskipTests package` (the zip lands in `dist`; `-WinSWPath` uses a copy you already have instead of downloading it). The package is not signed.
 
 ## Troubleshooting
 
@@ -56,6 +62,6 @@ The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0 (`WinSW-x64.exe`,
 
 ## Tests
 
-CI (the "installer dry run" job on Ubuntu and Windows runners, part of **CI passed**) runs `linux/dry-run-test.sh` and `windows/dry-run-test.ps1`: the plan is printed, bad input is refused with every problem named, the prompt can be cancelled and re-planned with another port, and nothing on the machine changes. CI never installs the service.
+CI (the "installer dry run" job on Ubuntu and Windows runners, part of **CI passed**) runs `linux/dry-run-test.sh` and `windows/dry-run-test.ps1`: the plan is printed, bad input is refused with every problem named, the prompt can be cancelled and re-planned with another port, and nothing on the machine changes. On Windows it also checks where WinSW comes from (`-WinSWPath`, then the copy beside the script, then the download; a copy with the wrong checksum is refused, never replaced by a download) and builds a package from a dummy WinSW to check what it contains and that its installer plans from the unpacked folder. CI never installs the service.
 
-`linux/smoke-test.sh` and `windows/smoke-test.ps1` do the real thing on a throwaway machine: install (on Linux through the dry-run prompt), check (health, the token, ownership, permissions, no token left behind), upgrade, change the port, restart, remove with and without the data, and check that nothing is left. They run only when someone starts the "Installer smoke test" workflow by hand from the Actions tab, for example after changing the installers. Do not run them on a machine that has a real `svcmon-hub` service; they refuse to start if one exists, but they will install and delete one.
+`linux/smoke-test.sh` and `windows/smoke-test.ps1` do the real thing on a throwaway machine: install (on Linux through the dry-run prompt), check (health, the token, ownership, permissions, no token left behind), upgrade, change the port, restart, remove with and without the data, and check that nothing is left. On Windows the reinstall at the end comes from a freshly built package, so that route is exercised for real too. They run only when someone starts the "Installer smoke test" workflow by hand from the Actions tab, for example after changing the installers. Do not run them on a machine that has a real `svcmon-hub` service; they refuse to start if one exists, but they will install and delete one.
