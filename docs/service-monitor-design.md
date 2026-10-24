@@ -13,7 +13,7 @@ A free, cross-platform monitor for Windows services, web/HTTP servers, TCP ports
 | Topology | Agents connect out to a hub. A console registers hubs and aggregates them (admin server and managed servers). |
 | UI | Optional. The hub is headless and API-first; a CLI and an optional web UI are both clients of the same API. |
 | What is monitored | Only what the admin lists. Nothing is auto-discovered into monitoring. |
-| JRE | Bundled runtime by default; admins can supply their own Java instead. |
+| JRE | Planned: a bundled runtime by default, with admins able to supply their own Java instead. Today the hub is a plain jar that needs a Java 21 or newer on the machine. |
 | Cost | Everything is open source. No paid component, cloud service or SaaS dependency. |
 
 ## 2. The problem and what already exists
@@ -52,7 +52,7 @@ Rules that keep it simple:
 
 1. **Agents connect out.** Monitored servers open no inbound ports. A server counts as down when its heartbeats stop.
 2. **The hub owns the config.** The agent fetches its check list on connect, so changes are made once, in one place.
-3. **The hub is headless.** Everything, including the UI, goes through the REST API (plus a live SSE stream).
+3. **The hub is headless.** Everything, including the UI, goes through the REST API (a live SSE stream is planned; it is not built yet).
 4. **Each hub is autonomous.** It keeps monitoring and alerting if the console or the link to it goes down. The console shows a hub that stops answering as "hub unreachable".
 5. **The console stays light.** It holds current status and fetches history on demand from the hub that owns it.
 
@@ -85,6 +85,8 @@ Every check has an interval, a timeout, and "N failures before marking down" so 
 Nothing is monitored by default. For services, disks and ports the admin lists exactly what to watch; the agent ignores everything else and does not report it. This keeps noise and data exposure down.
 
 A read-only helper, `svcmon agent services`, shows what exists on a server so the admin can pick. It adds nothing by itself.
+
+The sketch below shows what a server's check list amounts to. It is not a config file the product reads: checks are created with `svcmon check add` or the API.
 
 ```yaml
 server: web01
@@ -138,6 +140,8 @@ checks:
 
 ## 6. Packaging and the JRE question
 
+**Status: not built yet.** Today the hub is a plain jar that runs on a Java 21 or newer that the admin installs, and the service installers in `hub/service/` use that Java. The `jlink` bundle and the release pipeline below are the plan.
+
 Bundling a runtime does not add risk by itself. It moves the patching duty from the admin's operating system to the project: a bundled runtime is not updated by `apt` or Windows Update, so it only gets security fixes when a new release ships. The hub's fat JAR bundles Spring, Tomcat and other libraries with the same property, so a release pipeline is needed regardless.
 
 Two downloads:
@@ -155,7 +159,7 @@ Keeping it safe:
 ## 7. Cross-OS notes and gotchas
 
 - **Ping is the main portability trap.**
-  - Java's `InetAddress.isReachable` uses ICMP only if the privilege can be obtained, and otherwise tries TCP port 7, so it is not a reliable ping. The hub uses the system `ping` command (or JNA on Windows) instead.
+  - Java's `InetAddress.isReachable` uses ICMP only if the privilege can be obtained, and otherwise tries TCP port 7, so it is not a reliable ping. The hub uses the system `ping` command instead.
   - On the Go side, `pro-bing` (MIT) pings unprivileged on Linux only after the `net.ipv4.ping_group_range` sysctl is set; otherwise it needs `CAP_NET_RAW` or root. On Windows it requires `SetPrivileged(true)` but is reported to work without elevated privileges (tested on Windows 10). Its page does not cover macOS.
   - The agent installer sets `CAP_NET_RAW` on Linux.
 - **Load average** is not available on Windows in `gopsutil`, so it is not a cross-platform check.
@@ -179,11 +183,12 @@ Keeping it safe:
 5. Optional web UI.
 6. Console role (multi-hub). The API is designed for it from the start: stable hub ID, read-scoped tokens, aggregate-friendly endpoints.
 
-**Status:** steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 69 tests) and the Go `svcmon` binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address.
+**Status:** steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21) and the Go `svcmon` binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address. The hub can be installed as a service on Windows (WinSW) and Linux (systemd), with a dry run first, and logs a start-up summary of its address and what it watches. The bundled runtime and release pipeline (section 6) are not built.
 
 ## 10. Open questions and limits
 
 - **Untested on real targets:** the agent was run end to end on Windows 11 only. The Linux (systemd) and macOS (launchd) service installers and service checks compile and pass `go vet` but have not been run on those systems. On Windows, `agent install` was only checked for its not-elevated error message; installing the service needs an Administrator prompt.
+- **Hub service installers:** CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server. There is no macOS installer.
 - **Java version:** the machine has Java 21, so v1 targets 21. This doc assumes 25 is a long-term-support release but that could not be confirmed from Oracle's roadmap page (it returned HTTP 403).
 - **macOS ping:** unprivileged ICMP on macOS is not confirmed by the sources used.
 - **Beszel on Windows services:** not confirmed either way from the pages read.
