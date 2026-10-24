@@ -230,7 +230,7 @@ checks:
     <li>About 512 MB RAM (1 GB comfortable with the UI) and about 200 MB disk plus the SQLite file.</li>
     <li>One inbound port for agents, CLI and UI: plain HTTP on 8080 by default. TLS is terminated at the load balancer in front of the hub, so the hub itself needs no certificate.</li>
     <li>The system <code>ping</code> command for ICMP checks. In Docker, the image needs <code>ping</code> and the <code>NET_RAW</code> capability.</li>
-    <li>Run as a systemd unit, a Windows service (for example through WinSW, MIT license) or a container.</li>
+    <li>Run as a systemd unit, a Windows service through WinSW (MIT license) or a container. <code>hub/service/</code> has install and uninstall scripts for the first two; they run the hub as an unprivileged account and keep settings in a YAML file, not the registry.</li>
     <li>Not needed: a database server, web server, reverse proxy, Node or Python.</li>
   </ul>
   <p><b>Monitored server (agent):</b></p>
