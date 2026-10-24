@@ -111,3 +111,7 @@ docs/   design document (Markdown + HTML)
 hub/    Java 21, Spring Boot 4.1, SQLite (Maven project)
 agent/  Go 1.27: svcmon agent + CLI (cmd/svcmon, internal/...)
 ```
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
