@@ -8,11 +8,11 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 
 | Piece | State |
 |---|---|
-| Hub: scheduler, SQLite, REST API, tokens, HTTP/TCP/ping checks, roll-up status | Built, 23 tests passing |
+| Hub: scheduler, SQLite, REST API, tokens, HTTP/TCP/ping checks, roll-up status, alerts | Built, 69 tests passing |
 | Agent (`svcmon agent run`): service, CPU, memory, disk, plus HTTP/TCP/ping from the server's side | Built; unit tests and a run against a real hub on Windows 11 |
 | CLI (`svcmon status`, `check`, `token`, ...) | Built, same binary as the agent |
 | Windows service install, Linux systemd unit, macOS launchd plist | Written and cross-compiled; only the Windows not-elevated error path was run |
-| Alert channels | Status changes are logged and published as events; email/webhook/Slack/etc. not built |
+| Alert channels | Webhook (optionally signed), Slack, Discord and email, plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub can serve it (`svcmon.ui-dir`) or allow it from another address (`svcmon.cors-allowed-origins`) |
 | Multi-hub console | Not started |
 
@@ -79,6 +79,33 @@ svcmon status --cluster prod --watch
 
 `svcmon agent run --once --config FILE` runs every assigned check once and prints the results, which is handy for testing. The agent keeps its config in `%ProgramData%\svcmon\agent.json` (Windows) or `/etc/svcmon/agent.json`, readable only by SYSTEM, Administrators and the installing user (Windows) or the owner (Unix). It buffers up to 5000 results while the hub is unreachable and sends failures within about a second.
 
+## Alerts
+
+An alert channel is a place the hub sends a message when something changes status. There are four types: **webhook** (JSON, optionally signed), **Slack**, **Discord** and **email** (SMTP). Channels are managed through the API (admin only) or the CLI. Each says which new statuses it wants; the default is DOWN, WARN and UP, so you also hear about recoveries.
+
+```bash
+svcmon alert add slack --name ops --url https://hooks.slack.com/services/T000/B000/XXXX
+svcmon alert add discord --name chat --url https://discord.com/api/webhooks/1/xxxx --on down,up
+svcmon alert add webhook --name pager --url https://alerts.internal/hook --header "Authorization: Bearer abc" --signing-secret s3cret
+svcmon alert add email --name mail --smtp-host smtp.example.com --smtp-user svcmon --from svcmon@example.com --to ops@example.com --to oncall@example.com
+svcmon alert test ops            # sends one test message and says whether it arrived
+svcmon alert list                # state, last success and last error for every channel
+svcmon alert set ops --on down   # changes only what you give; stored secrets are kept
+svcmon alert disable ops         # also: enable, rm, show
+```
+
+What triggers a message:
+- A check changing status, after its "failures before down" count is reached.
+- An agent going silent for longer than `svcmon.agent-stale-seconds`, or reporting again. When an agent dies its checks stop reporting and never change status, so without this the most common failure would raise no alert.
+
+A failing delivery is retried (after 0, 2 and 5 seconds by default) when the problem looks temporary, and then the error is kept and shown by `svcmon alert list`. Deliveries run in the background, so a slow receiver never delays checks or other channels.
+
+Safety:
+- Webhook URLs, header values, signing secrets and the SMTP password are secrets. The API and CLI show them masked, error messages never repeat a URL, and an update that sends a masked value back keeps the stored one. They are stored in the hub's database, so protect the data folder. On the command line prefer the environment variables `SVCMON_ALERT_URL`, `SVCMON_SMTP_PASSWORD` and `SVCMON_ALERT_SIGNING_SECRET`, which stay out of shell history and process lists.
+- Slack and Discord URLs must be https. Email defaults to STARTTLS and refuses to fall back to clear text; `--security none` is for a trusted internal relay.
+- With a signing secret, webhook bodies are signed: the hub sends `X-Svcmon-Signature: sha256=<HMAC-SHA256 of the body>`. The JSON has `event`, `kind` (`check`, `server` or `test`), `hub`, `time`, `subject`, `from`, `to` and `message`.
+- Names and messages can come from agents, so Slack markup is escaped, Discord mentions are switched off, and mail headers cannot be injected.
+
 ## API (all under `/api/v1`, JSON, `Authorization: Bearer <token>`)
 
 | Method and path | Scope | Purpose |
@@ -93,6 +120,8 @@ svcmon status --cluster prod --watch
 | `GET /servers`, `PATCH /servers/{id}`, `DELETE /servers/{id}` | read / admin | Servers and clusters |
 | `GET/POST /tokens`, `DELETE /tokens/{id}` | admin | API tokens (ADMIN or READ) |
 | `POST /enrollment-tokens` | admin | One-time token to register an agent |
+| `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked |
+| `POST /alert-channels/{id}/test` | admin | Send one test alert now |
 | `POST /agent/register`, `GET /agent/config`, `POST /agent/report` | enroll / agent | Agent protocol (agents only call out) |
 
 Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CPU`, `MEMORY`, `DISK` run on an agent and need a server.
@@ -108,11 +137,13 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CP
 | `svcmon.agent-stale-seconds` | 90 | Silence after which a server shows as offline |
 | `svcmon.ui-dir` | unset | Folder with the built web UI, served at `/`. A missing folder only logs a warning |
 | `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
+| `svcmon.alert-retry-delays-ms` | `0,2000,5000` | Waits between delivery attempts for a failing alert channel, in milliseconds |
+| `svcmon.allow-insecure-alert-urls` | false | Lets Slack and Discord URLs use http; for tests and local receivers only |
 
 ## Test
 
 ```bash
-cd hub && mvn test        # 23 tests, including a full agent enrollment over HTTP
+cd hub && mvn test        # 69 tests, including agent enrollment and real webhook and SMTP alert delivery
 cd agent && go test ./...
 ```
 
