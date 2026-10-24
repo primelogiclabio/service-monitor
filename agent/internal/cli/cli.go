@@ -76,6 +76,8 @@ func Run(args []string, out, errw io.Writer) int {
 		return e.check(cargs)
 	case "token":
 		return e.tokenCmd(cargs)
+	case "alert", "alerts":
+		return e.alertCmd(cargs)
 	case "agent":
 		return e.agentCmd(cargs)
 	default:
@@ -109,6 +111,16 @@ Hub commands (need a hub URL and token: 'svcmon login', or SVCMON_HUB / SVCMON_T
   check history <check> [--limit N] [--since 1h|30m|2d]
   token create --name N --scope read|admin
   token list | token revoke <id>
+  alert list                      Alert channels (where status changes are sent)
+  alert add <webhook|slack|discord|email> --name N [flags]
+                                  webhook/slack/discord: --url (or SVCMON_ALERT_URL); webhook also --header
+                                  "Name: value" and --signing-secret; email: --smtp-host --smtp-port
+                                  --security starttls|ssl|none --smtp-user --smtp-password --from --to
+                                  all: --on down,warn,up,unknown|all  --disabled
+  alert set <channel> [flags]     Change only the flags you give; stored secrets are kept
+  alert enable|disable <channel>
+  alert test <channel>            Send one test alert now
+  alert show <channel> | alert rm <channel>
 
 Agent commands (run on a monitored server):
   agent token [--name N] [--ttl MIN]   Create a one-time enrollment token (hub side)

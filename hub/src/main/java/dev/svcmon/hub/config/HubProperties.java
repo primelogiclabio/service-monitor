@@ -17,5 +17,7 @@ public record HubProperties(
         /** Folder with the built web UI (the UI project's dist folder). Unset means the hub serves no UI. */
         Path uiDir,
         /** Exact origins (scheme://host[:port]) allowed to call the API from a browser. Empty means CORS is off. */
-        @DefaultValue List<String> corsAllowedOrigins) {
+        @DefaultValue List<String> corsAllowedOrigins,
+        /** Lets Slack and Discord alert URLs use http. Off by default; only for tests and local receivers. */
+        @DefaultValue("false") boolean allowInsecureAlertUrls) {
 }

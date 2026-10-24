@@ -82,7 +82,8 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         if (path.startsWith("/api/v1/agent/")) {
             return EnumSet.of(Scope.AGENT);
         }
-        if (path.startsWith("/api/v1/tokens") || path.startsWith("/api/v1/enrollment-tokens")) {
+        if (path.startsWith("/api/v1/tokens") || path.startsWith("/api/v1/enrollment-tokens")
+                || path.startsWith("/api/v1/alert-channels")) {
             return EnumSet.of(Scope.ADMIN);
         }
         boolean read = method.equals("GET") || method.equals("HEAD");
