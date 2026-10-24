@@ -109,6 +109,10 @@ svcmon status --cluster prod --watch
 
 `svcmon agent run --once --config FILE` runs every assigned check once and prints the results, which is handy for testing. The agent keeps its config in `%ProgramData%\svcmon\agent.json` (Windows) or `/etc/svcmon/agent.json`, readable only by SYSTEM, Administrators and the installing user (Windows) or the owner (Unix). It buffers up to 5000 results while the hub is unreachable and sends failures within about a second.
 
+**Enrollment tokens are single use and short lived** (60 minutes by default, up to 24 hours: `svcmon agent token --ttl 1440`, or the "Valid for" choice on the dashboard's Add server page). A token lets a machine join the hub, so it should not sit around unused; it is shown once and only its hash is kept, so a lost or used one is replaced by creating another (revoke unused ones on the Tokens page). Once an agent has enrolled it holds its own permanent agent token in `agent.json`, and the enrollment token is no longer needed.
+
+**An agent that is already enrolled** (its `agent.json` exists and the server is still on the hub) needs no token: `svcmon agent install` just installs the service from that file. To enroll it again, for example after the server was deleted on the hub or the hub was rebuilt, pass a new enrollment token: `svcmon agent install --token svm_e_...` replaces the old enrollment (`--hub` defaults to the hub in the old file, and the old file is kept if the hub refuses the token). A hub refuses a name that is already registered, so delete the old server entry first (or pass `--name`).
+
 ### More commands
 
 ```bash
