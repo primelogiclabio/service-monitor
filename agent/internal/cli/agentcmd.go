@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"svcmon/internal/agent"
+	"svcmon/internal/checks"
 	"svcmon/internal/hubapi"
 	"svcmon/internal/osservice"
-	"svcmon/internal/checks"
 )
 
 func (e *env) agentCmd(args []string) int {
