@@ -136,9 +136,10 @@ class ApiIntegrationTest {
             String upId = (String) up.map().get("id");
             assertEquals("UP", call("POST", "/api/v1/checks/" + upId + "/run", ADMIN, null).map().get("status"));
 
-            // Two failures are needed before the check is reported DOWN.
+            // Two failures are needed before the check is reported DOWN. It is disabled so the hub's scheduler
+            // never runs it; a disabled hub check can still be run by hand and still shows in the status.
             Resp flaky = call("POST", "/api/v1/checks", ADMIN, "{\"name\":\"closed port\",\"type\":\"TCP\","
-                    + "\"target\":\"" + closedPort() + "\",\"failuresBeforeDown\":2}");
+                    + "\"target\":\"" + closedPort() + "\",\"failuresBeforeDown\":2,\"enabled\":false}");
             String flakyId = (String) flaky.map().get("id");
             call("POST", "/api/v1/checks/" + flakyId + "/run", ADMIN, null);
             assertEquals("UNKNOWN", stateOf(flakyId));
@@ -146,6 +147,10 @@ class ApiIntegrationTest {
             assertEquals("DOWN", stateOf(flakyId));
             assertEquals("UP", stateOf(upId));
 
+            // The hub's scheduler starts a new enabled check within about 2 seconds and would add results of its
+            // own; this check is created disabled so only the two runs above count. Waiting past that window
+            // makes the test fail every time if the check were scheduled, instead of once in a while.
+            Thread.sleep(2500);
             Resp history = call("GET", "/api/v1/checks/" + flakyId + "/results?limit=10", ADMIN, null);
             assertEquals(2, history.list().size());
         }
