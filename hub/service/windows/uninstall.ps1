@@ -28,8 +28,8 @@ if ($svc -and -not $InstallDir) {
 if (-not $InstallDir) { $InstallDir = Join-Path $env:ProgramFiles 'svcmon-hub' }
 $xmlFile = Join-Path $InstallDir "$ServiceName.xml"
 if (-not $DataDir -and (Test-Path -LiteralPath $xmlFile)) {
-    $node = ([xml](Get-Content -LiteralPath $xmlFile -Raw)).service.env | Where-Object { $_.name -eq 'SVCMON_DATA_DIR' }
-    if ($node) { $DataDir = $node.value }
+    # The service's working directory is the data folder (settings, data and logs sit under it).
+    $DataDir = ([xml](Get-Content -LiteralPath $xmlFile -Raw)).service.workingdirectory
 }
 if (-not $DataDir) { $DataDir = Join-Path $env:ProgramData 'svcmon-hub' }
 $wrapper = Join-Path $InstallDir "$ServiceName.exe"

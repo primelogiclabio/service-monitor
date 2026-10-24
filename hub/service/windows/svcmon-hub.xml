@@ -13,10 +13,9 @@
   <!-- Add JVM options before -jar, for example -Xmx512m. -->
   <executable>@JAVA@</executable>
   <arguments>-jar "@JAR@" "--spring.config.additional-location=optional:@CONFIG_LOCATION@"</arguments>
+  <!-- uninstall.ps1 reads this to find the settings and database again. Do not add SVCMON_* environment
+       variables here: the hub treats them as settings and they override application.yml. -->
   <workingdirectory>@DATA_DIR@</workingdirectory>
-
-  <!-- Lets uninstall.ps1 find the settings and database again. The hub itself ignores it. -->
-  <env name="SVCMON_DATA_DIR" value="@DATA_DIR@"/>
 
   <startmode>Automatic</startmode>
   <onfailure action="restart" delay="10 sec"/>
