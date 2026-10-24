@@ -158,6 +158,7 @@ Safety:
 | `GET /health` | none | Liveness probe |
 | `GET /hub` | read | Hub ID, version, Java runtime age and warning |
 | `GET /status` | read | Roll-up: summary, clusters, servers, checks |
+| `GET /live` (WebSocket) | read, sent in the first frame | Pushes the same roll-up whenever it changes, for the dashboard's Live switch; see below |
 | `GET /servers/{id}/status` | read | One server with its checks |
 | `GET/POST /checks`, `GET/PUT/DELETE /checks/{id}` | read / admin | Manage checks |
 | `POST /checks/{id}/run` | admin | Run a hub-side check now |
@@ -168,6 +169,14 @@ Safety:
 | `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked |
 | `POST /alert-channels/{id}/test` | admin | Send one test alert now |
 | `POST /agent/register`, `GET /agent/config`, `POST /agent/report` | enroll / agent | Agent protocol (agents only call out) |
+
+### Live view (WebSocket)
+
+Polling `GET /status` is how every client works by default. For a dashboard someone is watching, `GET /api/v1/live` upgrades to a WebSocket that pushes the roll-up as it changes, so there is no refresh delay and no repeated requests. The web UI has a **Live** switch for it and turns it off again after 5 minutes without activity.
+
+A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the token: `{"type":"auth","token":"..."}`, within 5 seconds, from a READ or ADMIN token. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. No cookies are used, so any origin may open the socket and the CORS list does not apply to it. `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
+
+Behind a load balancer it must pass WebSocket upgrades (`Upgrade` and `Connection` headers) to the hub and allow idle connections for at least 30 seconds. If it does not, the Live switch tells the user it is unavailable and the dashboard keeps polling.
 
 Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CPU`, `MEMORY`, `DISK` run on an agent and need a server.
 
@@ -182,6 +191,7 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CP
 | `svcmon.agent-stale-seconds` | 90 | Silence after which a server shows as offline |
 | `svcmon.ui-dir` | unset | Folder with the built web UI, served at `/`. A missing folder only logs a warning |
 | `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
+| `svcmon.live-max-sessions` | 50 | Most dashboards that may hold the live WebSocket open at once; more are refused (close code 1013) and keep polling |
 | `svcmon.alert-retry-delays-ms` | `0,2000,5000` | Waits between delivery attempts for a failing alert channel, in milliseconds |
 | `svcmon.allow-insecure-alert-urls` | false | Lets Slack and Discord URLs use http; for tests and local receivers only |
 | `svcmon.bootstrap-admin-token` | unset | Use this value (32+ characters) as the first admin token on a fresh database instead of generating one; ignored once an admin token exists |

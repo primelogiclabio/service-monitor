@@ -44,5 +44,7 @@ svcmon:
   new-admin-token: false
   # Optional: let Slack and Discord alert URLs use http instead of https. For tests and local receivers only.
   # allow-insecure-alert-urls: false
+  # Optional: most dashboards that may hold the live WebSocket (/api/v1/live) open at once.
+  # live-max-sessions: 50
   # Optional: waits between delivery attempts for a failing alert channel, in milliseconds.
   # alert-retry-delays-ms: 0,2000,5000

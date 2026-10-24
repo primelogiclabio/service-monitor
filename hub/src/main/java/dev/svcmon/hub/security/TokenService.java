@@ -61,6 +61,13 @@ public class TokenService {
         });
     }
 
+    /** True while an authenticated token still exists and has not expired, so a long-lived connection notices a revoke. */
+    public boolean isActive(TokenRecord token) {
+        return tokens.findByHash(token.tokenHash())
+                .filter(t -> t.expiresAt() == null || t.expiresAt() >= System.currentTimeMillis())
+                .isPresent();
+    }
+
     static String generate(Scope scope) {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
