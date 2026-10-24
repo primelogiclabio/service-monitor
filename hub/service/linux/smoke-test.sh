@@ -43,6 +43,17 @@ check "upgrade keeps the old port from the settings file" healthy
 check "upgrade keeps the admin token valid" token_works "$TOKEN"
 check "upgrade prints no second token" gone sh -c "echo '$out' | grep -q 'svm_a_'"
 
+echo "== change the port"
+OLD_URL=$URL
+PORT=18081
+URL=http://127.0.0.1:$PORT
+out=$("$DIR/install.sh" "${JAR_ARGS[@]}" --port $PORT)
+echo "$out"
+check "health answers on the new port" healthy
+check "the old port is closed" gone curl -fsS "$OLD_URL/api/v1/health"
+check "the settings file has the new port" grep -qx '  port: 18081' /etc/$NAME/application.yml
+check "the admin token is still valid on the new port" token_works "$TOKEN"
+
 echo "== restart"
 systemctl restart $NAME
 for _ in $(seq 1 60); do healthy && break; sleep 1; done

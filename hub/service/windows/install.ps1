@@ -17,7 +17,8 @@ The hub jar. Default: hub\target\svcmon-hub-*.jar in this repository.
 java.exe of a Java 21 or newer. Default: JAVA_HOME, then PATH.
 
 .PARAMETER Port
-HTTP port for a new install (default 8080). An existing application.yml is kept as it is.
+HTTP port (default 8080 for a new install). On an existing install it changes server.port in application.yml;
+without -Port the port already in that file is kept.
 
 .PARAMETER WinSWPath
 A copy of the pinned WinSW release to use instead of downloading it. It must match the pinned SHA-256.
@@ -143,12 +144,27 @@ Get-WinSW -Target $wrapper
 Copy-Item -LiteralPath $jar -Destination (Join-Path $InstallDir "$ServiceName.jar") -Force
 
 # Settings. A new database gets an admin token of ours in the new file for the first start only; we check it
-# works, show it once and take it out again. A settings file that already exists is never edited.
+# works, show it once and take it out again. A settings file that already exists is only ever edited for
+# -Port, and only its port line.
 $token = $null
 if (Test-Path -LiteralPath $conf) {
     Write-Host "Kept existing $conf"
-    $m = [regex]::Match((Get-Content -LiteralPath $conf -Raw -Encoding UTF8), '(?m)^  port:\s*(\d+)')
-    if ($m.Success) { $Port = [int]$m.Groups[1].Value }
+    $text = Get-Content -LiteralPath $conf -Raw -Encoding UTF8
+    $m = [regex]::Match($text, '(?m)^(?:  port|server\.port):\s*(\d+)')
+    if (-not $PSBoundParameters.ContainsKey('Port')) {
+        $Port = if ($m.Success) { [int]$m.Groups[1].Value } else { 8080 }
+    } elseif (-not $m.Success -or [int]$m.Groups[1].Value -ne $Port) {
+        $one = 1
+        if ($m.Success) {
+            $text = ([regex]'(?m)^(  port|server\.port):[ \t]*\d+').Replace($text, "`${1}: $Port", $one)
+        } elseif ($text -match '(?m)^server:[ \t]*\r?$') {
+            $text = ([regex]'(?m)^server:[ \t]*\r?$').Replace($text, "server:`r`n  port: $Port", $one)
+        } else {
+            $text = $text.TrimEnd() + "`r`nserver:`r`n  port: $Port`r`n"
+        }
+        [System.IO.File]::WriteAllText($conf, $text, $Utf8NoBom)
+        Write-Host "Set the port to $Port in $conf"
+    }
 } else {
     $lines = @(
         "# Service Monitor hub settings. Every key in the README's configuration table can be set here;",

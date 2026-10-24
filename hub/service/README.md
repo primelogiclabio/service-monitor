@@ -18,8 +18,10 @@ Scripts that install the hub so it starts at boot, restarts if it crashes, and c
 
 1. Finds the jar and a Java 21+ (`--java`/`-JavaPath`, then `JAVA_HOME`, then `PATH`) and writes the absolute path into the service definition, because a service does not see your shell's `PATH`.
 2. Creates the service user, the folders and a locked-down settings folder (only administrators, the service account and, on Linux, root can read it).
-3. Writes `application.yml` with the port and data folder, **only if there is none**. An existing settings file and database are never changed, so running the install again is an upgrade.
+3. Writes `application.yml` with the port and data folder, **only if there is none**. An existing database is never changed, and an existing settings file only changes its port line when you pass a new port, so running the install again is an upgrade.
 4. Registers and starts the service, waits for `GET /api/v1/health`, and for a new database prints the **admin token once**. The token is put in the new settings file for the first start only, checked, and removed again, so it never reaches the service log; only its hash is stored. Lose it and start the hub once with `--svcmon.new-admin-token=true`.
+
+The port is `8080` unless you choose another: pass `--port N` / `-Port N` on the first install, or run the install again with a different value to change it later (it edits only the `server.port` line of an existing `application.yml` and restarts the service). Without the option the port already in the file is kept. The scripts do not open any firewall port; allow the hub's port from your load balancer and the internal network yourself.
 
 Settings changes: edit `application.yml` (every key of the configuration table in the main README works there) and restart the service (`systemctl restart svcmon-hub` / `Restart-Service svcmon-hub`). If you move the data folder on Linux, also change `ReadWritePaths` in the installed unit.
 
@@ -31,7 +33,7 @@ The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0 (`WinSW-x64.exe`,
 
 ## Troubleshooting
 
-- **The hub did not answer within 60 seconds.** Read the log (table above). Usual causes: the port is taken (`--port`/`-Port` for a new install, or edit `server.port`), or Java is too old.
+- **The hub did not answer within 60 seconds.** Read the log (table above). Usual causes: the port is taken (run the install again with `--port`/`-Port` to pick another), or Java is too old.
 - **Windows: access denied starting the service.** The service account must be able to read `java.exe` and its folder. A Java under a user profile or a restricted drive is the usual culprit; pass `-JavaPath` for a system-wide one.
 - **Windows: "marked for deletion".** A tool such as Services or Task Manager has the service open. Close it and run the script again.
 - **macOS** is not covered by these scripts.

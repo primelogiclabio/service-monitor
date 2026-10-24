@@ -22,13 +22,14 @@ Usage: sudo ./install.sh [--jar PATH] [--java PATH] [--port N]
 
   --jar PATH    hub jar to install (default: hub/target/svcmon-hub-*.jar next to this script's repo)
   --java PATH   java 21+ to run it with (default: java from PATH)
-  --port N      HTTP port for a new install (default 8080; an existing application.yml is kept as it is)
+  --port N      HTTP port (default 8080 for a new install). On an existing install it changes server.port in
+                application.yml; without --port the port already in that file is kept.
 EOF
 }
 
 JAR=""
 JAVA=""
-PORT=8080
+PORT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --jar) [ $# -ge 2 ] || die "--jar needs a value"; JAR=$2; shift 2 ;;
@@ -42,8 +43,10 @@ done
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo ./install.sh)"
 [ -d /run/systemd/system ] || die "systemd is not running on this machine"
 command -v curl >/dev/null || die "curl is needed to check that the hub started"
-case "$PORT" in ''|*[!0-9]*) die "--port must be a number" ;; esac
-{ [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ]; } || die "--port must be between 1 and 65535"
+if [ -n "$PORT" ]; then
+  case "$PORT" in *[!0-9]*) die "--port must be a number" ;; esac
+  { [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ]; } || die "--port must be between 1 and 65535"
+fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 if [ -z "$JAR" ]; then
@@ -90,14 +93,29 @@ mv -f "$APP_DIR/.$NAME.jar.new" "$APP_DIR/$NAME.jar"
 
 # The hub prints a new database's admin token once, into the journal. For a fresh install the installer
 # instead puts a token of its own in the new settings file for the first start only, checks it works, shows
-# it to you once and takes it out of the file again. A settings file that already exists is never edited.
+# it to you once and takes it out of the file again. A settings file that already exists is only ever edited
+# for --port, and only its port line.
 TOKEN=""
 CONF=$CONF_DIR/application.yml
 if [ -f "$CONF" ]; then
   echo "kept existing $CONF"
-  conf_port=$(sed -n 's/^  port: *\([0-9][0-9]*\).*/\1/p' "$CONF" | head -n 1)
-  [ -z "$conf_port" ] || PORT=$conf_port
+  conf_port=$(sed -n -e 's/^  port: *\([0-9][0-9]*\).*/\1/p' -e 's/^server\.port: *\([0-9][0-9]*\).*/\1/p' "$CONF" | head -n 1)
+  if [ -z "$PORT" ]; then
+    PORT=${conf_port:-8080}
+  elif [ "$PORT" != "$conf_port" ]; then
+    if grep -q '^  port:' "$CONF"; then
+      sed -i "s/^  port:.*/  port: $PORT/" "$CONF"
+    elif grep -q '^server\.port:' "$CONF"; then
+      sed -i "s/^server\.port:.*/server.port: $PORT/" "$CONF"
+    elif grep -q '^server:' "$CONF"; then
+      sed -i "/^server:/a\\  port: $PORT" "$CONF"
+    else
+      printf '\nserver:\n  port: %s\n' "$PORT" >>"$CONF"
+    fi
+    echo "set the port to $PORT in $CONF"
+  fi
 else
+  PORT=${PORT:-8080}
   token_line=""
   if [ ! -e "$DATA_DIR/svcmon.db" ]; then
     TOKEN="svm_a_$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"

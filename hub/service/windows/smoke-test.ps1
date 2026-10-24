@@ -61,6 +61,16 @@ try {
     Check 'upgrade keeps the admin token valid' { TokenWorks $token }
     Check 'upgrade prints no second token' { $out -notmatch 'svm_a_' }
 
+    Write-Host '== change the port'
+    $oldUrl = $Url
+    $Port = 18081
+    $Url = "http://127.0.0.1:$Port"
+    Write-Host (Capture { & $install @jarArgs -Port $Port })
+    Check 'health answers on the new port' { Healthy }
+    Check 'the old port is closed' { try { Invoke-RestMethod "$oldUrl/api/v1/health" -TimeoutSec 3 | Out-Null; $false } catch { $true } }
+    Check 'the settings file has the new port' { Select-String -Path "$DataDir\application.yml" -Pattern '^  port: 18081$' -Quiet }
+    Check 'the admin token is still valid on the new port' { TokenWorks $token }
+
     Write-Host '== restart'
     Restart-Service -Name $Name
     for ($i = 0; $i -lt 60 -and -not (Healthy); $i++) { Start-Sleep -Seconds 1 }
