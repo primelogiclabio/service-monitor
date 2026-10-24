@@ -115,6 +115,36 @@ func (e *env) enroll(hub, enrollToken, name, cluster, cfgPath string) (*agent.Fi
 	return cfg, nil
 }
 
+// ensureEnrolled returns the agent's config, enrolling first when needed. An existing config is used as it is
+// unless an enrollment token was given: that is a request to enroll again, for example after the server was
+// deleted on the hub or moved to a new one, and --hub then defaults to the hub in the old config. The old config
+// is only replaced once the hub has accepted the new enrollment.
+func (e *env) ensureEnrolled(hub, token, name, cluster, cfgPath string) (*agent.FileConfig, error) {
+	old, loadErr := agent.LoadConfig(cfgPath)
+	if token == "" {
+		if loadErr != nil {
+			return nil, errors.New("not enrolled yet: --hub and --token are required")
+		}
+		fmt.Fprintf(e.out, "Already enrolled as %q; using %s\n", old.Name, cfgPath)
+		return old, nil
+	}
+	if hub == "" {
+		if loadErr != nil {
+			return nil, errors.New("not enrolled yet: --hub and --token are required")
+		}
+		hub = old.Hub
+	}
+	if loadErr == nil {
+		fmt.Fprintf(e.out, "Replacing the enrollment of %q in %s\n", old.Name, cfgPath)
+	}
+	cfg, err := e.enroll(hub, token, name, cluster, cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(e.out, "Registered as %q (server %s)\n", cfg.Name, shortID(cfg.ServerID))
+	return cfg, nil
+}
+
 func checkWritable(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -132,24 +162,15 @@ func checkWritable(path string) error {
 func (e *env) agentInstall(args []string) int {
 	fs := e.flags("agent install")
 	hub := fs.String("hub", "", "hub base URL (internal address); not needed if already enrolled")
-	token := fs.String("token", "", "enrollment token; not needed if already enrolled")
+	token := fs.String("token", "", "enrollment token; not needed if already enrolled, and enrolls again if given")
 	name := fs.String("name", "", "name for this server (default: host name)")
 	cluster := fs.String("cluster", "", "cluster to place the server in")
 	cfgPath := fs.String("config", agent.DefaultConfigPath(), "agent config file")
 	if _, code, ok := e.parse(fs, args); !ok {
 		return code
 	}
-	if cfg, err := agent.LoadConfig(*cfgPath); err == nil {
-		fmt.Fprintf(e.out, "Already enrolled as %q; using %s\n", cfg.Name, *cfgPath)
-	} else {
-		if *hub == "" || *token == "" {
-			return e.fail(errors.New("not enrolled yet: --hub and --token are required"))
-		}
-		cfg, err := e.enroll(*hub, *token, *name, *cluster, *cfgPath)
-		if err != nil {
-			return e.fail(err)
-		}
-		fmt.Fprintf(e.out, "Registered as %q (server %s)\n", cfg.Name, shortID(cfg.ServerID))
+	if _, err := e.ensureEnrolled(*hub, *token, *name, *cluster, *cfgPath); err != nil {
+		return e.fail(err)
 	}
 	exe, err := os.Executable()
 	if err != nil {
