@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: svcmon-hub
+  threads:
+    virtual:
+      enabled: true
+  flyway:
+    enabled: true
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  # TLS is terminated at the load balancer; the hub speaks plain HTTP behind it.
+  # Firewall this port to the load balancer and the internal network only.
+  port: 8080
+  # Trust X-Forwarded-For / X-Forwarded-Proto from private-range proxies so client
+  # addresses in logs are real. The load balancer must overwrite client-supplied values.
+  # If it is not in a private range, set server.tomcat.remoteip.internal-proxies.
+  forward-headers-strategy: native
+
+svcmon:
+  # SQLite database lives here (created on first start).
+  data-dir: ./data
+  # Raw check results older than this are deleted.
+  retention-days: 30
+  # How often agents are told to send a heartbeat/report.
+  agent-heartbeat-seconds: 30
+  # An agent that has not reported for this long is shown as offline.
+  agent-stale-seconds: 90
+  # Optional: use this value as the initial admin token instead of generating one.
+  # bootstrap-admin-token:
+  # Set true to print an additional new admin token at startup (token recovery).
+  new-admin-token: false

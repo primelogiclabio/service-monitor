@@ -1,0 +1,33 @@
+# Build output
+target/
+build/
+dist/
+*.class
+*.jar
+!**/gradle/wrapper/*.jar
+
+# Runtime data (SQLite databases, tokens)
+data/
+*.db
+*.db-wal
+*.db-shm
+admin-token.txt
+
+# Go
+/agent/bin/
+*.exe
+*.test
+*.out
+
+# Node (optional UI build)
+node_modules/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Claude Code local state
+.claude/settings.local.json
