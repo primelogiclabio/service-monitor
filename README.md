@@ -32,6 +32,23 @@ java -jar target/svcmon-hub-0.1.0-SNAPSHOT.jar
 
 On first start the hub creates `./data/svcmon.db` and prints an admin token once; only its hash is stored. To get a new one later start with `--svcmon.new-admin-token=true`; to choose your own set `svcmon.bootstrap-admin-token` (32+ characters) on a fresh database.
 
+When it is ready the hub logs one summary: the address it listens on, the database file, whether the dashboard and CORS are on, the enabled alert channels, and what it watches (checks by type, which the hub runs and which agents run, and each enrolled server with its checks). It names things but never prints check targets, alert settings or tokens.
+
+```text
+Service Monitor hub 0.1.0 is ready
+  URL:       http://localhost:8080, http://hub01:8080 (plain HTTP; TLS belongs on the load balancer)
+  Database:  /var/lib/svcmon-hub/svcmon.db
+  Dashboard: not served (set svcmon.ui-dir to serve the web UI)
+  CORS:      off
+  Alerts:    1 enabled of 1: ops-slack (SLACK)
+  Watching:  4 check(s) (HTTP 1, TCP 1, SERVICE 1, CPU 1): 2 run by the hub, 2 by agents on 1 enrolled server(s)
+  Hub checks:
+    HTTP  Website
+    TCP  db-port
+  Servers:
+    web01 [prod]: 2 check(s): IIS (SERVICE), cpu (CPU)
+```
+
 ### Run the hub as a service
 
 To start at boot and restart after a crash, install it as a systemd service (Linux) or a Windows service through [WinSW](https://github.com/winsw/winsw), and remove it again with one command each. See [hub/service/README.md](hub/service/README.md).

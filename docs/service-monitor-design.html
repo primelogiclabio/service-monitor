@@ -172,7 +172,7 @@ footer { max-width: 980px; margin: 0 auto; padding: 8px 20px 90px; color: var(--
   </ol>
 
   <h3>Scenario: the hub restarts</h3>
-  <p>The agent buffers a few minutes of results in memory and replays them when the connection returns, so a restart leaves no gap and raises no false alert.</p>
+  <p>The agent buffers a few minutes of results in memory and replays them when the connection returns, so a restart leaves no gap and raises no false alert. Once the hub is ready again it logs a start-up summary (listening address, database, enabled alert channels, and the checks and servers it watches, by name and type only) so the service log shows what came back without calling the API.</p>
 </section>
 
 <section id="monitored">
