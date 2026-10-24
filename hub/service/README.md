@@ -12,7 +12,23 @@ Scripts that install the hub so it starts at boot, restarts if it crashes, and c
 | Database | `/var/lib/svcmon-hub` | `%ProgramData%\svcmon-hub\data` |
 | Log | `journalctl -u svcmon-hub` | `%ProgramData%\svcmon-hub\logs` (rolled by WinSW) |
 | Runs as | system user `svcmon-hub`, no login shell | virtual account `NT SERVICE\svcmon-hub`, no password |
-| Options | `--jar PATH`, `--java PATH`, `--port N` | `-JarPath`, `-JavaPath`, `-Port`, `-InstallDir`, `-DataDir`, `-WinSWPath` |
+| Options | `--jar PATH`, `--java PATH`, `--port N`, `--dry-run` | `-JarPath`, `-JavaPath`, `-Port`, `-InstallDir`, `-DataDir`, `-WinSWPath`, `-DryRun` |
+
+## See the plan first (dry run)
+
+`--dry-run` / `-DryRun` prints what the install would do and changes nothing: the mode (new install, upgrade, or reinstall over kept data), the jar and Java it found, the port and URL, every step in order (user, folders, files, the service, the admin token), and what it does not touch. It also works without root or an elevated prompt, so you can read the plan on any machine; a missing jar, a Java older than 21 or a bad port are listed together as problems instead.
+
+It also checks that the port is free. The plan marks the Port line `free` or `IN USE by <program> (pid N)` and, if it is taken, ends with a `Blocked:` line and exits 1. A real install refuses to start on a taken port and lists it with any other problem, instead of timing out after 60 seconds. The hub's own running service does not count on its own port, so an upgrade is not blocked by itself. At the prompt, `y` is refused while the port is taken, and typing another port number checks that one.
+
+In an interactive root or elevated session the dry run then asks `Proceed with the real installation? [y/N], or type a port number to change it`. `y` installs exactly what the plan showed, `n` (or Enter) cancels, and a number changes the port and prints the plan again. Without `--dry-run` the installer does not ask anything, so scripts and automation are unaffected.
+
+```bash
+sudo hub/service/linux/install.sh --dry-run --port 9090
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File hubservicewindowsinstall.ps1 -DryRun -Port 9090
+```
 
 ## What the install does
 
@@ -23,7 +39,7 @@ Scripts that install the hub so it starts at boot, restarts if it crashes, and c
 
 The port is `8080` unless you choose another: pass `--port N` / `-Port N` on the first install, or run the install again with a different value to change it later (it edits only the `server.port` line of an existing `application.yml` and restarts the service). Without the option the port already in the file is kept. The scripts do not open any firewall port; allow the hub's port from your load balancer and the internal network yourself.
 
-Settings changes: edit `application.yml` (every key of the configuration table in the main README works there) and restart the service (`systemctl restart svcmon-hub` / `Restart-Service svcmon-hub`). If you move the data folder on Linux, also change `ReadWritePaths` in the installed unit.
+Settings changes: edit `application.yml` (every key of the configuration table in the main README works there) and restart the service (`systemctl restart svcmon-hub` / `Restart-Service svcmon-hub`). Once it is up the hub logs a start-up summary (address, database, alert channels, and the checks and servers it watches) to the journal or `logs` folder. If you move the data folder on Linux, also change `ReadWritePaths` in the installed unit.
 
 ## Windows and the registry
 
@@ -33,11 +49,13 @@ The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0 (`WinSW-x64.exe`,
 
 ## Troubleshooting
 
-- **The hub did not answer within 60 seconds.** Read the log (table above). Usual causes: the port is taken (run the install again with `--port`/`-Port` to pick another), or Java is too old.
+- **The hub did not answer within 60 seconds.** Read the log (table above). The usual cause, a taken port, is caught before installing (see the dry run), unless something took the port after the check; run the install again with `--port`/`-Port` to pick another. Java older than 21 is also caught first.
 - **Windows: access denied starting the service.** The service account must be able to read `java.exe` and its folder. A Java under a user profile or a restricted drive is the usual culprit; pass `-JavaPath` for a system-wide one.
 - **Windows: "marked for deletion".** A tool such as Services or Task Manager has the service open. Close it and run the script again.
 - **macOS** is not covered by these scripts.
 
 ## Tests
 
-`linux/smoke-test.sh` and `windows/smoke-test.ps1` install the service on a throwaway machine, check it (health, the token, ownership, permissions, no token left behind), upgrade it, restart it, remove it with and without the data, and check that nothing is left. CI runs them on Ubuntu and Windows runners (job "hub service"). Do not run them on a machine that has a real `svcmon-hub` service; they refuse to start if one exists, but they will install and delete one.
+CI (the "installer dry run" job on Ubuntu and Windows runners, part of **CI passed**) runs `linux/dry-run-test.sh` and `windows/dry-run-test.ps1`: the plan is printed, bad input is refused with every problem named, the prompt can be cancelled and re-planned with another port, and nothing on the machine changes. CI never installs the service.
+
+`linux/smoke-test.sh` and `windows/smoke-test.ps1` do the real thing on a throwaway machine: install (on Linux through the dry-run prompt), check (health, the token, ownership, permissions, no token left behind), upgrade, change the port, restart, remove with and without the data, and check that nothing is left. They run only when someone starts the "Installer smoke test" workflow by hand from the Actions tab, for example after changing the installers. Do not run them on a machine that has a real `svcmon-hub` service; they refuse to start if one exists, but they will install and delete one.

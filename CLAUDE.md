@@ -61,5 +61,5 @@ Run these from the folder shown. Windows is the main development machine, in Pow
 ## Known gaps
 
 - The multi-hub console role is not built. The dashboard has no alerts page yet (the API is ready).
-- The hub service installers (`hub/service/`: WinSW on Windows, systemd on Linux) have only run in CI's "hub service" job, never on this machine (installing needs an elevated prompt; do not install the service here without asking). Change them together with their `smoke-test` scripts. macOS has none.
+- The hub service installers (`hub/service/`: WinSW on Windows, systemd on Linux) are only dry-run in CI (the `dry-run-test` scripts, job "installer dry run"). Their real install/uninstall tests (`smoke-test` scripts) run only from the manually started "Installer smoke test" workflow, never on this machine: installing needs an elevated prompt, so do not install the service here without asking. `--dry-run` / `-DryRun` is safe to run here. Change the installers together with both test scripts. macOS has none.
 - Linux and macOS agent installers and service checks have never run on real systems.

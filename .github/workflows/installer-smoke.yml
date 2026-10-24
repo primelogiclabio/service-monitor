@@ -1,0 +1,36 @@
+name: Installer smoke test
+
+# Really installs the hub as a service (WinSW on Windows, systemd on Linux) on a disposable GitHub runner,
+# checks it, upgrades it, changes its port and removes it again. It is not part of CI: it runs only when
+# someone starts it from the Actions tab, for example after changing hub/service/. The pull request CI only
+# dry-runs the installers.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: install and remove (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build the hub jar
+        working-directory: hub
+        run: mvn -B -ntp -DskipTests package
+      - name: Install, check, upgrade and remove the service
+        if: runner.os == 'Linux'
+        run: sudo env "PATH=$PATH" bash hub/service/linux/smoke-test.sh
+      - name: Install, check, upgrade and remove the service
+        if: runner.os == 'Windows'
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File hub\service\windows\smoke-test.ps1

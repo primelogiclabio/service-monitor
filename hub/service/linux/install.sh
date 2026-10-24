@@ -1,77 +1,257 @@
 #!/usr/bin/env bash
 # Installs the Service Monitor hub as a systemd service. Run as root; safe to run again to upgrade.
 #
-#   sudo ./install.sh [--jar PATH] [--java PATH] [--port N]
+#   sudo ./install.sh [--jar PATH] [--java PATH] [--port N] [--dry-run]
 #
 # Layout: program /opt/svcmon-hub, settings /etc/svcmon-hub/application.yml, database /var/lib/svcmon-hub,
 # log in the journal (journalctl -u svcmon-hub). Runs as the system user svcmon-hub. An existing
-# application.yml and database are never touched.
+# application.yml and database are never touched, except for its port line when you pass --port.
 set -euo pipefail
 
 NAME=svcmon-hub
 APP_DIR=/opt/$NAME
 CONF_DIR=/etc/$NAME
 DATA_DIR=/var/lib/$NAME
+CONF=$CONF_DIR/application.yml
 UNIT=/etc/systemd/system/$NAME.service
 
 die() { echo "error: $*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Usage: sudo ./install.sh [--jar PATH] [--java PATH] [--port N]
+Usage: sudo ./install.sh [--jar PATH] [--java PATH] [--port N] [--dry-run]
 
   --jar PATH    hub jar to install (default: hub/target/svcmon-hub-*.jar next to this script's repo)
   --java PATH   java 21+ to run it with (default: java from PATH)
   --port N      HTTP port (default 8080 for a new install). On an existing install it changes server.port in
                 application.yml; without --port the port already in that file is kept.
+  --dry-run     print what the install would do and change nothing. In a terminal, run as root, it then asks
+                whether to go ahead (answer y or n, or type a different port number); otherwise it only
+                prints the plan.
 EOF
 }
 
 JAR=""
 JAVA=""
 PORT=""
+DRY_RUN=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --jar) [ $# -ge 2 ] || die "--jar needs a value"; JAR=$2; shift 2 ;;
     --java) [ $# -ge 2 ] || die "--java needs a value"; JAVA=$2; shift 2 ;;
     --port) [ $# -ge 2 ] || die "--port needs a value"; PORT=$2; shift 2 ;;
+    --dry-run) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
   esac
 done
 
-[ "$(id -u)" -eq 0 ] || die "run as root (sudo ./install.sh)"
-[ -d /run/systemd/system ] || die "systemd is not running on this machine"
-command -v curl >/dev/null || die "curl is needed to check that the hub started"
-if [ -n "$PORT" ]; then
-  case "$PORT" in *[!0-9]*) die "--port must be a number" ;; esac
-  { [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ]; } || die "--port must be between 1 and 65535"
-fi
-
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-if [ -z "$JAR" ]; then
-  for candidate in "$SCRIPT_DIR"/../../target/svcmon-hub-*.jar; do
-    [ -f "$candidate" ] || continue
-    [ -z "$JAR" ] || die "more than one jar in hub/target; pick one with --jar"
-    JAR=$candidate
-  done
-  [ -n "$JAR" ] || die "no jar found; build it (cd hub && mvn -DskipTests package) or pass --jar"
-fi
-[ -f "$JAR" ] || die "jar not found: $JAR"
+IS_ROOT=false
+[ "$(id -u)" -eq 0 ] && IS_ROOT=true
 
+valid_port() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+# ---- 1. Look at the machine and the inputs. Nothing here changes anything. ----
+
+problems=()
+problem() { problems+=("$*"); }
+
+[ "$IS_ROOT" = true ] || [ "$DRY_RUN" = true ] || problem "run as root (sudo ./install.sh)"
+[ -d /run/systemd/system ] || problem "systemd is not running on this machine"
+command -v curl >/dev/null || problem "curl is needed to check that the hub started"
+if [ -n "$PORT" ] && ! valid_port "$PORT"; then problem "--port must be a number from 1 to 65535"; fi
+
+if [ -z "$JAR" ]; then
+  matches=("$SCRIPT_DIR"/../../target/svcmon-hub-*.jar)
+  if [ ! -f "${matches[0]}" ]; then
+    problem "no jar found; build it (cd hub && mvn -DskipTests package) or pass --jar"
+  elif [ "${#matches[@]}" -gt 1 ]; then
+    problem "more than one jar in hub/target; pick one with --jar"
+  else
+    JAR=${matches[0]}
+  fi
+elif [ ! -f "$JAR" ]; then
+  problem "jar not found: $JAR"
+  JAR=""
+fi
+
+major=""
 if [ -z "$JAVA" ]; then
   JAVA=$(command -v java || true)
-  [ -n "$JAVA" ] || die "java not found on PATH; install Java 21 or pass --java"
+  [ -n "$JAVA" ] || problem "java not found on PATH; install Java 21 or pass --java"
 fi
-JAVA=$(readlink -f "$JAVA")
-[ -x "$JAVA" ] || die "not an executable: $JAVA"
-# The path goes into the unit file's ExecStart, where spaces and % mean something else.
-case "$JAVA" in *[[:space:]\|\&\\%]*) die "java path has a character the unit file cannot hold: $JAVA" ;; esac
-major=$("$JAVA" -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -n 1)
-{ [ -n "$major" ] && [ "$major" -ge 21 ]; } || die "$JAVA is not Java 21 or newer"
+if [ -n "$JAVA" ]; then
+  JAVA=$(readlink -f "$JAVA" || echo "$JAVA")
+  # The path goes into the unit file's ExecStart, where spaces and % mean something else.
+  bad_chars=false
+  case "$JAVA" in *[[:space:]\|\&\\%]*) bad_chars=true ;; esac
+  if [ ! -x "$JAVA" ]; then
+    problem "not an executable: $JAVA"
+  elif [ "$bad_chars" = true ]; then
+    problem "java path has a character the unit file cannot hold: $JAVA"
+  else
+    major=$("$JAVA" -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -n 1)
+    { [ -n "$major" ] && [ "$major" -ge 21 ]; } || problem "$JAVA is not Java 21 or newer"
+  fi
+fi
 
-# Everything below changes the machine.
-if ! id -u $NAME >/dev/null 2>&1; then
+user_exists=false; id -u $NAME >/dev/null 2>&1 && user_exists=true
+unit_exists=false; [ -f "$UNIT" ] && unit_exists=true
+was_active=false; systemctl is-active --quiet $NAME 2>/dev/null && was_active=true
+conf_exists=false; [ -e "$CONF" ] && conf_exists=true
+db_exists=false; [ -e "$DATA_DIR/svcmon.db" ] && db_exists=true
+conf_port=""
+# The settings file is readable by root only; a dry run as another user cannot see the port in it.
+[ -r "$CONF" ] && conf_port=$(sed -n -e 's/^  port: *\([0-9][0-9]*\).*/\1/p' -e 's/^server\.port: *\([0-9][0-9]*\).*/\1/p' "$CONF" | head -n 1)
+
+# Sets PLAN_PORT and PLAN_PORT_NOTE: --port, else the port in the settings file, else 8080.
+resolve_port() {
+  if [ -n "$PORT" ]; then
+    PLAN_PORT=$PORT
+    if [ "$conf_exists" = true ] && [ "$PORT" != "$conf_port" ]; then
+      PLAN_PORT_NOTE="--port; changes ${conf_port:-the port} in the settings file"
+    else
+      PLAN_PORT_NOTE="--port"
+    fi
+  elif [ "$conf_exists" = true ]; then
+    PLAN_PORT=${conf_port:-8080}
+    PLAN_PORT_NOTE="kept from $CONF"
+  else
+    PLAN_PORT=8080
+    PLAN_PORT_NOTE="default; change it with --port"
+  fi
+}
+
+# Prints what is listening on TCP port $1 and returns 0, or returns 1 when nothing is. The hub's own service
+# does not count when it is running on that port: it is stopped before the new one starts.
+port_busy() {
+  local p=$1 listening who=""
+  if [ "$was_active" = true ] && [ "$p" = "$conf_port" ]; then return 1; fi
+  if command -v ss >/dev/null; then
+    listening=$(ss -ltn "sport = :$p" 2>/dev/null | tail -n +2)
+    [ -n "$listening" ] || return 1
+    who=$(ss -ltnp "sport = :$p" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)",pid=\([0-9]*\).*/\1 (pid \2)/p' | head -n 1)
+  elif (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then
+    :
+  else
+    return 1
+  fi
+  echo "${who:-another program}"
+}
+
+resolve_port
+BUSY=""
+if [ -z "$PORT" ] || valid_port "$PORT"; then
+  BUSY=$(port_busy "$PLAN_PORT" || true)
+  # A dry run shows a busy port in the plan instead, so you can pick another at the prompt.
+  [ -z "$BUSY" ] || [ "$DRY_RUN" = true ] || problem "port $PLAN_PORT is already in use by $BUSY; choose another with --port"
+fi
+
+if [ "${#problems[@]}" -gt 0 ]; then
+  echo "Cannot install yet:" >&2
+  printf '  - %s\n' "${problems[@]}" >&2
+  exit 1
+fi
+
+# ---- 2. The plan ----
+
+print_plan() {
+  local mode n=0
+  if [ "$unit_exists" = true ]; then
+    mode="upgrade: the service is installed; its settings and data are kept"
+  elif [ "$conf_exists" = true ] || [ "$db_exists" = true ]; then
+    mode="reinstall over settings and data left by an earlier install"
+  else
+    mode="new install"
+  fi
+  resolve_port
+  local port=$PLAN_PORT status="free"
+  BUSY=$(port_busy "$port" || true)
+  [ -z "$BUSY" ] || status="IN USE by $BUSY"
+
+  step() { n=$((n + 1)); printf '    %d. %s\n' "$n" "$*"; }
+  echo "Install plan (nothing has been changed yet)"
+  printf '  %-8s %s\n' "Mode" "$mode"
+  printf '  %-8s %s\n' "Jar" "$JAR -> $APP_DIR/$NAME.jar"
+  printf '  %-8s %s\n' "Java" "$JAVA (version $major)"
+  printf '  %-8s %s\n' "Port" "$port ($PLAN_PORT_NOTE) - $status"
+  printf '  %-8s %s\n' "URL" "http://localhost:$port"
+  echo "  Steps:"
+  if [ "$user_exists" = true ]; then
+    step "use the existing system user $NAME"
+  else
+    step "create the system user $NAME (no login shell)"
+  fi
+  step "create or reuse $APP_DIR (root), $CONF_DIR (root:$NAME, 0750) and $DATA_DIR ($NAME, 0750)"
+  [ "$was_active" = false ] || step "stop the running $NAME service"
+  step "install the jar as $APP_DIR/$NAME.jar"
+  if [ "$conf_exists" = false ]; then
+    step "write $CONF with port $port and the data folder $DATA_DIR (0640)"
+  elif [ "$port" != "$conf_port" ]; then
+    step "keep $CONF, changing only its port line to $port"
+  else
+    step "keep $CONF as it is"
+  fi
+  step "write the systemd unit $UNIT (runs $JAVA as $NAME), reload systemd and enable it at boot"
+  step "start the service and wait up to 60 s for http://127.0.0.1:$port/api/v1/health"
+  if [ "$db_exists" = true ]; then
+    step "keep the existing database and its admin token"
+  elif [ "$conf_exists" = false ]; then
+    step "make an admin token for the new database: put it in the new settings file for the first start, check it works, print it once, remove it from the file"
+  else
+    step "no admin token is made here (existing settings file); the hub prints one to the journal on first start"
+  fi
+  echo "  Not touched: the firewall (open port $port yourself if agents connect from other machines), other services."
+  [ "$IS_ROOT" = true ] || echo "  A real install needs root: run it with sudo."
+  [ -z "$BUSY" ] || echo "  Blocked: port $port is in use by $BUSY, so the install would stop. Choose another with --port."
+}
+
+if [ "$DRY_RUN" = true ]; then
+  print_plan
+  if [ "$IS_ROOT" = false ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+    echo
+    if [ -n "$BUSY" ]; then
+      echo "Dry run only. The port is taken: choose another with --port before installing."
+      exit 1
+    fi
+    echo "Dry run only. Run again without --dry-run (as root) to install."
+    exit 0
+  fi
+  while true; do
+    echo
+    printf 'Proceed with the real installation? [y/N], or type a port number to change it: '
+    read -r answer || answer=n
+    case "$answer" in
+      y|Y|yes|YES)
+        if [ -n "$BUSY" ]; then
+          echo "Port $PLAN_PORT is in use by $BUSY. Type another port number, or n to cancel."
+          continue
+        fi
+        break
+        ;;
+      ''|n|N|no|NO) echo "Cancelled; nothing was changed."; exit 0 ;;
+      *[!0-9]*) echo "Please answer y, n, or a port number." ;;
+      *)
+        if valid_port "$answer"; then
+          PORT=$answer
+          echo
+          print_plan
+        else
+          echo "A port is a number from 1 to 65535."
+        fi
+        ;;
+    esac
+  done
+  echo
+fi
+
+# ---- 3. The install. Everything below changes the machine. ----
+
+if [ "$user_exists" = false ]; then
   useradd --system --user-group --home-dir "$DATA_DIR" --no-create-home \
     --shell "$(command -v nologin || echo /usr/sbin/nologin)" $NAME
   echo "created system user $NAME"
@@ -81,9 +261,7 @@ install -d -m 0755 -o root -g root "$APP_DIR"
 install -d -m 0750 -o root -g $NAME "$CONF_DIR"
 install -d -m 0750 -o $NAME -g $NAME "$DATA_DIR"
 
-was_active=false
-if systemctl is-active --quiet $NAME; then
-  was_active=true
+if [ "$was_active" = true ]; then
   systemctl stop $NAME
 fi
 
@@ -96,10 +274,8 @@ mv -f "$APP_DIR/.$NAME.jar.new" "$APP_DIR/$NAME.jar"
 # it to you once and takes it out of the file again. A settings file that already exists is only ever edited
 # for --port, and only its port line.
 TOKEN=""
-CONF=$CONF_DIR/application.yml
-if [ -f "$CONF" ]; then
+if [ "$conf_exists" = true ]; then
   echo "kept existing $CONF"
-  conf_port=$(sed -n -e 's/^  port: *\([0-9][0-9]*\).*/\1/p' -e 's/^server\.port: *\([0-9][0-9]*\).*/\1/p' "$CONF" | head -n 1)
   if [ -z "$PORT" ]; then
     PORT=${conf_port:-8080}
   elif [ "$PORT" != "$conf_port" ]; then
@@ -117,7 +293,7 @@ if [ -f "$CONF" ]; then
 else
   PORT=${PORT:-8080}
   token_line=""
-  if [ ! -e "$DATA_DIR/svcmon.db" ]; then
+  if [ "$db_exists" = false ]; then
     TOKEN="svm_a_$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     token_line="  bootstrap-admin-token: $TOKEN"
   fi
@@ -173,12 +349,12 @@ echo
 echo "Service Monitor hub is running: $url  (service $NAME, starts at boot)"
 echo "  settings  $CONF"
 echo "  database  $DATA_DIR"
-echo "  log       journalctl -u $NAME"
+echo "  log       journalctl -u $NAME  (the start-up summary lists what it watches)"
 if [ -n "$TOKEN" ]; then
   echo
   echo "Admin token (shown once, store it somewhere safe; only its hash is kept):"
   echo "  $TOKEN"
-elif [ -e "$DATA_DIR/svcmon.db" ] && [ "$was_active" = true ]; then
+elif [ "$db_exists" = true ] && [ "$was_active" = true ]; then
   echo "Upgraded; the existing database and admin token are unchanged."
 else
   echo "No admin token was created by this run. A new database prints one to the journal on first start"

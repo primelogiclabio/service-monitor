@@ -51,7 +51,7 @@ Service Monitor hub 0.1.0 is ready
 
 ### Run the hub as a service
 
-To start at boot and restart after a crash, install it as a systemd service (Linux) or a Windows service through [WinSW](https://github.com/winsw/winsw), and remove it again with one command each. See [hub/service/README.md](hub/service/README.md).
+To start at boot and restart after a crash, install it as a systemd service (Linux) or a Windows service through [WinSW](https://github.com/winsw/winsw), and remove it again with one command each. Add `--dry-run` (`-DryRun` on Windows) to see exactly what the install would do first, change the port with `--port` (`-Port`), and accept or cancel at the prompt. See [hub/service/README.md](hub/service/README.md).
 
 ```bash
 sudo hub/service/linux/install.sh        # prints the admin token once

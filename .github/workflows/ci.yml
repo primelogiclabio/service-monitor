@@ -72,10 +72,10 @@ jobs:
             echo "built $target"
           done
 
-  # Installs the hub as a real service (WinSW on Windows, systemd on Linux), checks it, upgrades it and
-  # removes it again. The hosted runners are elevated and the Linux ones run systemd.
-  hub-service:
-    name: hub service (${{ matrix.os }})
+  # The service installers are only ever dry-run here: the plan is printed, bad input is refused and nothing on the
+  # runner changes. The real install and uninstall tests are in installer-smoke.yml and run only when started by hand.
+  installer-dry-run:
+    name: installer dry run (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -91,23 +91,26 @@ jobs:
       - name: Build the hub jar
         working-directory: hub
         run: mvn -B -ntp -DskipTests package
-      - name: Install, check, upgrade and remove the service
+      - name: Dry run
         if: runner.os == 'Linux'
-        run: sudo env "PATH=$PATH" bash hub/service/linux/smoke-test.sh
-      - name: Install, check, upgrade and remove the service
+        run: bash hub/service/linux/dry-run-test.sh
+      - name: Dry run as root, including the prompt
+        if: runner.os == 'Linux'
+        run: sudo env "PATH=$PATH" bash hub/service/linux/dry-run-test.sh
+      - name: Dry run
         if: runner.os == 'Windows'
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File hub\service\windows\smoke-test.ps1
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File hub\service\windows\dry-run-test.ps1
 
   # One stable name to require on main, so the matrix above can change without touching branch protection.
   ci-ok:
     name: CI passed
     if: always()
-    needs: [hub, agent, hub-service]
+    needs: [hub, agent, installer-dry-run]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed
         run: |
-          echo "hub: ${{ needs.hub.result }}, agent: ${{ needs.agent.result }}, hub-service: ${{ needs.hub-service.result }}"
-          if [ "${{ needs.hub.result }}" != "success" ] || [ "${{ needs.agent.result }}" != "success" ] || [ "${{ needs.hub-service.result }}" != "success" ]; then
+          echo "hub: ${{ needs.hub.result }}, agent: ${{ needs.agent.result }}, installer-dry-run: ${{ needs.installer-dry-run.result }}"
+          if [ "${{ needs.hub.result }}" != "success" ] || [ "${{ needs.agent.result }}" != "success" ] || [ "${{ needs.installer-dry-run.result }}" != "success" ]; then
             exit 1
           fi
