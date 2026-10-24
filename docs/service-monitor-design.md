@@ -66,7 +66,7 @@ Rules that keep it simple:
 
 ### Scenario: the hub restarts
 
-The agent buffers a few minutes of results in memory and replays them when the connection returns, so a restart leaves no gap and raises no false alert.
+The agent buffers a few minutes of results in memory and replays them when the connection returns, so a restart leaves no gap and raises no false alert. Once the hub is ready again it logs a start-up summary (listening address, database, enabled alert channels, and the checks and servers it watches, by name and type only) so the service log shows what came back without calling the API.
 
 ## 4. What gets monitored
 
