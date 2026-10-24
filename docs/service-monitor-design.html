@@ -231,7 +231,7 @@ checks:
     <li>About 512 MB RAM (1 GB comfortable with the UI) and about 200 MB disk plus the SQLite file.</li>
     <li>One inbound port for agents, CLI and UI: plain HTTP on 8080 by default. TLS is terminated at the load balancer in front of the hub, so the hub itself needs no certificate.</li>
     <li>The system <code>ping</code> command for ICMP checks. In Docker, the image needs <code>ping</code> and the <code>NET_RAW</code> capability.</li>
-    <li>Run as a systemd unit, a Windows service through WinSW (MIT license) or a container. <code>hub/service/</code> has install and uninstall scripts for the first two; they run the hub as an unprivileged account and keep settings in a YAML file, not the registry.</li>
+    <li>Run as a systemd unit, a Windows service through WinSW (MIT license) or a container. <code>hub/service/</code> has install and uninstall scripts for the first two; they run the hub as an unprivileged account and keep settings in a YAML file, not the registry. The Windows installer takes WinSW from <code>-WinSWPath</code>, else from the <code>WinSW-x64.exe</code> beside the script (the Windows hub package ships one, so installing from it needs no download), else downloads the pinned release. Whichever it uses must match the SHA-256 pinned in the script; a wrong copy is an error, never a silent download.</li>
     <li>Not needed: a database server, web server, reverse proxy, Node or Python.</li>
   </ul>
   <p><b>Monitored server (agent):</b></p>
@@ -244,7 +244,7 @@ checks:
 
 <section id="packaging">
   <h2>6. Packaging and the JRE question</h2>
-  <p><b>Status: not built yet.</b> Today the hub is a plain jar that runs on a Java 21 or newer that the admin installs, and the service installers in <code>hub/service/</code> use that Java. The <code>jlink</code> bundle and the release pipeline below are the plan.</p>
+  <p><b>Status: not built yet.</b> Today the hub is a plain jar that runs on a Java 21 or newer that the admin installs, and the service installers in <code>hub/service/</code> use that Java. The <code>jlink</code> bundle and the release pipeline below are the plan. The one piece that exists is a manually started workflow that builds the Windows hub package (the jar, the installer scripts and WinSW) and keeps it as a workflow artifact; it is not published as a release.</p>
   <p>Bundling a runtime does not add risk by itself. It moves the patching duty from the admin's operating system to the project: a bundled runtime is not updated by <code>apt</code> or Windows Update, so it only gets security fixes when a new release ships. The hub's fat JAR bundles Spring, Tomcat and other libraries with the same property, so a release pipeline is needed regardless.</p>
   <p>Two downloads:</p>
   <ul>
@@ -304,7 +304,7 @@ checks:
   <div class="callout warn">
     <ul>
       <li><b>Untested on real targets:</b> the agent was run end to end on Windows 11 only. The Linux (systemd) and macOS (launchd) service installers and service checks compile and pass <code>go vet</code> but have not been run on those systems. On Windows, <code>agent install</code> was only checked for its not-elevated error message; installing the service needs an Administrator prompt.</li>
-      <li><b>Hub service installers:</b> CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server. There is no macOS installer.</li>
+      <li><b>Hub service installers:</b> CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server; its last install runs from the Windows hub package. There is no macOS installer.</li>
       <li><b>Java version:</b> the machine has Java 21, so v1 targets 21. This doc assumes 25 is a long-term-support release but that could not be confirmed from Oracle's roadmap page (it returned HTTP 403).</li>
       <li><b>macOS ping:</b> unprivileged ICMP on macOS is not confirmed by the sources used.</li>
       <li><b>Beszel on Windows services:</b> not confirmed either way from the pages read.</li>

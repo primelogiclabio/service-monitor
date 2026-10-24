@@ -1,0 +1,36 @@
+name: Windows hub package
+
+# Builds the zip that installs the hub as a Windows service without a download: the hub jar, hub/service/windows
+# and WinSW. WinSW is downloaded here and must match the SHA-256 pinned in install.ps1; it is never stored in the
+# repository. It is not part of CI: it runs only when someone starts it from the Actions tab. It uploads the zip as
+# a workflow artifact and nothing else (no release, no tag, no upload anywhere).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build the hub jar
+        working-directory: hub
+        run: mvn -B -ntp -DskipTests package
+      - name: Build the package
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File hub\service\windows\build-package.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: svcmon-hub-windows-x64
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14

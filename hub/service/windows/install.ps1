@@ -11,7 +11,8 @@ pass -Port. Nothing is written to the registry except the service entry that Win
 service. Installing needs an elevated PowerShell; -DryRun does not.
 
 .PARAMETER JarPath
-The hub jar. Default: hub\target\svcmon-hub-*.jar in this repository.
+The hub jar. Default: the svcmon-hub-*.jar beside this script (the release package), else hub\target\svcmon-hub-*.jar
+in this repository.
 
 .PARAMETER JavaPath
 java.exe of a Java 21 or newer. Default: JAVA_HOME, then PATH.
@@ -21,7 +22,9 @@ HTTP port (default 8080 for a new install). On an existing install it changes se
 without -Port the port already in that file is kept.
 
 .PARAMETER WinSWPath
-A copy of the pinned WinSW release to use instead of downloading it. It must match the pinned SHA-256.
+A copy of the pinned WinSW release to use. It must match the pinned SHA-256. Without it the installer uses
+WinSW-x64.exe beside this script (the release package has one), and only when there is none downloads the pinned
+release. A copy that does not match the pinned SHA-256 is an error; it is never replaced by a download.
 
 .PARAMETER DryRun
 Print what the install would do and change nothing. In an elevated console it then asks whether to go ahead
@@ -55,10 +58,13 @@ function Find-Jar {
         if (-not (Test-Path -LiteralPath $JarPath -PathType Leaf)) { throw "Jar not found: $JarPath" }
         return (Resolve-Path -LiteralPath $JarPath).Path
     }
-    $found = @(Get-ChildItem -Path (Join-Path $PSScriptRoot '..\..\target') -Filter 'svcmon-hub-*.jar' -ErrorAction SilentlyContinue)
-    if ($found.Count -eq 0) { throw 'No jar found. Build it (cd hub; mvn -DskipTests package) or pass -JarPath.' }
-    if ($found.Count -gt 1) { throw 'More than one jar in hub\target. Pick one with -JarPath.' }
-    return $found[0].FullName
+    # Beside this script is the release package; hub\target is a source checkout.
+    foreach ($dir in @($PSScriptRoot, (Join-Path $PSScriptRoot '..\..\target'))) {
+        $found = @(Get-ChildItem -Path $dir -Filter 'svcmon-hub-*.jar' -ErrorAction SilentlyContinue)
+        if ($found.Count -gt 1) { throw "More than one jar in $dir. Pick one with -JarPath." }
+        if ($found.Count -eq 1) { return $found[0].FullName }
+    }
+    throw 'No jar found. Build it (cd hub; mvn -DskipTests package) or pass -JarPath.'
 }
 
 function Find-Java {
@@ -87,24 +93,51 @@ function Find-Java {
     return $java
 }
 
+function Assert-WinSWHash {
+    param([string]$File, [string]$Origin)
+    $actual = (Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash
+    if ($actual -ne $WinSWSha256) {
+        throw "$Origin ($File) does not match the pinned SHA-256 of $WinSWAsset $WinSWVersion (expected $WinSWSha256, got $actual); not installing it."
+    }
+}
+
+# Decides where WinSW comes from and sets WinSWSource ('param', 'beside' or 'download') and WinSWFile, in this order:
+# -WinSWPath, then WinSW-x64.exe beside this script (the release package ships one), then a download, which is
+# what running from a source checkout does. A file that is found but is not the pinned release is an error: it is
+# never swapped for a download, so a wrong or tampered copy cannot go unnoticed.
+function Resolve-WinSW {
+    $script:WinSWFile = $null
+    if ($WinSWPath) {
+        if (-not (Test-Path -LiteralPath $WinSWPath -PathType Leaf)) { throw "WinSW file not found: $WinSWPath" }
+        $script:WinSWSource = 'param'
+        $script:WinSWFile = (Resolve-Path -LiteralPath $WinSWPath).Path
+        $script:WinSWOrigin = 'The -WinSWPath file'
+    } elseif (Test-Path -LiteralPath (Join-Path $PSScriptRoot $WinSWAsset) -PathType Leaf) {
+        $script:WinSWSource = 'beside'
+        $script:WinSWFile = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot $WinSWAsset)).Path
+        $script:WinSWOrigin = "The $WinSWAsset beside this script"
+    } else {
+        $script:WinSWSource = 'download'
+        $script:WinSWOrigin = 'The downloaded file'
+        return
+    }
+    Assert-WinSWHash $script:WinSWFile $script:WinSWOrigin
+}
+
+# Puts the checked WinSW at $Target. A local copy is checked again here, in case it changed since the plan.
 function Get-WinSW {
     param([string]$Target)
-    $source = $WinSWPath
+    $source = $script:WinSWFile
     $temp = $null
-    if (-not $source) {
+    if ($script:WinSWSource -eq 'download') {
         $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("winsw-" + [guid]::NewGuid().ToString('N') + '.exe')
         Write-Host "Downloading $WinSWAsset $WinSWVersion from github.com/winsw/winsw ..."
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $WinSWUrl -OutFile $temp -UseBasicParsing
         $source = $temp
-    } elseif (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-        throw "WinSW file not found: $source"
     }
     try {
-        $actual = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-        if ($actual -ne $WinSWSha256) {
-            throw "WinSW $WinSWAsset does not match the pinned SHA-256 (expected $WinSWSha256, got $actual); not installing it."
-        }
+        Assert-WinSWHash $source $script:WinSWOrigin
         Copy-Item -LiteralPath $source -Destination $Target -Force
     } finally {
         if ($temp -and (Test-Path -LiteralPath $temp)) { Remove-Item -LiteralPath $temp -Force }
@@ -191,8 +224,12 @@ if (-not $isAdmin -and -not $DryRun) { $problems += 'run this from an elevated P
 $jar = $null
 $java = $null
 $script:JavaMajor = $null
+$script:WinSWSource = $null
+$script:WinSWFile = $null
+$script:WinSWOrigin = $null
 try { $jar = Find-Jar } catch { $problems += $_.Exception.Message }
 try { $java = Find-Java } catch { $problems += $_.Exception.Message }
+try { Resolve-WinSW } catch { $problems += $_.Exception.Message }
 Resolve-Port
 $script:Busy = Get-PortOwner $script:PlanPort
 # A dry run shows a busy port in the plan instead, so you can pick another at the prompt.
@@ -224,8 +261,11 @@ function Show-Plan {
     Write-Host ("  {0,-8} {1}" -f 'URL', "http://localhost:$effective")
     Write-Host '  Steps:'
     if ($existing) { Step "stop the running $ServiceName service and remove its registration (files and data stay)" }
-    if ($WinSWPath) { Step "copy WinSW from $WinSWPath after checking it matches the pinned SHA-256" }
-    else { Step "download $WinSWAsset $WinSWVersion (about 18 MB) from github.com/winsw/winsw, check it matches the pinned SHA-256 and save it as $wrapper" }
+    switch ($script:WinSWSource) {
+        'param' { Step "copy WinSW $WinSWVersion from -WinSWPath ($script:WinSWFile; matches the pinned SHA-256) to $wrapper" }
+        'beside' { Step "copy WinSW $WinSWVersion from the copy beside this script ($script:WinSWFile; matches the pinned SHA-256) to $wrapper; nothing is downloaded" }
+        default { Step "download $WinSWAsset $WinSWVersion (about 18 MB) from github.com/winsw/winsw, check it matches the pinned SHA-256 and save it as $wrapper (no -WinSWPath, and no $WinSWAsset beside this script)" }
+    }
     Step "create $InstallDir (program) and $DataDir (settings, data, logs), and copy the jar into the first"
     if (-not $confExists) { Step "write $conf with port $effective and the data folder $(Join-Path $DataDir 'data')" }
     elseif ($effective -ne $confPort) { Step "keep $conf, changing only its port line to $effective" }

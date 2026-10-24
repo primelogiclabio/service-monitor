@@ -2,3 +2,10 @@ Service Monitor
 Copyright 2026 primelogiclabio
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The Windows hub package (hub/service/windows/build-package.ps1, built by the "Windows hub package" workflow)
+also redistributes, unmodified, the service wrapper WinSW v2.12.0 (WinSW-x64.exe) from
+https://github.com/winsw/winsw, which is licensed under the MIT License:
+Copyright (c) 2008-2020 Kohsuke Kawaguchi, Sun Microsystems, Inc., CloudBees, Inc., Oleg Nenashev and other
+contributors. The package carries WinSW's license text as WinSW-LICENSE.txt (a copy is in
+hub/service/windows/WinSW-LICENSE.txt). The WinSW binary itself is not stored in this repository.

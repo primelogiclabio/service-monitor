@@ -12,7 +12,7 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 | Agent (`svcmon agent run`): service, CPU, memory, disk, plus HTTP/TCP/ping from the server's side | Built; unit tests and a run against a real hub on Windows 11 |
 | CLI (`svcmon status`, `check`, `token`, ...) | Built, same binary as the agent |
 | Agent service install (`svcmon agent install`: Windows service, systemd unit, macOS launchd plist) | Written and cross-compiled; only the Windows not-elevated error path was run |
-| Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners. No macOS installer |
+| Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners; another builds a Windows package with the jar and WinSW so the install needs no download (not published as a release yet). No macOS installer |
 | Alert channels | Webhook (optionally signed), Slack, Discord and email, plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub can serve it (`svcmon.ui-dir`) or allow it from another address (`svcmon.cors-allowed-origins`) |
 | Multi-hub console | Not started |
@@ -52,7 +52,7 @@ Service Monitor hub 0.1.0 is ready
 
 ### Run the hub as a service
 
-To start at boot and restart after a crash, install it as a systemd service (Linux) or a Windows service through [WinSW](https://github.com/winsw/winsw), and remove it again with one command each. Add `--dry-run` (`-DryRun` on Windows) to see exactly what the install would do first, change the port with `--port` (`-Port`), and accept or cancel at the prompt. See [hub/service/README.md](hub/service/README.md).
+To start at boot and restart after a crash, install it as a systemd service (Linux) or a Windows service through [WinSW](https://github.com/winsw/winsw) (the Windows package includes it, so that install needs no download), and remove it again with one command each. Add `--dry-run` (`-DryRun` on Windows) to see exactly what the install would do first, change the port with `--port` (`-Port`), and accept or cancel at the prompt. See [hub/service/README.md](hub/service/README.md).
 
 ```bash
 sudo hub/service/linux/install.sh        # prints the admin token once

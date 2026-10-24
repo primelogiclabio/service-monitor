@@ -8,7 +8,7 @@ A free, cross-platform monitor: a Java hub, a small Go agent and CLI, and a sepa
 |---|---|---|
 | `hub/` | The hub: scheduler, SQLite, REST API, tokens, alerts, optional UI hosting | Java 21, Spring Boot 4.1, Maven, Flyway |
 | `agent/` | `svcmon`: the agent (service, CPU, memory, disk, network checks) and the CLI, one binary | Go 1.27, stdlib plus gopsutil, pro-bing, x/sys |
-| `hub/service/` | Install and uninstall scripts for the hub as a service, with their dry-run and smoke tests | Bash, PowerShell, WinSW, systemd |
+| `hub/service/` | Install and uninstall scripts for the hub as a service, with their dry-run and smoke tests, and `windows/build-package.ps1` for the Windows package (jar, scripts, WinSW) | Bash, PowerShell, WinSW, systemd |
 | `docs/` | Design document, Markdown and self-contained HTML (keep both in sync) | |
 | `../service-monitor-ui` | The web dashboard: its own repository, `primelogiclabio/service-monitor-ui` | Svelte 5, Vite 6, uPlot |
 
@@ -63,4 +63,5 @@ Run these from the folder shown. Windows is the main development machine, in Pow
 
 - The multi-hub console role is not built. The dashboard has no alerts page yet (the API is ready).
 - The hub service installers (`hub/service/`: WinSW on Windows, systemd on Linux) are only dry-run in CI (the `dry-run-test` scripts, job "installer dry run"). Their real install/uninstall tests (`smoke-test` scripts) run only from the manually started "Installer smoke test" workflow, never on this machine: installing needs an elevated prompt, so do not install the service here without asking. `--dry-run` / `-DryRun` is safe to run here. Change the installers together with both test scripts. macOS has none.
+- WinSW is never committed (`*.exe` is gitignored). `install.ps1` pins its version and SHA-256 once; it uses `-WinSWPath`, then a `WinSW-x64.exe` beside the script, then a download, and a copy with the wrong hash is an error. The manually started "Windows hub package" workflow runs `build-package.ps1` and only uploads the zip as a workflow artifact; there is no release process yet.
 - Linux and macOS agent installers and service checks have never run on real systems.

@@ -129,7 +129,7 @@ checks:
 - About 512 MB RAM (1 GB comfortable with the UI) and about 200 MB disk plus the SQLite file.
 - One inbound port for agents, CLI and UI: plain HTTP on 8080 by default. TLS is terminated at the load balancer in front of the hub, so the hub itself needs no certificate.
 - The system `ping` command for ICMP checks. In Docker, the image needs `ping` and the `NET_RAW` capability.
-- Run as a systemd unit, a Windows service through WinSW (MIT license) or a container. `hub/service/` has install and uninstall scripts for the first two; they run the hub as an unprivileged account and keep settings in a YAML file, not the registry.
+- Run as a systemd unit, a Windows service through WinSW (MIT license) or a container. `hub/service/` has install and uninstall scripts for the first two; they run the hub as an unprivileged account and keep settings in a YAML file, not the registry. The Windows installer takes WinSW from `-WinSWPath`, else from the `WinSW-x64.exe` beside the script (the Windows hub package ships one, so installing from it needs no download), else downloads the pinned release. Whichever it uses must match the SHA-256 pinned in the script; a wrong copy is an error, never a silent download.
 - Not needed: a database server, web server, reverse proxy, Node or Python.
 
 **Monitored server (agent):**
@@ -140,7 +140,7 @@ checks:
 
 ## 6. Packaging and the JRE question
 
-**Status: not built yet.** Today the hub is a plain jar that runs on a Java 21 or newer that the admin installs, and the service installers in `hub/service/` use that Java. The `jlink` bundle and the release pipeline below are the plan.
+**Status: not built yet.** Today the hub is a plain jar that runs on a Java 21 or newer that the admin installs, and the service installers in `hub/service/` use that Java. The `jlink` bundle and the release pipeline below are the plan. The one piece that exists is a manually started workflow that builds the Windows hub package (the jar, the installer scripts and WinSW) and keeps it as a workflow artifact; it is not published as a release.
 
 Bundling a runtime does not add risk by itself. It moves the patching duty from the admin's operating system to the project: a bundled runtime is not updated by `apt` or Windows Update, so it only gets security fixes when a new release ships. The hub's fat JAR bundles Spring, Tomcat and other libraries with the same property, so a release pipeline is needed regardless.
 
@@ -188,7 +188,7 @@ Keeping it safe:
 ## 10. Open questions and limits
 
 - **Untested on real targets:** the agent was run end to end on Windows 11 only. The Linux (systemd) and macOS (launchd) service installers and service checks compile and pass `go vet` but have not been run on those systems. On Windows, `agent install` was only checked for its not-elevated error message; installing the service needs an Administrator prompt.
-- **Hub service installers:** CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server. There is no macOS installer.
+- **Hub service installers:** CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server; its last install runs from the Windows hub package. There is no macOS installer.
 - **Java version:** the machine has Java 21, so v1 targets 21. This doc assumes 25 is a long-term-support release but that could not be confirmed from Oracle's roadmap page (it returned HTTP 403).
 - **macOS ping:** unprivileged ICMP on macOS is not confirmed by the sources used.
 - **Beszel on Windows services:** not confirmed either way from the pages read.
