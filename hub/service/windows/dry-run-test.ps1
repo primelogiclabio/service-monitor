@@ -62,6 +62,21 @@ Check 'names the missing jar' { Has 'Jar not found: C:\nonexistent\hub.jar' }
 Check 'names the java problem' { Has 'is not Java 21 or newer' }
 Check 'lists them under one heading' { Has 'Cannot install yet:' }
 
+Write-Host '== a port that is already taken is flagged'
+$listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 19095)
+$listener.Start()
+try {
+    Run ($jarArgs + '-DryRun', '-Port', '19095')
+    Check 'a dry run on the taken port exits 1' { $script:Code -eq 1 }
+    Check 'the plan marks the port IN USE' { $script:Out -match 'Port\s+19095 \(-Port\) - IN USE by' }
+    Check 'the plan says the install would stop' { Has 'Blocked: port 19095 is in use by' }
+} finally {
+    $listener.Stop()
+}
+Run ($jarArgs + '-DryRun', '-Port', '19095')
+Check 'once it is released the port is reported free' { $script:Out -match 'Port\s+19095 \(-Port\) - free' }
+Check 'and the dry run exits 0' { $script:Code -eq 0 }
+
 Write-Host '== nothing was changed'
 $after = State
 Check "service and folders are as they were ($before)" { $before -eq $after }

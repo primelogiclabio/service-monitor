@@ -52,11 +52,31 @@ check "names the missing jar" has "jar not found: /nonexistent/hub.jar"
 check "names the java problem" has "is not Java 21 or newer"
 check "lists them under one heading" has "Cannot install yet:"
 
+LISTENER=""
+trap '[ -z "$LISTENER" ] || kill "$LISTENER" 2>/dev/null || true' EXIT
+if command -v python3 >/dev/null && python3 -c 'import socket' 2>/dev/null; then
+  echo "== a port that is already taken is flagged"
+  python3 -c 'import socket, time; s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", 19095)); s.listen(); time.sleep(120)' &
+  LISTENER=$!
+  sleep 1
+  run "${JAR_ARGS[@]}" --dry-run --port 19095
+  check "a dry run on the taken port exits 1" test "$CODE" -eq 1
+  check "the plan marks the port IN USE" has "Port     19095 (--port) - IN USE by"
+  check "the plan says the install would stop" has "Blocked: port 19095 is in use by"
+  run "${JAR_ARGS[@]}" --dry-run --port 19096
+  check "a free port is reported free" has "Port     19096 (--port) - free"
+  check "and the dry run exits 0" test "$CODE" -eq 0
+fi
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "== a real run without root is refused"
   run "${JAR_ARGS[@]}"
   check "exits 1" test "$CODE" -eq 1
   check "asks for root" has "run as root"
+  if [ -n "$LISTENER" ]; then
+    run "${JAR_ARGS[@]}" --port 19095
+    check "a real run also names the taken port" has "port 19095 is already in use by"
+  fi
 fi
 
 if [ "$(id -u)" -eq 0 ] && command -v script >/dev/null && [ -d /run/systemd/system ]; then

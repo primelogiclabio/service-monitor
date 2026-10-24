@@ -138,19 +138,6 @@ $db = Join-Path $DataDir 'data\svcmon.db'
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $portGiven = $PSBoundParameters.ContainsKey('Port')
 
-$problems = @()
-if (-not $isAdmin -and -not $DryRun) { $problems += 'run this from an elevated PowerShell (Run as administrator); -DryRun works without' }
-$jar = $null
-$java = $null
-$script:JavaMajor = $null
-try { $jar = Find-Jar } catch { $problems += $_.Exception.Message }
-try { $java = Find-Java } catch { $problems += $_.Exception.Message }
-if ($problems.Count -gt 0) {
-    Write-Host 'Cannot install yet:'
-    $problems | ForEach-Object { Write-Host "  - $_" }
-    exit 1
-}
-
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 $confExists = Test-Path -LiteralPath $conf
 $dbExists = Test-Path -LiteralPath $db
@@ -162,30 +149,78 @@ if ($confExists) {
     } catch { }   # a dry run without rights to the file cannot see the port in it
 }
 
+# Sets PlanPort and PlanPortNote: -Port, else the port in the settings file, else 8080.
+function Resolve-Port {
+    if ($portGiven) {
+        $script:PlanPort = $Port
+        $script:PlanPortNote = if ($confExists -and $Port -ne $confPort) { '-Port; changes the port in the settings file' } else { '-Port' }
+    } elseif ($confExists) {
+        $script:PlanPort = if ($confPort) { $confPort } else { 8080 }
+        $script:PlanPortNote = "kept from $conf"
+    } else {
+        $script:PlanPort = 8080
+        $script:PlanPortNote = 'default; change it with -Port'
+    }
+}
+
+# Returns what holds TCP port $p, or $null when it is free. The hub's own running service does not count on its
+# own port: it is stopped before the new one starts. Binding is the test, because that is what the hub will do
+# (and it also catches the port ranges Windows reserves), then the owner is looked up for the message.
+function Get-PortOwner([int]$p) {
+    if ($existing -and $existing.Status -eq 'Running' -and $confPort -eq $p) { return $null }
+    # Windows lets a wildcard bind succeed next to a listener on one address, so look at the listeners first.
+    try {
+        $c = Get-NetTCPConnection -State Listen -LocalPort $p -ErrorAction Stop | Select-Object -First 1
+        $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
+        if ($proc) { return "$($proc.ProcessName) (pid $($c.OwningProcess))" }
+        return 'another program'
+    } catch { }   # nothing listening (the cmdlet errors when it finds none), or the cmdlet is missing
+    try {
+        $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $p)
+        $listener.ExclusiveAddressUse = $true
+        $listener.Start()
+        $listener.Stop()
+        return $null
+    } catch {
+        return 'another program, or a port range Windows has reserved'
+    }
+}
+
+$problems = @()
+if (-not $isAdmin -and -not $DryRun) { $problems += 'run this from an elevated PowerShell (Run as administrator); -DryRun works without' }
+$jar = $null
+$java = $null
+$script:JavaMajor = $null
+try { $jar = Find-Jar } catch { $problems += $_.Exception.Message }
+try { $java = Find-Java } catch { $problems += $_.Exception.Message }
+Resolve-Port
+$script:Busy = Get-PortOwner $script:PlanPort
+# A dry run shows a busy port in the plan instead, so you can pick another at the prompt.
+if ($script:Busy -and -not $DryRun) { $problems += "port $($script:PlanPort) is already in use by $($script:Busy); choose another with -Port" }
+if ($problems.Count -gt 0) {
+    Write-Host 'Cannot install yet:'
+    $problems | ForEach-Object { Write-Host "  - $_" }
+    exit 1
+}
+
 # ---- 2. The plan ----
 
 function Show-Plan {
     if ($existing) { $mode = 'upgrade: the service is installed; its settings and data are kept' }
     elseif ($confExists -or $dbExists) { $mode = 'reinstall over settings and data left by an earlier install' }
     else { $mode = 'new install' }
-    if ($portGiven) {
-        $effective = $Port
-        $note = if ($confExists -and $Port -ne $confPort) { '-Port; changes the port in the settings file' } else { '-Port' }
-    } elseif ($confExists) {
-        $effective = if ($confPort) { $confPort } else { 8080 }
-        $note = "kept from $conf"
-    } else {
-        $effective = 8080
-        $note = 'default; change it with -Port'
-    }
-    $script:PlanPort = $effective
+    Resolve-Port
+    $effective = $script:PlanPort
+    $note = $script:PlanPortNote
+    $script:Busy = Get-PortOwner $effective
+    $status = if ($script:Busy) { "IN USE by $($script:Busy)" } else { 'free' }
     $script:n = 0
     function Step([string]$text) { $script:n++; Write-Host ("    {0}. {1}" -f $script:n, $text) }
     Write-Host 'Install plan (nothing has been changed yet)'
     Write-Host ("  {0,-8} {1}" -f 'Mode', $mode)
     Write-Host ("  {0,-8} {1}" -f 'Jar', "$jar -> $(Join-Path $InstallDir "$ServiceName.jar")")
     Write-Host ("  {0,-8} {1}" -f 'Java', "$java (version $script:JavaMajor)")
-    Write-Host ("  {0,-8} {1}" -f 'Port', "$effective ($note)")
+    Write-Host ("  {0,-8} {1}" -f 'Port', "$effective ($note) - $status")
     Write-Host ("  {0,-8} {1}" -f 'URL', "http://localhost:$effective")
     Write-Host '  Steps:'
     if ($existing) { Step "stop the running $ServiceName service and remove its registration (files and data stay)" }
@@ -204,6 +239,7 @@ function Show-Plan {
     Write-Host "  Registry: only the service entry HKLM\SYSTEM\CurrentControlSet\Services\$ServiceName that Windows creates for every service."
     Write-Host "  Not touched: the firewall (open port $effective yourself if agents connect from other machines), other services."
     if (-not $isAdmin) { Write-Host '  A real install needs an elevated PowerShell (Run as administrator).' }
+    if ($script:Busy) { Write-Host "  Blocked: port $effective is in use by $($script:Busy), so the install would stop. Choose another with -Port." }
 }
 
 if ($DryRun) {
@@ -211,13 +247,23 @@ if ($DryRun) {
     $canAsk = $isAdmin -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
     if (-not $canAsk) {
         Write-Host ''
+        if ($script:Busy) {
+            Write-Host 'Dry run only. The port is taken: choose another with -Port before installing.'
+            exit 1
+        }
         Write-Host 'Dry run only. Run again without -DryRun (elevated) to install.'
         exit 0
     }
     while ($true) {
         Write-Host ''
         $answer = (Read-Host 'Proceed with the real installation? [y/N], or type a port number to change it').Trim()
-        if ($answer -match '^(y|yes)$') { break }
+        if ($answer -match '^(y|yes)$') {
+            if ($script:Busy) {
+                Write-Host "Port $($script:PlanPort) is in use by $($script:Busy). Type another port number, or n to cancel."
+                continue
+            }
+            break
+        }
         if ($answer -eq '' -or $answer -match '^(n|no)$') { Write-Host 'Cancelled; nothing was changed.'; exit 0 }
         if ($answer -match '^\d+$' -and [int]$answer -ge 1 -and [int]$answer -le 65535) {
             $Port = [int]$answer

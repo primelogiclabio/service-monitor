@@ -18,6 +18,8 @@ Scripts that install the hub so it starts at boot, restarts if it crashes, and c
 
 `--dry-run` / `-DryRun` prints what the install would do and changes nothing: the mode (new install, upgrade, or reinstall over kept data), the jar and Java it found, the port and URL, every step in order (user, folders, files, the service, the admin token), and what it does not touch. It also works without root or an elevated prompt, so you can read the plan on any machine; a missing jar, a Java older than 21 or a bad port are listed together as problems instead.
 
+It also checks that the port is free. The plan marks the Port line `free` or `IN USE by <program> (pid N)` and, if it is taken, ends with a `Blocked:` line and exits 1. A real install refuses to start on a taken port and lists it with any other problem, instead of timing out after 60 seconds. The hub's own running service does not count on its own port, so an upgrade is not blocked by itself. At the prompt, `y` is refused while the port is taken, and typing another port number checks that one.
+
 In an interactive root or elevated session the dry run then asks `Proceed with the real installation? [y/N], or type a port number to change it`. `y` installs exactly what the plan showed, `n` (or Enter) cancels, and a number changes the port and prints the plan again. Without `--dry-run` the installer does not ask anything, so scripts and automation are unaffected.
 
 ```bash
@@ -47,7 +49,7 @@ The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0 (`WinSW-x64.exe`,
 
 ## Troubleshooting
 
-- **The hub did not answer within 60 seconds.** Read the log (table above). Usual causes: the port is taken (run the install again with `--port`/`-Port` to pick another), or Java is too old.
+- **The hub did not answer within 60 seconds.** Read the log (table above). The usual cause, a taken port, is caught before installing (see the dry run), unless something took the port after the check; run the install again with `--port`/`-Port` to pick another. Java older than 21 is also caught first.
 - **Windows: access denied starting the service.** The service account must be able to read `java.exe` and its folder. A Java under a user profile or a restricted drive is the usual culprit; pass `-JavaPath` for a system-wide one.
 - **Windows: "marked for deletion".** A tool such as Services or Task Manager has the service open. Close it and run the script again.
 - **macOS** is not covered by these scripts.

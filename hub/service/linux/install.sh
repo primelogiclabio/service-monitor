@@ -99,12 +99,6 @@ if [ -n "$JAVA" ]; then
   fi
 fi
 
-if [ "${#problems[@]}" -gt 0 ]; then
-  echo "Cannot install yet:" >&2
-  printf '  - %s\n' "${problems[@]}" >&2
-  exit 1
-fi
-
 user_exists=false; id -u $NAME >/dev/null 2>&1 && user_exists=true
 unit_exists=false; [ -f "$UNIT" ] && unit_exists=true
 was_active=false; systemctl is-active --quiet $NAME 2>/dev/null && was_active=true
@@ -114,10 +108,59 @@ conf_port=""
 # The settings file is readable by root only; a dry run as another user cannot see the port in it.
 [ -r "$CONF" ] && conf_port=$(sed -n -e 's/^  port: *\([0-9][0-9]*\).*/\1/p' -e 's/^server\.port: *\([0-9][0-9]*\).*/\1/p' "$CONF" | head -n 1)
 
+# Sets PLAN_PORT and PLAN_PORT_NOTE: --port, else the port in the settings file, else 8080.
+resolve_port() {
+  if [ -n "$PORT" ]; then
+    PLAN_PORT=$PORT
+    if [ "$conf_exists" = true ] && [ "$PORT" != "$conf_port" ]; then
+      PLAN_PORT_NOTE="--port; changes ${conf_port:-the port} in the settings file"
+    else
+      PLAN_PORT_NOTE="--port"
+    fi
+  elif [ "$conf_exists" = true ]; then
+    PLAN_PORT=${conf_port:-8080}
+    PLAN_PORT_NOTE="kept from $CONF"
+  else
+    PLAN_PORT=8080
+    PLAN_PORT_NOTE="default; change it with --port"
+  fi
+}
+
+# Prints what is listening on TCP port $1 and returns 0, or returns 1 when nothing is. The hub's own service
+# does not count when it is running on that port: it is stopped before the new one starts.
+port_busy() {
+  local p=$1 listening who=""
+  if [ "$was_active" = true ] && [ "$p" = "$conf_port" ]; then return 1; fi
+  if command -v ss >/dev/null; then
+    listening=$(ss -ltn "sport = :$p" 2>/dev/null | tail -n +2)
+    [ -n "$listening" ] || return 1
+    who=$(ss -ltnp "sport = :$p" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)",pid=\([0-9]*\).*/\1 (pid \2)/p' | head -n 1)
+  elif (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then
+    :
+  else
+    return 1
+  fi
+  echo "${who:-another program}"
+}
+
+resolve_port
+BUSY=""
+if [ -z "$PORT" ] || valid_port "$PORT"; then
+  BUSY=$(port_busy "$PLAN_PORT" || true)
+  # A dry run shows a busy port in the plan instead, so you can pick another at the prompt.
+  [ -z "$BUSY" ] || [ "$DRY_RUN" = true ] || problem "port $PLAN_PORT is already in use by $BUSY; choose another with --port"
+fi
+
+if [ "${#problems[@]}" -gt 0 ]; then
+  echo "Cannot install yet:" >&2
+  printf '  - %s\n' "${problems[@]}" >&2
+  exit 1
+fi
+
 # ---- 2. The plan ----
 
 print_plan() {
-  local mode port note n=0
+  local mode n=0
   if [ "$unit_exists" = true ]; then
     mode="upgrade: the service is installed; its settings and data are kept"
   elif [ "$conf_exists" = true ] || [ "$db_exists" = true ]; then
@@ -125,28 +168,17 @@ print_plan() {
   else
     mode="new install"
   fi
-  if [ -n "$PORT" ]; then
-    port=$PORT
-    if [ "$conf_exists" = true ] && [ "$PORT" != "$conf_port" ]; then
-      note="--port; changes ${conf_port:-the port} in the settings file"
-    else
-      note="--port"
-    fi
-  elif [ "$conf_exists" = true ]; then
-    port=${conf_port:-8080}
-    note="kept from $CONF"
-  else
-    port=8080
-    note="default; change it with --port"
-  fi
-  PLAN_PORT=$port
+  resolve_port
+  local port=$PLAN_PORT status="free"
+  BUSY=$(port_busy "$port" || true)
+  [ -z "$BUSY" ] || status="IN USE by $BUSY"
 
   step() { n=$((n + 1)); printf '    %d. %s\n' "$n" "$*"; }
   echo "Install plan (nothing has been changed yet)"
   printf '  %-8s %s\n' "Mode" "$mode"
   printf '  %-8s %s\n' "Jar" "$JAR -> $APP_DIR/$NAME.jar"
   printf '  %-8s %s\n' "Java" "$JAVA (version $major)"
-  printf '  %-8s %s\n' "Port" "$port ($note)"
+  printf '  %-8s %s\n' "Port" "$port ($PLAN_PORT_NOTE) - $status"
   printf '  %-8s %s\n' "URL" "http://localhost:$port"
   echo "  Steps:"
   if [ "$user_exists" = true ]; then
@@ -175,12 +207,17 @@ print_plan() {
   fi
   echo "  Not touched: the firewall (open port $port yourself if agents connect from other machines), other services."
   [ "$IS_ROOT" = true ] || echo "  A real install needs root: run it with sudo."
+  [ -z "$BUSY" ] || echo "  Blocked: port $port is in use by $BUSY, so the install would stop. Choose another with --port."
 }
 
 if [ "$DRY_RUN" = true ]; then
   print_plan
   if [ "$IS_ROOT" = false ] || [ ! -t 0 ] || [ ! -t 1 ]; then
     echo
+    if [ -n "$BUSY" ]; then
+      echo "Dry run only. The port is taken: choose another with --port before installing."
+      exit 1
+    fi
     echo "Dry run only. Run again without --dry-run (as root) to install."
     exit 0
   fi
@@ -189,7 +226,13 @@ if [ "$DRY_RUN" = true ]; then
     printf 'Proceed with the real installation? [y/N], or type a port number to change it: '
     read -r answer || answer=n
     case "$answer" in
-      y|Y|yes|YES) break ;;
+      y|Y|yes|YES)
+        if [ -n "$BUSY" ]; then
+          echo "Port $PLAN_PORT is in use by $BUSY. Type another port number, or n to cancel."
+          continue
+        fi
+        break
+        ;;
       ''|n|N|no|NO) echo "Cancelled; nothing was changed."; exit 0 ;;
       *[!0-9]*) echo "Please answer y, n, or a port number." ;;
       *)
