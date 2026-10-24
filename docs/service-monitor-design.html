@@ -106,7 +106,7 @@ footer { max-width: 980px; margin: 0 auto; padding: 8px 20px 90px; color: var(--
     <tr><td>Topology</td><td>Agents connect out to a hub. A console registers hubs and aggregates them (admin server and managed servers).</td></tr>
     <tr><td>UI</td><td>Optional. The hub is headless and API-first; a CLI and an optional web UI are both clients of the same API.</td></tr>
     <tr><td>What is monitored</td><td>Only what the admin lists. Nothing is auto-discovered into monitoring.</td></tr>
-    <tr><td>JRE</td><td>Bundled runtime by default; admins can supply their own Java instead.</td></tr>
+    <tr><td>JRE</td><td>Planned: a bundled runtime by default, with admins able to supply their own Java instead. Today the hub is a plain jar that needs a Java 21 or newer on the machine.</td></tr>
     <tr><td>Cost</td><td>Everything is open source. No paid component, cloud service or SaaS dependency.</td></tr>
   </table></div>
 </section>
@@ -157,7 +157,7 @@ footer { max-width: 980px; margin: 0 auto; padding: 8px 20px 90px; color: var(--
   <ol>
     <li><b>Agents connect out.</b> Monitored servers open no inbound ports. A server counts as down when its heartbeats stop.</li>
     <li><b>The hub owns the config.</b> The agent fetches its check list on connect, so changes are made once, in one place.</li>
-    <li><b>The hub is headless.</b> Everything, including the UI, goes through the REST API (plus a live SSE stream).</li>
+    <li><b>The hub is headless.</b> Everything, including the UI, goes through the REST API (a live SSE stream is planned; it is not built yet).</li>
     <li><b>Each hub is autonomous.</b> It keeps monitoring and alerting if the console or the link to it goes down. The console shows a hub that stops answering as "hub unreachable".</li>
     <li><b>The console stays light.</b> It holds current status and fetches history on demand from the hub that owns it.</li>
   </ol>
@@ -190,6 +190,7 @@ footer { max-width: 980px; margin: 0 auto; padding: 8px 20px 90px; color: var(--
   <h3>The admin chooses what is monitored</h3>
   <div class="callout"><b>Nothing is monitored by default.</b> For services, disks and ports the admin lists exactly what to watch; the agent ignores everything else and does not report it. This keeps noise and data exposure down.</div>
   <p>A read-only helper, <code>svcmon agent services</code>, shows what exists on a server so the admin can pick. It adds nothing by itself.</p>
+  <p>The sketch below shows what a server's check list amounts to. It is not a config file the product reads: checks are created with <code>svcmon check add</code> or the API.</p>
 <pre><code>server: web01
 cluster: prod
 checks:
@@ -243,6 +244,7 @@ checks:
 
 <section id="packaging">
   <h2>6. Packaging and the JRE question</h2>
+  <p><b>Status: not built yet.</b> Today the hub is a plain jar that runs on a Java 21 or newer that the admin installs, and the service installers in <code>hub/service/</code> use that Java. The <code>jlink</code> bundle and the release pipeline below are the plan.</p>
   <p>Bundling a runtime does not add risk by itself. It moves the patching duty from the admin's operating system to the project: a bundled runtime is not updated by <code>apt</code> or Windows Update, so it only gets security fixes when a new release ships. The hub's fat JAR bundles Spring, Tomcat and other libraries with the same property, so a release pipeline is needed regardless.</p>
   <p>Two downloads:</p>
   <ul>
@@ -263,7 +265,7 @@ checks:
   <ul>
     <li><b>Ping is the main portability trap.</b>
       <ul>
-        <li>Java's <code>InetAddress.isReachable</code> uses ICMP only if the privilege can be obtained, and otherwise tries TCP port 7, so it is not a reliable ping. The hub uses the system <code>ping</code> command (or JNA on Windows) instead.</li>
+        <li>Java's <code>InetAddress.isReachable</code> uses ICMP only if the privilege can be obtained, and otherwise tries TCP port 7, so it is not a reliable ping. The hub uses the system <code>ping</code> command instead.</li>
         <li>On the Go side, <code>pro-bing</code> (MIT) pings unprivileged on Linux only after the <code>net.ipv4.ping_group_range</code> sysctl is set; otherwise it needs <code>CAP_NET_RAW</code> or root. On Windows it requires <code>SetPrivileged(true)</code> but is reported to work without elevated privileges (tested on Windows 10). Its page does not cover macOS.</li>
         <li>The agent installer sets <code>CAP_NET_RAW</code> on Linux.</li>
       </ul></li>
@@ -294,7 +296,7 @@ checks:
     <li>Optional web UI.</li>
     <li>Console role (multi-hub). The API is designed for it from the start: stable hub ID, read-scoped tokens, aggregate-friendly endpoints.</li>
   </ol>
-  <div class="callout"><b>Status:</b> steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 69 tests) and the Go <code>svcmon</code> binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address.</div>
+  <div class="callout"><b>Status:</b> steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21) and the Go <code>svcmon</code> binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address. The hub can be installed as a service on Windows (WinSW) and Linux (systemd), with a dry run first, and logs a start-up summary of its address and what it watches. The bundled runtime and release pipeline (section 6) are not built.</div>
 </section>
 
 <section id="open">
@@ -302,6 +304,7 @@ checks:
   <div class="callout warn">
     <ul>
       <li><b>Untested on real targets:</b> the agent was run end to end on Windows 11 only. The Linux (systemd) and macOS (launchd) service installers and service checks compile and pass <code>go vet</code> but have not been run on those systems. On Windows, <code>agent install</code> was only checked for its not-elevated error message; installing the service needs an Administrator prompt.</li>
+      <li><b>Hub service installers:</b> CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server. There is no macOS installer.</li>
       <li><b>Java version:</b> the machine has Java 21, so v1 targets 21. This doc assumes 25 is a long-term-support release but that could not be confirmed from Oracle's roadmap page (it returned HTTP 403).</li>
       <li><b>macOS ping:</b> unprivileged ICMP on macOS is not confirmed by the sources used.</li>
       <li><b>Beszel on Windows services:</b> not confirmed either way from the pages read.</li>

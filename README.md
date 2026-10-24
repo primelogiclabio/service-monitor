@@ -1,6 +1,6 @@
 # Service Monitor
 
-A free, cross-platform monitor for HTTP, TCP, ping, Windows/Linux/macOS services, CPU, memory and disk. A headless Java hub with a REST API, one small Go binary (`svcmon`) that is both the agent and the command-line client, and an optional web UI and multi-hub console still to come.
+A free, cross-platform monitor for HTTP, TCP, ping, Windows/Linux/macOS services, CPU, memory and disk. A headless Java hub with a REST API, one small Go binary (`svcmon`) that is both the agent and the command-line client, an optional web dashboard in its own repository, and a multi-hub console that is still to come.
 
 Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-design.md) (also as [HTML](docs/service-monitor-design.html)).
 
@@ -8,10 +8,11 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 
 | Piece | State |
 |---|---|
-| Hub: scheduler, SQLite, REST API, tokens, HTTP/TCP/ping checks, roll-up status, alerts | Built, 69 tests passing |
+| Hub: scheduler, SQLite, REST API, tokens, HTTP/TCP/ping checks, roll-up status, alerts | Built and tested; logs a start-up summary with its address and what it watches |
 | Agent (`svcmon agent run`): service, CPU, memory, disk, plus HTTP/TCP/ping from the server's side | Built; unit tests and a run against a real hub on Windows 11 |
 | CLI (`svcmon status`, `check`, `token`, ...) | Built, same binary as the agent |
-| Windows service install, Linux systemd unit, macOS launchd plist | Written and cross-compiled; only the Windows not-elevated error path was run |
+| Agent service install (`svcmon agent install`: Windows service, systemd unit, macOS launchd plist) | Written and cross-compiled; only the Windows not-elevated error path was run |
+| Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners. No macOS installer |
 | Alert channels | Webhook (optionally signed), Slack, Discord and email, plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub can serve it (`svcmon.ui-dir`) or allow it from another address (`svcmon.cors-allowed-origins`) |
 | Multi-hub console | Not started |
@@ -108,6 +109,21 @@ svcmon status --cluster prod --watch
 
 `svcmon agent run --once --config FILE` runs every assigned check once and prints the results, which is handy for testing. The agent keeps its config in `%ProgramData%\svcmon\agent.json` (Windows) or `/etc/svcmon/agent.json`, readable only by SYSTEM, Administrators and the installing user (Windows) or the owner (Unix). It buffers up to 5000 results while the hub is unreachable and sends failures within about a second.
 
+### More commands
+
+```bash
+svcmon hub                       # hub identity, version and Java runtime age
+svcmon server web01              # one server with its checks
+svcmon check list                # also: show, run, rm <check>
+svcmon check history <check> --since 2h
+svcmon token create --name ci --scope read
+svcmon token list                # also: token revoke <id>
+svcmon agent enroll --hub http://hub:8080 --token svm_e_...   # enroll without installing the service
+svcmon agent uninstall           # stop and remove the OS service
+```
+
+`svcmon help` lists every command and flag.
+
 ## Alerts
 
 An alert channel is a place the hub sends a message when something changes status. There are four types: **webhook** (JSON, optionally signed), **Slack**, **Discord** and **email** (SMTP). Channels are managed through the API (admin only) or the CLI. Each says which new statuses it wants; the default is DOWN, WARN and UP, so you also hear about recoveries.
@@ -146,7 +162,7 @@ Safety:
 | `GET/POST /checks`, `GET/PUT/DELETE /checks/{id}` | read / admin | Manage checks |
 | `POST /checks/{id}/run` | admin | Run a hub-side check now |
 | `GET /checks/{id}/results?since=&limit=` | read | History, newest first |
-| `GET /servers`, `PATCH /servers/{id}`, `DELETE /servers/{id}` | read / admin | Servers and clusters |
+| `GET /servers`, `GET /servers/{id}`, `PATCH /servers/{id}`, `DELETE /servers/{id}` | read / admin | Servers and clusters |
 | `GET/POST /tokens`, `DELETE /tokens/{id}` | admin | API tokens (ADMIN or READ) |
 | `POST /enrollment-tokens` | admin | One-time token to register an agent |
 | `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked |
@@ -168,20 +184,26 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CP
 | `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
 | `svcmon.alert-retry-delays-ms` | `0,2000,5000` | Waits between delivery attempts for a failing alert channel, in milliseconds |
 | `svcmon.allow-insecure-alert-urls` | false | Lets Slack and Discord URLs use http; for tests and local receivers only |
+| `svcmon.bootstrap-admin-token` | unset | Use this value (32+ characters) as the first admin token on a fresh database instead of generating one; ignored once an admin token exists |
+| `svcmon.new-admin-token` | false | Print an additional new admin token at startup (token recovery) |
 
 ## Test
 
 ```bash
-cd hub && mvn test        # 69 tests, including agent enrollment and real webhook and SMTP alert delivery
+cd hub && mvn test        # includes agent enrollment over HTTP and real webhook and SMTP alert delivery
 cd agent && go test ./...
 ```
+
+CI runs both on every pull request, and also dry-runs the hub service installers (`hub/service/*/dry-run-test.*`). The real install tests (`smoke-test.*`) run only from the manually started **Installer smoke test** workflow; see [hub/service/README.md](hub/service/README.md).
 
 ## Layout
 
 ```text
-docs/   design document (Markdown + HTML)
-hub/    Java 21, Spring Boot 4.1, SQLite (Maven project)
-agent/  Go 1.27: svcmon agent + CLI (cmd/svcmon, internal/...)
+docs/                design document (Markdown + HTML)
+hub/                 Java 21, Spring Boot 4.1, SQLite (Maven project)
+hub/service/         install and uninstall scripts for the hub as a service (Windows, Linux) and their tests
+agent/               Go 1.27: svcmon agent + CLI (cmd/svcmon, internal/...)
+.github/workflows/   CI, and the manually started installer smoke test
 ```
 
 ## License

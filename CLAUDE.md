@@ -8,6 +8,7 @@ A free, cross-platform monitor: a Java hub, a small Go agent and CLI, and a sepa
 |---|---|---|
 | `hub/` | The hub: scheduler, SQLite, REST API, tokens, alerts, optional UI hosting | Java 21, Spring Boot 4.1, Maven, Flyway |
 | `agent/` | `svcmon`: the agent (service, CPU, memory, disk, network checks) and the CLI, one binary | Go 1.27, stdlib plus gopsutil, pro-bing, x/sys |
+| `hub/service/` | Install and uninstall scripts for the hub as a service, with their dry-run and smoke tests | Bash, PowerShell, WinSW, systemd |
 | `docs/` | Design document, Markdown and self-contained HTML (keep both in sync) | |
 | `../service-monitor-ui` | The web dashboard: its own repository, `primelogiclabio/service-monitor-ui` | Svelte 5, Vite 6, uPlot |
 
@@ -30,7 +31,7 @@ Run these from the folder shown. Windows is the main development machine, in Pow
 - Hub: `cd hub; mvn -B -ntp test` (Java 21; `mvn -B -ntp -DskipTests package` builds `hub/target/svcmon-hub-0.1.0-SNAPSHOT.jar`). Integration tests start the real hub on random ports with temp data folders; alert tests use a local HTTP receiver and a fake SMTP server.
 - Agent and CLI: `cd agent` then `go vet ./...` and `go test ./... -count=1`. Go is **not on PATH**: call `F:\software\go\bin\go.exe` and set per process `GOPATH=F:\software\go-cache\gopath`, `GOCACHE=F:\software\go-cache\build`, `GOTOOLCHAIN=local` to keep caches off C:. Run `gofmt -l .` before committing (CI checks it; on Windows a CRLF working copy of an untouched file can show up in the list, which is not a real problem).
 - UI (separate repo): `npm test`, `npm run build`; set `npm_config_cache=F:\software\npm-cache`.
-- CI (`.github/workflows/ci.yml`) runs hub tests on Ubuntu and Windows, agent tests on Ubuntu, Windows and macOS, a gofmt check and a cross-compile of every platform. The aggregate check **CI passed** is required on `main`.
+- CI (`.github/workflows/ci.yml`) runs hub tests on Ubuntu and Windows, agent tests on Ubuntu, Windows and macOS, a gofmt check, a cross-compile of every platform, and an installer dry run (`hub/service/*/dry-run-test.*`) on Ubuntu and Windows. The aggregate check **CI passed** is required on `main`.
 - A test that proves a fix should fail on the old code; check that when you fix a bug.
 
 ## Git and pull requests

@@ -42,3 +42,7 @@ svcmon:
   # bootstrap-admin-token:
   # Set true to print an additional new admin token at startup (token recovery).
   new-admin-token: false
+  # Optional: let Slack and Discord alert URLs use http instead of https. For tests and local receivers only.
+  # allow-insecure-alert-urls: false
+  # Optional: waits between delivery attempts for a failing alert channel, in milliseconds.
+  # alert-retry-delays-ms: 0,2000,5000

@@ -1,6 +1,6 @@
 # Run the hub as a service
 
-Scripts that install the hub so it starts at boot, restarts if it crashes, and can be removed again. Both do the same job; run the one for your operating system from an elevated prompt. The hub needs Java 21 or newer, and a built jar (`cd hub; mvn -DskipTests package`) or one passed with `--jar` / `-JarPath`.
+Scripts that install the hub so it starts at boot, restarts if it crashes, and can be removed again. Both do the same job; run the one for your operating system from an elevated prompt (a dry run needs none). The hub needs Java 21 or newer, and a built jar (`cd hub; mvn -DskipTests package`) or one passed with `--jar` / `-JarPath`.
 
 | | Linux (systemd) | Windows (WinSW) |
 |---|---|---|
@@ -27,7 +27,7 @@ sudo hub/service/linux/install.sh --dry-run --port 9090
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File hubservicewindowsinstall.ps1 -DryRun -Port 9090
+powershell -ExecutionPolicy Bypass -File hub\service\windows\install.ps1 -DryRun -Port 9090
 ```
 
 ## What the install does
