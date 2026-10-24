@@ -115,7 +115,7 @@ checks:
 | Alerts | Own senders: email, webhook, Slack, Discord, Telegram, ntfy | Each is a simple HTTP call or SMTP. |
 | Agent | Go with `gopsutil`, `x/sys/windows/svc` | One static binary, no runtime. `gopsutil` (BSD) covers CPU, memory and disk on Linux, Windows and macOS; `x/sys/windows/svc` builds Windows services. |
 | CLI | `svcmon` (Go) or picocli (Java) | Talks to the API with a scoped token. A Go binary starts instantly. |
-| UI (optional) | Svelte single-page app, charts with uPlot, served by the hub when enabled | Built with Node at build time only. Thymeleaf plus htmx is the zero-JS alternative. |
+| UI (optional) | Svelte single-page app in its own repository (service-monitor-ui), charts with uPlot | Built with Node at build time only. The hub serves the built files from `svcmon.ui-dir`, or the app is hosted elsewhere and the hub allows its address with `svcmon.cors-allowed-origins`. Thymeleaf plus htmx is the zero-JS alternative. |
 | Build | Maven or Gradle, Go toolchain, GitHub Actions matrix | |
 
 ### Server-side requirements
@@ -179,7 +179,7 @@ Keeping it safe:
 5. Optional web UI.
 6. Console role (multi-hub). The API is designed for it from the start: stable hub ID, read-scoped tokens, aggregate-friendly endpoints.
 
-**Status:** steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 23 tests) and the Go `svcmon` binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels, the web UI and the console role are not built.
+**Status:** steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 23 tests) and the Go `svcmon` binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels and the console role are not built. The web UI is built in its own repository and the hub can serve it or allow it from another address.
 
 ## 10. Open questions and limits
 

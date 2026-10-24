@@ -1,6 +1,10 @@
 spring:
   application:
     name: svcmon-hub
+  web:
+    resources:
+      # The hub serves no classpath files; the web UI (if any) comes from svcmon.ui-dir.
+      add-mappings: false
   threads:
     virtual:
       enabled: true
@@ -27,6 +31,13 @@ svcmon:
   agent-heartbeat-seconds: 30
   # An agent that has not reported for this long is shown as offline.
   agent-stale-seconds: 90
+  # Optional: serve the web dashboard from this folder (the UI project's dist folder), so it shares the
+  # hub's address. Unset means the hub serves no UI.
+  # ui-dir: ./ui
+  # Optional: exact origins that may call the API from a browser, for a dashboard hosted on another
+  # address (list entries like https://monitor.example.com, no path, no '*'). Empty means CORS is off.
+  # cors-allowed-origins:
+  #   - https://monitor.example.com
   # Optional: use this value as the initial admin token instead of generating one.
   # bootstrap-admin-token:
   # Set true to print an additional new admin token at startup (token recovery).
