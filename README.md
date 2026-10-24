@@ -32,6 +32,18 @@ java -jar target/svcmon-hub-0.1.0-SNAPSHOT.jar
 
 On first start the hub creates `./data/svcmon.db` and prints an admin token once; only its hash is stored. To get a new one later start with `--svcmon.new-admin-token=true`; to choose your own set `svcmon.bootstrap-admin-token` (32+ characters) on a fresh database.
 
+### Run the hub as a service
+
+To start at boot and restart after a crash, install it as a systemd service (Linux) or a Windows service through [WinSW](https://github.com/winsw/winsw), and remove it again with one command each. See [hub/service/README.md](hub/service/README.md).
+
+```bash
+sudo hub/service/linux/install.sh        # prints the admin token once
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File hub\service\windows\install.ps1
+```
+
 ## Host the web UI
 
 The dashboard lives in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui). Build it there (`npm run build`), then choose one of:

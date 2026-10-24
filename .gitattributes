@@ -1,0 +1,3 @@
+# Files that run on Linux must keep LF line endings even when checked out on Windows.
+*.sh text eol=lf
+hub/service/linux/*.service text eol=lf

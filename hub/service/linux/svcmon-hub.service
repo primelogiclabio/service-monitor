@@ -1,0 +1,37 @@
+# Template: install.sh replaces @JAVA@ with the absolute path of the java it found, then installs this as
+# /etc/systemd/system/svcmon-hub.service. Edit the installed copy only for local changes; a re-run of
+# install.sh overwrites it.
+[Unit]
+Description=Service Monitor hub
+Documentation=https://github.com/primelogiclabio/service-monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=svcmon-hub
+Group=svcmon-hub
+WorkingDirectory=/var/lib/svcmon-hub
+ExecStart=@JAVA@ -jar /opt/svcmon-hub/svcmon-hub.jar --spring.config.additional-location=optional:file:/etc/svcmon-hub/
+Restart=on-failure
+RestartSec=5
+# The JVM exits with 143 (128 + SIGTERM) on a normal systemctl stop.
+SuccessExitStatus=143
+TimeoutStopSec=30
+
+# The hub only writes to its data folder.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/svcmon-hub
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# NoNewPrivileges is deliberately not set: PING checks run the system ping command, which on many
+# distributions gets CAP_NET_RAW from file capabilities, and NoNewPrivileges would stop that.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+<!--
+  WinSW (https://github.com/winsw/winsw) service definition for the Service Monitor hub.
+  install.ps1 fills in the @...@ values and saves the result as svcmon-hub.xml next to svcmon-hub.exe
+  (the WinSW wrapper) in the install folder. To change the service later edit that copy, then run
+  "svcmon-hub.exe stop", "svcmon-hub.exe uninstall", "svcmon-hub.exe install" and start it again;
+  a re-run of install.ps1 overwrites it.
+-->
+<service>
+  <id>svcmon-hub</id>
+  <name>Service Monitor hub</name>
+  <description>Service Monitor hub: scheduler, REST API and alerts. https://github.com/primelogiclabio/service-monitor</description>
+
+  <!-- Add JVM options before -jar, for example -Xmx512m. -->
+  <executable>@JAVA@</executable>
+  <arguments>-jar "@JAR@" "--spring.config.additional-location=optional:@CONFIG_LOCATION@"</arguments>
+  <!-- uninstall.ps1 reads this to find the settings and database again. Do not add SVCMON_* environment
+       variables here: the hub treats them as settings and they override application.yml. -->
+  <workingdirectory>@DATA_DIR@</workingdirectory>
+
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>30 sec</stoptimeout>
+
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <logpath>@DATA_DIR@\logs</logpath>
+</service>
