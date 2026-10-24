@@ -61,5 +61,5 @@ Run these from the folder shown. Windows is the main development machine, in Pow
 ## Known gaps
 
 - The multi-hub console role is not built. The dashboard has no alerts page yet (the API is ready).
-- Installing the hub itself as a service (WinSW on Windows, systemd on Linux) is requested but not built.
+- The hub service installers (`hub/service/`: WinSW on Windows, systemd on Linux) have only run in CI's "hub service" job, never on this machine (installing needs an elevated prompt; do not install the service here without asking). Change them together with their `smoke-test` scripts. macOS has none.
 - Linux and macOS agent installers and service checks have never run on real systems.
