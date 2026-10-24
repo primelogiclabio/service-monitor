@@ -54,6 +54,12 @@ try {
         -not ((Get-Acl "$DataDir\application.yml").Access | Where-Object { $_.IdentityReference.Value -match 'Users|Everyone' })
     }
 
+    Write-Host '== a dry run now plans an upgrade and changes nothing'
+    $plan = Capture { & $install @jarArgs -DryRun }
+    Check 'the plan says upgrade' { $plan -match 'Mode\s+upgrade' }
+    Check 'the plan keeps the port from the settings file' { $plan -match "Port\s+$Port \(kept from" }
+    Check 'the service is still running' { (Get-Service -Name $Name).Status -eq 'Running' }
+
     Write-Host '== upgrade (run again)'
     $out = Capture { & $install @jarArgs }
     Write-Host $out

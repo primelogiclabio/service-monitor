@@ -21,8 +21,14 @@ gone() { ! "$@" >/dev/null 2>&1; }
 [ "$(id -u)" -eq 0 ] || fail "run as root"
 ! systemctl cat $NAME >/dev/null 2>&1 || fail "$NAME is already installed here; refusing to touch it"
 
-echo "== fresh install"
-out=$("$DIR/install.sh" "${JAR_ARGS[@]}" --port $PORT)
+echo "== fresh install, through the dry-run prompt when a terminal can be faked"
+if command -v script >/dev/null; then
+  cmd=$(printf '%q ' "$DIR/install.sh" "${JAR_ARGS[@]}" --dry-run --port $PORT)
+  out=$( { sleep 2; echo y; sleep 1; } | script -qefc "$cmd" /dev/null | tr -d '\r' ) || fail "install through the prompt failed: $out"
+  check "the prompt was shown and accepted" grep -q "Proceed with the real installation?" <<<"$out"
+else
+  out=$("$DIR/install.sh" "${JAR_ARGS[@]}" --port $PORT)
+fi
 echo "$out"
 TOKEN=$(echo "$out" | grep -o 'svm_a_[0-9a-f]\{64\}' | head -n 1)
 check "install printed an admin token" test -n "$TOKEN"
@@ -35,6 +41,12 @@ check "the token is not in the journal" gone sh -c "journalctl -u $NAME --no-pag
 check "settings file is not world readable" test "$(stat -c %a /etc/$NAME/application.yml)" = 640
 check "runs as the service user" test "$(ps -o uid= -p "$(systemctl show -p MainPID --value $NAME)" | tr -d ' ')" = "$(id -u $NAME)"
 check "database is in the data folder" test -f /var/lib/$NAME/svcmon.db
+
+echo "== a dry run now plans an upgrade and changes nothing"
+plan=$("$DIR/install.sh" "${JAR_ARGS[@]}" --dry-run)
+check "the plan says upgrade" grep -q "Mode     upgrade" <<<"$plan"
+check "the plan keeps the port from the settings file" grep -q "Port     $PORT (kept from /etc/$NAME/application.yml)" <<<"$plan"
+check "the service is still healthy" healthy
 
 echo "== upgrade (run again)"
 out=$("$DIR/install.sh" "${JAR_ARGS[@]}")
