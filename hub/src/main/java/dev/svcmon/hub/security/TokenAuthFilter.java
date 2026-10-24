@@ -41,7 +41,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String path = req.getRequestURI();
-        if (!path.startsWith("/api/") || path.equals(HEALTH)) {
+        if (!path.startsWith("/api/") || path.equals(HEALTH) || isPreflight(req)) {
             chain.doFilter(req, resp);
             return;
         }
@@ -62,6 +62,17 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         }
         req.setAttribute(ATTR, token.get());
         chain.doFilter(req, resp);
+    }
+
+    /**
+     * A browser's CORS preflight: OPTIONS with Origin and Access-Control-Request-Method, sent without a token.
+     * It does nothing and returns no data; whether the origin is allowed is decided by CORS handling, which
+     * answers allowed origins before this filter and refuses everything else.
+     */
+    static boolean isPreflight(HttpServletRequest req) {
+        return "OPTIONS".equals(req.getMethod())
+                && req.getHeader("Origin") != null
+                && req.getHeader("Access-Control-Request-Method") != null;
     }
 
     static Set<Scope> required(String method, String path) {

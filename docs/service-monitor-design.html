@@ -218,7 +218,7 @@ checks:
     <tr><td>Alerts</td><td>Own senders: email, webhook, Slack, Discord, Telegram, ntfy</td><td>Each is a simple HTTP call or SMTP.</td></tr>
     <tr><td>Agent</td><td>Go with <code>gopsutil</code>, <code>x/sys/windows/svc</code></td><td>One static binary, no runtime. <code>gopsutil</code> (BSD) covers CPU, memory and disk on Linux, Windows and macOS; <code>x/sys/windows/svc</code> builds Windows services.</td></tr>
     <tr><td>CLI</td><td><code>svcmon</code> (Go) or picocli (Java)</td><td>Talks to the API with a scoped token. A Go binary starts instantly.</td></tr>
-    <tr><td>UI (optional)</td><td>Svelte single-page app, charts with uPlot, served by the hub when enabled</td><td>Built with Node at build time only. Thymeleaf plus htmx is the zero-JS alternative.</td></tr>
+    <tr><td>UI (optional)</td><td>Svelte single-page app in its own repository (service-monitor-ui), charts with uPlot</td><td>Built with Node at build time only. The hub serves the built files from <code>svcmon.ui-dir</code>, or the app is hosted elsewhere and the hub allows its address with <code>svcmon.cors-allowed-origins</code>. Thymeleaf plus htmx is the zero-JS alternative.</td></tr>
     <tr><td>Build</td><td>Maven or Gradle, Go toolchain, GitHub Actions matrix</td><td></td></tr>
   </table></div>
 
@@ -294,7 +294,7 @@ checks:
     <li>Optional web UI.</li>
     <li>Console role (multi-hub). The API is designed for it from the start: stable hub ID, read-scoped tokens, aggregate-friendly endpoints.</li>
   </ol>
-  <div class="callout"><b>Status:</b> steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 23 tests) and the Go <code>svcmon</code> binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels, the web UI and the console role are not built.</div>
+  <div class="callout"><b>Status:</b> steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21, 23 tests) and the Go <code>svcmon</code> binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels and the console role are not built. The web UI is built in its own repository and the hub can serve it or allow it from another address.</div>
 </section>
 
 <section id="open">

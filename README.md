@@ -13,7 +13,8 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 | CLI (`svcmon status`, `check`, `token`, ...) | Built, same binary as the agent |
 | Windows service install, Linux systemd unit, macOS launchd plist | Written and cross-compiled; only the Windows not-elevated error path was run |
 | Alert channels | Status changes are logged and published as events; email/webhook/Slack/etc. not built |
-| Web UI, multi-hub console | Not started |
+| Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub can serve it (`svcmon.ui-dir`) or allow it from another address (`svcmon.cors-allowed-origins`) |
+| Multi-hub console | Not started |
 
 ## Deployment model
 
@@ -30,6 +31,15 @@ java -jar target/svcmon-hub-0.1.0-SNAPSHOT.jar
 ```
 
 On first start the hub creates `./data/svcmon.db` and prints an admin token once; only its hash is stored. To get a new one later start with `--svcmon.new-admin-token=true`; to choose your own set `svcmon.bootstrap-admin-token` (32+ characters) on a fresh database.
+
+## Host the web UI
+
+The dashboard lives in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui). Build it there (`npm run build`), then choose one of:
+
+1. **Let the hub serve it**, so everything is at one address: start the hub with `--svcmon.ui-dir=/path/to/service-monitor-ui/dist`, open the hub's address in a browser and sign in with an API token. The files are public; the API still needs a token.
+2. **Host it elsewhere**, for example a static file server: list its address in `svcmon.cors-allowed-origins` (exact origins such as `https://dashboard.example.com`; `*`, paths and trailing slashes are refused and stop the hub from starting), then enter the hub's address under "Hub address" when signing in. If you also open the dashboard through the hub's own address behind a load balancer, list that address too.
+
+CORS is off unless origins are listed. When on, only those origins may call `/api/` from a browser, with the `Authorization`, `Content-Type` and `Accept` headers, never with cookies; requests without an `Origin` header (the CLI, agents, scripts) are unaffected. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`.
 
 ## Build the agent and CLI
 
@@ -96,6 +106,8 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CP
 | `svcmon.retention-days` | 30 | Raw results older than this are deleted |
 | `svcmon.agent-heartbeat-seconds` | 30 | How often agents are told to report |
 | `svcmon.agent-stale-seconds` | 90 | Silence after which a server shows as offline |
+| `svcmon.ui-dir` | unset | Folder with the built web UI, served at `/`. A missing folder only logs a warning |
+| `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
 
 ## Test
 

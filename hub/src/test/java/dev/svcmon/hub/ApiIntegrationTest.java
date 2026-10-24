@@ -2,6 +2,7 @@ package dev.svcmon.hub;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -86,6 +87,31 @@ class ApiIntegrationTest {
         Resp hub = call("GET", "/api/v1/hub", ADMIN, null);
         assertEquals(200, hub.status());
         assertNotNull(hub.map().get("hubId"));
+    }
+
+    private HttpResponse<String> raw(String method, String path, Map<String, String> headers) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                .method(method, HttpRequest.BodyPublishers.noBody());
+        headers.forEach(b::header);
+        return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void uiAndCorsAreOffByDefault() throws Exception {
+        // No svcmon.ui-dir: nothing is served at the root.
+        assertEquals(404, raw("GET", "/", Map.of()).statusCode());
+
+        // No svcmon.cors-allowed-origins: no CORS headers, even when an Origin is sent.
+        String origin = "http://ui.example.test:5173";
+        HttpResponse<String> cross = raw("GET", "/api/v1/health", Map.of("Origin", origin));
+        assertEquals(200, cross.statusCode());
+        assertTrue(cross.headers().firstValue("Access-Control-Allow-Origin").isEmpty());
+
+        // A preflight is not turned away for lacking a token, but it is not approved either.
+        HttpResponse<String> preflight = raw("OPTIONS", "/api/v1/status",
+                Map.of("Origin", origin, "Access-Control-Request-Method", "GET"));
+        assertNotEquals(401, preflight.statusCode());
+        assertTrue(preflight.headers().firstValue("Access-Control-Allow-Origin").isEmpty());
     }
 
     @Test
