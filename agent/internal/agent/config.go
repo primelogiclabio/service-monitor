@@ -18,8 +18,25 @@ type FileConfig struct {
 	Token    string `json:"token"`
 }
 
-// DefaultConfigPath is where an installed agent keeps its config.
+// executable is the path of the running program; a variable so tests can stand in for it.
+var executable = os.Executable
+
+// DefaultConfigPath is where the agent keeps its config: agent.json in the folder of the program itself, so the
+// program and the settings it needs are found, moved and removed together. A program reached through a link
+// counts as where the link points, which is also where the installed service runs it from. Only when the
+// program cannot be located does it fall back to a system-wide place.
 func DefaultConfigPath() string {
+	exe, err := executable()
+	if err != nil {
+		return systemConfigPath()
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return filepath.Join(filepath.Dir(exe), "agent.json")
+}
+
+func systemConfigPath() string {
 	switch runtime.GOOS {
 	case "windows":
 		base := os.Getenv("ProgramData")
