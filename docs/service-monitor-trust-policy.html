@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service Monitor: stack, licences, data and trust</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #fafaf8; --panel: #ffffff; --text: #1d2125; --muted: #5b6570; --line: #dfe3e7;
+  --accent: #1f6feb; --accent-soft: #e6f0ff; --code-bg: #f1f3f5; --hub: #e8f1ff; --ui: #eaf7ee; --out: #fff4e0; --lb: #f1ecff;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #14171a; --panel: #1c2024; --text: #e6e9ec; --muted: #9aa5b0; --line: #2d343b;
+  --accent: #6aa5ff; --accent-soft: #1b2a40; --code-bg: #262c32; --hub: #1b2a40; --ui: #1a3023; --out: #3a2d14; --lb: #2b2540;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { max-width: 980px; margin: 0 auto; padding: 56px 16px 8px; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); line-height: 1.2; margin: 0 0 12px; }
+.lead { color: var(--muted); max-width: 70ch; margin: 0 0 20px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 0 0 8px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.stat b { display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.stat span { font-size: 1.05rem; font-weight: 600; }
+main { max-width: 980px; margin: 0 auto; padding: 8px 16px 96px; }
+section { padding-top: 20px; }
+h2 { font-size: 1.5rem; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.15rem; margin: 22px 0 8px; }
+p, li { max-width: 78ch; }
+a { color: var(--accent); overflow-wrap: anywhere; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font: 0.9em ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+.tablewrap { overflow-x: auto; margin: 12px 0 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { background: var(--accent-soft); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.diagram { margin: 18px 0 22px; padding: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.dg-row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; width: 100%; }
+.dg-box { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; text-align: center; min-width: 130px; flex: 0 1 190px; }
+.dg-box b { display: block; }
+.dg-box small { display: block; color: var(--muted); font-size: 0.8rem; line-height: 1.35; margin-top: 2px; }
+.dg-hub { background: var(--hub); flex: 1 1 280px; max-width: 340px; border-color: var(--accent); }
+.dg-lb { background: var(--lb); }
+.dg-ui { background: var(--ui); }
+.dg-out { background: var(--out); }
+.dg-arrow { color: var(--muted); font-size: 0.9rem; text-align: center; }
+.dg-side { font-size: 1.4rem; }
+.shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; margin: 14px 0 20px; align-items: start; }
+.shots figure { margin: 0; }
+.shots img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.shots figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+.shots .narrow img { max-width: 260px; }
+.dg-note { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 4px; }
+@media (max-width: 560px) { .dg-side { transform: rotate(90deg); } .dg-main { flex-direction: column; } .dg-main .dg-box { flex: 0 0 auto; width: 100%; max-width: 340px; } }
+#theme { position: fixed; top: 12px; right: 12px; z-index: 20; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+#navbtn { position: fixed; right: 16px; bottom: 16px; z-index: 20; border: 0; background: var(--accent); color: #fff; border-radius: 999px; padding: 10px 16px; cursor: pointer; font: inherit; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+#navpanel { position: fixed; right: 16px; bottom: 64px; z-index: 20; width: min(340px, calc(100vw - 32px)); max-height: 70vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.25); display: none; }
+#navpanel.open { display: block; }
+#navpanel a { display: block; padding: 7px 10px; border-radius: 8px; text-decoration: none; color: var(--text); font-size: 0.93rem; }
+#navpanel a:hover { background: var(--code-bg); }
+#navpanel a.current { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<button id="theme" type="button" aria-label="Switch between light and dark">Dark mode</button>
+<header>
+  <h1>Service Monitor: stack, licences, data and trust</h1>
+  <p class="lead">This document is for anyone deciding whether to run Service Monitor, or who has been asked to approve it. It says in plain words what the software is built from, whether any of it needs a paid licence, what data it handles, who it talks to, and what it installs or downloads. For how the pieces work together see <code>service-monitor-stack-guide.md</code>.</p>
+  <div class="stats">
+<div class="stat"><b>Licence needed</b><span>None paid. Project: Apache-2.0</span></div>
+<div class="stat"><b>Telemetry</b><span>None found</span></div>
+<div class="stat"><b>Self-update</b><span>None</span></div>
+<div class="stat"><b>Monitored servers</b><span>Open no port; only call out</span></div>
+  </div>
+</header>
+<main>
+<section id="at-a-glance"><h2>1. At a glance</h2><div class="tablewrap"><table><thead><tr><th>Question</th><th>Answer</th></tr></thead><tbody><tr><td>Does it need a paid licence or an account with anyone?</td><td>No. The project is Apache-2.0 and every library it uses is open source. You do need a Java 21 or newer runtime for the hub, which you choose and supply (free builds exist). There is no registration, licence key or licence server</td></tr><tr><td>Does it send usage data, analytics or crash reports to its authors or anyone else?</td><td>None found. There is no telemetry, analytics, tracking or &quot;phone home&quot; code in the hub, the agent or the dashboard</td></tr><tr><td>Does it update itself?</td><td>No. Nothing downloads or applies an update; you install new versions yourself</td></tr><tr><td>Does it download anything while it runs?</td><td>No. The hub and agent make only the connections listed in section 5</td></tr><tr><td>Does it download anything when you install it?</td><td>One case: the Windows hub installer fetches the service wrapper WinSW from GitHub only when you have not supplied a copy, and refuses it unless it matches a pinned SHA-256 (section 6). Nothing else</td></tr><tr><td>What does it install on a server?</td><td>The agent registers itself as a service when an admin runs <code>svcmon agent install</code>; the hub installers register the hub the same way. No package manager is used and no other software is added</td></tr><tr><td>What data does it keep?</td><td>Names and settings of what you chose to monitor, and the results of those checks for 30 days (section 4). No personal data about your users</td></tr><tr><td>Who receives data from it?</td><td>Only the alert channels and sign-in provider you configure (section 5)</td></tr><tr><td>Does a monitored server open a port for it?</td><td>No. Agents only connect out</td></tr><tr><td>Has it been independently audited?</td><td>No</td></tr></tbody></table></div></section>
+<section id="what-it-is-made-of"><h2>2. What it is made of</h2><div class="tablewrap"><table><thead><tr><th>Piece</th><th>Built with</th><th>Notes</th></tr></thead><tbody><tr><td>The hub</td><td>Java 21, Spring Boot 4.1.2, Maven. SQLite for storage, Flyway for database changes</td><td>A jar of about 37 MB that runs on any Java 21 or newer runtime. It serves the API, the optional dashboard files and a live WebSocket</td></tr><tr><td>The agent and the CLI</td><td>Go 1.27.3. One program, <code>svcmon</code>, about 12 MB</td><td>No runtime needed on the monitored server. Builds for Windows, Linux and macOS</td></tr><tr><td>The dashboard</td><td>Svelte 5, Vite 6, uPlot, Node.js 20 or newer to build</td><td>Plain static files once built. Node is not needed to run it</td></tr><tr><td>Optional</td><td>An OpenID Connect identity provider of your choice for sign-in (Keycloak is the one tried; the hub is configured with the provider's address, so nothing is tied to it); a load balancer for TLS</td><td>Not part of this project; you run them yourself if you want them</td></tr></tbody></table></div></section>
+<section id="licences"><h2>3. Licences</h2><p><strong>The project itself</strong> is licensed under the Apache License 2.0 (<code>LICENSE</code>), for the hub, agent and dashboard repositories alike.</p>
+<p><strong>Nothing needs a paid licence.</strong> The hub jar contains 52 libraries. Their licences, read from each library's own build file:</p>
+<div class="tablewrap"><table><thead><tr><th>Licence</th><th>Count</th><th>Examples</th></tr></thead><tbody><tr><td>Apache License 2.0</td><td>42</td><td>Spring Boot and Spring Framework, Tomcat, Jackson, Flyway, <code>sqlite-jdbc</code>, Nimbus JOSE+JWT</td></tr><tr><td>MIT</td><td>2</td><td>SLF4J and its JUL bridge</td></tr><tr><td>Eclipse Public License 2.0 (Logback also offers LGPL 2.1)</td><td>2</td><td>Logback</td></tr><tr><td>EPL 2.0 or GPL 2 with the Classpath Exception, and the Eclipse Distribution License (BSD-style)</td><td>5</td><td>Jakarta Mail and Angus Mail, Jakarta Activation and its Angus implementation, Jakarta Annotations</td></tr></tbody></table></div>
+<p>One entry, Spring Boot's own <code>jarmode-tools</code>, has no build file in the local cache; it ships with Spring Boot, which is Apache-2.0. SQLite itself is in the public domain, and the Java driver that carries it is Apache-2.0.</p>
+<p><strong>The agent</strong> compiles in a few small Go modules, all open source:</p>
+<div class="tablewrap"><table><thead><tr><th>Module</th><th>Licence</th><th>Built into</th></tr></thead><tbody><tr><td><code>gopsutil</code> v4.26.9</td><td>BSD</td><td>All platforms</td></tr><tr><td><code>pro-bing</code> v0.9.1</td><td>MIT</td><td>All platforms</td></tr><tr><td><code>golang.org/x/sys</code>, <code>x/net</code>, <code>x/sync</code></td><td>BSD-style (Go authors)</td><td>All platforms</td></tr><tr><td><code>google/uuid</code> v1.6.0</td><td>BSD</td><td>All platforms</td></tr><tr><td><code>go-winio</code> v0.6.4, <code>go-ole</code> v1.2.6, <code>wmi</code> v1.2.4</td><td>MIT</td><td>Windows only</td></tr><tr><td><code>tklauser/go-sysconf</code> v0.4.0</td><td>BSD 3-clause</td><td>Linux and macOS</td></tr><tr><td><code>tklauser/numcpus</code> v0.12.0</td><td>Apache-2.0</td><td>Linux only</td></tr><tr><td><code>ebitengine/purego</code> v0.11.1</td><td>Apache-2.0</td><td>macOS only</td></tr></tbody></table></div>
+<p><strong>The dashboard</strong> ships its own code plus Svelte's small runtime and uPlot, both MIT. Vite, Vitest and the Svelte compiler are used to build and test it and are not part of what runs.</p>
+<p><strong>WinSW</strong> (MIT) is the wrapper that turns the hub jar into a Windows service. It is not stored in the repository; its licence text is kept in <code>hub/service/windows/WinSW-LICENSE.txt</code> and in <code>NOTICE</code>.</p>
+<p><strong>The Java runtime</strong> is the one thing you supply. The project does not bundle or require a particular vendor. Open-source builds such as Eclipse Temurin are available at no cost; whichever you choose, read that vendor's terms.</p>
+<p>The copyleft-style licences above (Logback, Jakarta Mail) apply to those libraries themselves and are used unmodified. Running the hub does not ask you to publish anything. If you redistribute a modified copy of those libraries, their own terms apply. This is not legal advice.</p></section>
+<section id="what-data-it-handles"><h2>4. What data it handles</h2><h3>What an agent sends to the hub</h3>
+<div class="tablewrap"><table><thead><tr><th>Data</th><th>When</th><th>Notes</th></tr></thead><tbody><tr><td>Server name (by default the host name), optional cluster name</td><td>Once, when registering</td><td>You can choose the name with <code>--name</code></td></tr><tr><td>Operating system description (for example &quot;Microsoft Windows 11 Home 26H2 (amd64)&quot;) and the agent version</td><td>Registering and with each report</td><td>Shown on the server's page</td></tr><tr><td>Each check's result: status, response time or percentage, a short message (at most 500 characters), a time stamp</td><td>Every time a check runs</td><td>Messages are short facts such as <code>HTTP 200</code>, <code>running, up 29m, 0 restart(s)</code> or <code>C:\ 61.3% used</code></td></tr><tr><td>A heartbeat</td><td>About every 30 seconds</td><td>An empty report</td></tr></tbody></table></div>
+<p>The hub also sees the network address a request came from. It does not store that with servers or results; it appears in the log lines for rejected requests and sign-ins.</p>
+<h3>What an agent reads on the server</h3>
+<p>Only what a check the admin listed needs, and nothing is discovered on its own. The commands that list what exists (<code>svcmon agent services</code>, <code>svcmon agent containers</code>) print to the terminal and send nothing.</p>
+<div class="tablewrap"><table><thead><tr><th>Check</th><th>What is read</th></tr></thead><tbody><tr><td>CPU, memory, disk</td><td>Overall percentages for the named volume or path. No file names or contents</td></tr><tr><td>Service</td><td>Whether the named Windows service, systemd unit or launchd job is running</td></tr><tr><td>Container</td><td>The named container's state, health, image name, uptime and restart count, asked of the local Docker or Podman with read-only requests. Its environment variables, mounts and labels are never read into a message</td></tr><tr><td>HTTP, TCP, ping</td><td>Whether the address answers, how fast, the status code, and (HTTP) a keyword in the body, which is checked in memory and not kept. For https addresses, the certificate's expiry date</td></tr></tbody></table></div>
+<h3>What the hub stores</h3>
+<p>In one SQLite file in its data folder:</p>
+<ul><li>the servers (name, cluster, operating system text, agent version, last seen) and the checks (type, target, settings, interval);</li><li>every check result for 30 days (<code>svcmon.retention-days</code>), then it is deleted;</li><li>API tokens, as SHA-256 fingerprints only, never the tokens themselves;</li><li>alert channels, including their secrets: webhook and Slack or Discord addresses, signing secrets and the SMTP password;</li><li>the local admin account's password, as a salted PBKDF2 hash.</li></ul>
+<h3>What it does not collect</h3>
+<p>Files or their contents, documents, passwords or keys of your systems, environment variables, process lists, network traffic, screenshots, location, or anything about the people who use the dashboard beyond the sign-in name that appears in the hub's log. There are no user profiles and no advertising or tracking identifiers.</p>
+<h3>In the browser</h3>
+<p>The dashboard keeps a few items in the browser's own storage: the sign-in token (in session storage, or in local storage if &quot;remember&quot; is chosen), the theme, which help panels are open, and the sign-in mode. It sets no cookies of its own and makes no requests except to the hub it was served from or pointed at. It loads no fonts, scripts or images from other sites.</p>
+<h3>Logs</h3>
+<p>The hub's log records start-up facts (address, database path, the names and types of checks), sign-ins and refused requests with the client address and user name, and failures. By design it does not write tokens, alert addresses or check targets (the start-up summary has a test for exactly that). The agent's log (<code>agent.log</code> beside the program when it runs as a service) records what it fetched and sent, by name and count.</p></section>
+<section id="who-it-connects-to"><h2>5. Who it connects to</h2><div class="tablewrap"><table><thead><tr><th>From</th><th>To</th><th>Why</th></tr></thead><tbody><tr><td>Agent</td><td>Your hub (the address you give it)</td><td>Register, fetch its check list, send results. Plain HTTP unless you put TLS in front</td></tr><tr><td>Agent</td><td>The addresses of the HTTP, TCP and ping checks you listed</td><td>To run those checks from the server's side</td></tr><tr><td>Agent</td><td>The local Docker or Podman, through a local socket or Windows named pipe</td><td>Container checks. Nothing leaves the machine</td></tr><tr><td>Hub</td><td>The addresses of hub-run HTTP, TCP and ping checks you listed (ping uses the operating system's <code>ping</code> command)</td><td>To run those checks</td></tr><tr><td>Hub</td><td>The alert channels you set up: webhook, Slack and Discord addresses, or your SMTP server</td><td>To send alerts. The text sent includes the check name, status, message, server name and the check's target address</td></tr><tr><td>Hub</td><td>Your sign-in provider's discovery address and key list, only if you turn on OpenID Connect</td><td>To verify the signature of sign-in tokens</td></tr><tr><td>Browser</td><td>The hub</td><td>The dashboard's data and live updates</td></tr></tbody></table></div>
+<p>Nothing else was found. In particular there is no connection to the project's authors, to a licence service, to an update server or to an analytics service.</p>
+<p>Inbound: only the hub accepts connections (one port, 8080 by default). Monitored servers open nothing for the monitor.</p></section>
+<section id="what-it-installs-downloads-or-changes"><h2>6. What it installs, downloads or changes</h2><p><strong>Running the hub or the agent</strong> installs nothing and downloads nothing. There is no self-update.</p>
+<p><strong>Installing the agent</strong> (<code>svcmon agent install</code>, which needs an administrator or root) does these things, and only these:</p>
+<ul><li>saves <code>agent.json</code> (the hub address and the agent's own token) beside the program, readable only by the owner, or on Windows by SYSTEM, Administrators and the installing user;</li><li>registers a service: a Windows service, a systemd unit file, or a macOS launchd file;</li><li>runs the system's own service tools to do so (<code>systemctl</code>, <code>launchctl</code>, <code>icacls</code>).</li></ul>
+<p>The agent runs as the Windows <code>LocalSystem</code> account and, on Linux, as root with <code>NoNewPrivileges</code> set and the single extra capability needed to send pings. It needs that to read service states and, for containers, the Docker socket. Removing it is <code>svcmon agent uninstall</code>.</p>
+<p><strong>Installing the hub as a service</strong> runs the scripts in <code>hub/service/</code>. Both can first be run with a dry-run switch that prints every step and changes nothing. They create an unprivileged account for the hub (a virtual account on Windows, a system user on Linux), register the service, lock the program and data folders to that account and administrators, and wait for the hub to answer on its own local address. They do not change the firewall and they use no package manager.</p>
+<p><strong>The one download:</strong> the Windows installer needs the service wrapper WinSW 2.12.0. It uses, in order, the copy you pass with <code>-WinSWPath</code>, a copy beside the script, and only then downloads it from the project's GitHub releases page. Whichever it uses must match the SHA-256 written in the script; a mismatch stops the install. The Windows hub package (built by a manually started workflow) already contains the copy, so installing from it downloads nothing.</p>
+<p><strong>When you build from source</strong> your build tools download libraries: Maven from Maven Central for the hub, the Go module proxy for the agent, the npm registry for the dashboard. That is the normal way these tools work and it happens on the machine that builds, not where the hub or agent runs.</p></section>
+<section id="how-secrets-are-protected-and-where-they-are-not"><h2>7. How secrets are protected, and where they are not</h2><p>Protected:</p>
+<ul><li>API tokens are stored only as SHA-256 fingerprints, shown once when created.</li><li>Alert channel secrets are masked in every API answer, and an update that sends the masked value back keeps the stored one.</li><li>The hub's local admin password is stored only as a salted PBKDF2-HMAC-SHA256 hash. Sign-in attempts are throttled.</li><li>Sign-in with an OpenID Connect provider checks the token's signature, issuer, audience and expiry in the hub; nothing is trusted because of where a request came from.</li><li>Names and messages from agents are treated as untrusted: Slack markup is escaped, Discord mentions are off, mail headers cannot be injected, and the HTML in alert emails has no scripts, images or tracking.</li><li>Strict settings: an unknown setting is an error, so a typo does not silently weaken something.</li></ul>
+<p>Things to know and handle yourself:</p>
+<ul><li><strong>Secrets in the database are not encrypted at rest.</strong> Alert channel secrets sit in the SQLite file as stored. Keep the data folder and any backup of it readable only by the hub's account and administrators (the installers do this for the folders they create).</li><li><strong>Check settings are not masked.</strong> A check's address and settings, including any HTTP headers you add, are shown to anyone holding a read token and are sent to the agent that runs the check. Do not put passwords or tokens in a check's URL or headers. The check's address also appears in alert messages.</li><li><strong>Agent to hub traffic is plain HTTP inside your network</strong> by design (TLS ends at your load balancer). Anyone who can read that network can see the bearer tokens. Firewall the hub's port to the load balancer and the internal networks.</li><li><strong>A new hub prints one random admin password in its log at first start</strong> (unless you set one). Read it once and keep the log folder restricted.</li><li><strong>The agent is powerful by nature.</strong> It runs with high privileges to read service states and the container socket. A container socket is as powerful as root, so the agent only sends read requests to it.</li><li><strong>A stolen agent token</strong> can report results for that one server and, only if you turn on <code>svcmon.agent-declared-checks</code>, declare checks for that server. Revoke the token to stop it.</li></ul></section>
+<section id="limits-of-this-statement"><h2>8. Limits of this statement</h2><ul><li>It has not been reviewed by an independent party, and this repository has no separate security-reporting process yet.</li><li>The macOS agent installer and service checks have never run on a real Mac. Container checks and agent-declared checks have run against Docker Desktop on Windows but not yet as an installed service, on Linux or against Podman.</li><li>The licence information for libraries comes from their published build files and licence files; check them again when you update a dependency.</li><li>Counts and versions will change as the code does. The date at the top says when they were checked.</li></ul></section>
+<section id="check-it-yourself"><h2>9. Check it yourself</h2><div class="tablewrap"><table><thead><tr><th>To see</th><th>Do this</th></tr></thead><tbody><tr><td>Every outbound connection in the hub</td><td>Search <code>hub/src/main/java</code> for <code>HttpClient</code>, <code>Socket</code>, <code>URL</code> and <code>ProcessBuilder</code>. They are the alert senders, the check runners, the mail sender, the JWT key fetch and the <code>ping</code> command</td></tr><tr><td>Every outbound connection in the agent</td><td>Search <code>agent</code> for <code>http.Client</code>, <code>net.Dial</code> and <code>exec.Command</code>. They are the hub client, the check runners, the local container socket and the service tools</td></tr><tr><td>Telemetry</td><td>Search for <code>telemetry</code>, <code>analytics</code>, <code>tracking</code> and <code>beacon</code>; the only hit is a comment saying alert emails have none</td></tr><tr><td>What the dashboard requests</td><td>Open the browser's network panel while using it: every request goes to the hub. Or search <code>dist/</code> for <code>http</code>; only error-message links to svelte.dev appear, as text</td></tr><tr><td>The libraries in the hub</td><td><code>jar tf hub/target/svcmon-hub-0.1.0-SNAPSHOT.jar</code> and look under <code>BOOT-INF/lib</code></td></tr><tr><td>The modules in the agent</td><td><code>go version -m svcmon</code></td></tr><tr><td>The WinSW pin</td><td>Read <code>$WinSWSha256</code> in <code>hub/service/windows/install.ps1</code> and compare it with the release on <a href="https://github.com/winsw/winsw" rel="noopener">https://github.com/winsw/winsw</a></td></tr><tr><td>What a running hub or agent connects to</td><td>Watch its connections with <code>netstat -ano</code> (Windows) or <code>ss -tnp</code> (Linux)</td></tr><tr><td>What an install would change</td><td>Run the installer with <code>-DryRun</code> (Windows) or <code>--dry-run</code> (Linux)</td></tr></tbody></table></div></section>
+<section id="references"><h2>10. References</h2><p><strong>Project</strong></p>
+<ul><li>Main repository: <a href="https://github.com/primelogiclabio/service-monitor" rel="noopener">https://github.com/primelogiclabio/service-monitor</a> (licence in <code>LICENSE</code>, third-party notice in <code>NOTICE</code>, user guide in <code>README.md</code>, design in <code>docs/service-monitor-design.md</code>)</li><li>Dashboard repository: <a href="https://github.com/primelogiclabio/service-monitor-ui" rel="noopener">https://github.com/primelogiclabio/service-monitor-ui</a></li><li>The companion explainer: <code>docs/service-monitor-stack-guide.md</code></li></ul>
+<p><strong>Licences</strong></p>
+<ul><li>Apache License 2.0: <a href="https://www.apache.org/licenses/LICENSE-2.0" rel="noopener">https://www.apache.org/licenses/LICENSE-2.0</a></li><li>MIT: <a href="https://opensource.org/license/mit" rel="noopener">https://opensource.org/license/mit</a></li><li>BSD 3-clause: <a href="https://opensource.org/license/bsd-3-clause" rel="noopener">https://opensource.org/license/bsd-3-clause</a></li><li>Eclipse Public License 2.0: <a href="https://www.eclipse.org/legal/epl-2.0/" rel="noopener">https://www.eclipse.org/legal/epl-2.0/</a></li><li>Eclipse Distribution License 1.0: <a href="https://www.eclipse.org/org/documents/edl-v10.php" rel="noopener">https://www.eclipse.org/org/documents/edl-v10.php</a></li><li>GNU LGPL 2.1: <a href="https://opensource.org/license/lgpl-2-1" rel="noopener">https://opensource.org/license/lgpl-2-1</a></li><li>GNU GPL 2.0: <a href="https://opensource.org/license/gpl-2-0" rel="noopener">https://opensource.org/license/gpl-2-0</a> , with the Classpath Exception: <a href="https://openjdk.org/legal/gplv2+ce.html" rel="noopener">https://openjdk.org/legal/gplv2+ce.html</a></li><li>SQLite's public-domain statement: <a href="https://www.sqlite.org/copyright.html" rel="noopener">https://www.sqlite.org/copyright.html</a></li></ul>
+<p><strong>Components named above</strong></p>
+<ul><li>Spring Boot: <a href="https://spring.io/projects/spring-boot" rel="noopener">https://spring.io/projects/spring-boot</a></li><li>SQLite JDBC driver: <a href="https://github.com/xerial/sqlite-jdbc" rel="noopener">https://github.com/xerial/sqlite-jdbc</a></li><li>Flyway: <a href="https://github.com/flyway/flyway" rel="noopener">https://github.com/flyway/flyway</a></li><li>Nimbus JOSE+JWT: <a href="https://connect2id.com/products/nimbus-jose-jwt" rel="noopener">https://connect2id.com/products/nimbus-jose-jwt</a></li><li>Angus Mail: <a href="https://eclipse-ee4j.github.io/angus-mail/" rel="noopener">https://eclipse-ee4j.github.io/angus-mail/</a></li><li>gopsutil: <a href="https://github.com/shirou/gopsutil" rel="noopener">https://github.com/shirou/gopsutil</a></li><li>pro-bing: <a href="https://github.com/prometheus-community/pro-bing" rel="noopener">https://github.com/prometheus-community/pro-bing</a></li><li>go-winio: <a href="https://github.com/microsoft/go-winio" rel="noopener">https://github.com/microsoft/go-winio</a></li><li>Svelte: <a href="https://svelte.dev" rel="noopener">https://svelte.dev</a></li><li>Vite: <a href="https://vite.dev" rel="noopener">https://vite.dev</a></li><li>uPlot: <a href="https://github.com/leeoniya/uPlot" rel="noopener">https://github.com/leeoniya/uPlot</a></li><li>WinSW (the one thing the installer may download): <a href="https://github.com/winsw/winsw" rel="noopener">https://github.com/winsw/winsw</a></li><li>Eclipse Temurin, one free Java runtime: <a href="https://adoptium.net/" rel="noopener">https://adoptium.net/</a></li><li>Keycloak, the sign-in provider tried with the hub (any OpenID Connect provider that issues JWT access tokens can be configured instead): <a href="https://www.keycloak.org" rel="noopener">https://www.keycloak.org</a></li></ul></section>
+</main>
+<button id="navbtn" type="button" aria-expanded="false" aria-controls="navpanel">Sections</button>
+<nav id="navpanel" aria-label="Sections"><a href="#at-a-glance" data-id="at-a-glance">1. At a glance</a><a href="#what-it-is-made-of" data-id="what-it-is-made-of">2. What it is made of</a><a href="#licences" data-id="licences">3. Licences</a><a href="#what-data-it-handles" data-id="what-data-it-handles">4. What data it handles</a><a href="#who-it-connects-to" data-id="who-it-connects-to">5. Who it connects to</a><a href="#what-it-installs-downloads-or-changes" data-id="what-it-installs-downloads-or-changes">6. What it installs, downloads or changes</a><a href="#how-secrets-are-protected-and-where-they-are-not" data-id="how-secrets-are-protected-and-where-they-are-not">7. How secrets are protected, and where they are not</a><a href="#limits-of-this-statement" data-id="limits-of-this-statement">8. Limits of this statement</a><a href="#check-it-yourself" data-id="check-it-yourself">9. Check it yourself</a><a href="#references" data-id="references">10. References</a></nav>
+<script>
+(function () {
+  var root = document.documentElement;
+  var themeBtn = document.getElementById('theme');
+  function apply(t) {
+    if (t === 'dark') root.setAttribute('data-theme', 'dark'); else root.removeAttribute('data-theme');
+    themeBtn.textContent = t === 'dark' ? 'Light mode' : 'Dark mode';
+  }
+  var saved = null;
+  try { saved = localStorage.getItem('svcmon-policy-theme'); } catch (e) {}
+  apply(saved === 'dark' ? 'dark' : 'light');
+  themeBtn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    apply(next);
+    try { localStorage.setItem('svcmon-policy-theme', next); } catch (e) {}
+  });
+
+  var btn = document.getElementById('navbtn');
+  var panel = document.getElementById('navpanel');
+  function setOpen(open) { panel.classList.toggle('open', open); btn.setAttribute('aria-expanded', String(open)); }
+  btn.addEventListener('click', function (e) { e.stopPropagation(); setOpen(!panel.classList.contains('open')); });
+  panel.addEventListener('click', function (e) { if (e.target.tagName === 'A') setOpen(false); });
+  document.addEventListener('click', function (e) { if (!panel.contains(e.target)) setOpen(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
+
+  var links = {};
+  panel.querySelectorAll('a').forEach(function (a) { links[a.getAttribute('data-id')] = a; });
+  function mark(id) {
+    Object.keys(links).forEach(function (k) { links[k].classList.toggle('current', k === id); });
+  }
+  // The current section is the last one whose top has reached the upper part of the window.
+  var sectionEls = Array.prototype.slice.call(document.querySelectorAll('main section'));
+  var ticking = false;
+  function update() {
+    ticking = false;
+    var current = null;
+    sectionEls.forEach(function (s) { if (s.getBoundingClientRect().top <= 120) current = s.id; });
+    mark(current);
+  }
+  function onScroll() { if (!ticking) { ticking = true; requestAnimationFrame(update); } }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+  update();
+})();
+</script>
+</body>
+</html>

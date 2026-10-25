@@ -2,7 +2,7 @@
 
 A free, cross-platform monitor for HTTP, TCP, ping, Windows/Linux/macOS services, CPU, memory and disk. A headless Java hub with a REST API, one small Go binary (`svcmon`) that is both the agent and the command-line client, an optional web dashboard in its own repository, and a multi-hub console that is still to come.
 
-Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-design.md) (also as [HTML](docs/service-monitor-design.html)).
+Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-design.md) (also as [HTML](docs/service-monitor-design.html)). What it is built with, explained for a Java developer: [docs/service-monitor-stack-guide.md](docs/service-monitor-stack-guide.md) ([HTML](docs/service-monitor-stack-guide.html)). Licences, what data it handles, what it connects to and what it installs: [docs/service-monitor-trust-policy.md](docs/service-monitor-trust-policy.md) ([HTML](docs/service-monitor-trust-policy.html)).
 
 ## Status (v0.1)
 
@@ -17,6 +17,22 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 | Alert channels | Webhook (optionally signed), Slack, Discord and email (HTML with a plain-text part, or plain text only), plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub can serve it (`svcmon.ui-dir`) or allow it from another address (`svcmon.cors-allowed-origins`) |
 | Multi-hub console | Not started |
+
+## What it looks like
+
+Pictures of the dashboard from a demo hub with made-up servers (nothing here is a real system). The stack guide in `docs/` has more of them and the story behind each.
+
+| Light theme | Dark theme |
+|---|---|
+| ![The dashboard in the light theme: overall status, then a card per server grouped by cluster](docs/assets/dashboard-light.png) | ![The dashboard in the dark theme](docs/assets/dashboard-dark.png) |
+
+| A check's history | A container check that is down |
+|---|---|
+| ![CPU history with the warning and critical lines](docs/assets/check-chart.png) | ![The server page with a container check that is down and its recent results](docs/assets/check-container.png) |
+
+| Every check on one page | Adding a container check |
+|---|---|
+| ![The Monitors page with filters](docs/assets/monitors.png) | ![The Add check form for a container](docs/assets/add-container-check.png) |
 
 ## Deployment model
 
@@ -322,7 +338,7 @@ CI runs both on every pull request that changes more than documentation (Markdow
 ## Layout
 
 ```text
-docs/                design document (Markdown + HTML)
+docs/                design document, stack guide, trust policy (each Markdown + HTML)
 hub/                 Java 21, Spring Boot 4.1, SQLite (Maven project)
 hub/service/         install and uninstall scripts for the hub as a service (Windows, Linux) and their tests
 agent/               Go 1.27: svcmon agent + CLI (cmd/svcmon, internal/...)

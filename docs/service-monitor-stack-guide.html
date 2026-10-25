@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service Monitor: what it is for and what it is built with</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #fafaf8; --panel: #ffffff; --text: #1d2125; --muted: #5b6570; --line: #dfe3e7;
+  --accent: #1f6feb; --accent-soft: #e6f0ff; --code-bg: #f1f3f5; --hub: #e8f1ff; --ui: #eaf7ee; --out: #fff4e0; --lb: #f1ecff;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #14171a; --panel: #1c2024; --text: #e6e9ec; --muted: #9aa5b0; --line: #2d343b;
+  --accent: #6aa5ff; --accent-soft: #1b2a40; --code-bg: #262c32; --hub: #1b2a40; --ui: #1a3023; --out: #3a2d14; --lb: #2b2540;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { max-width: 980px; margin: 0 auto; padding: 56px 16px 8px; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); line-height: 1.2; margin: 0 0 12px; }
+.lead { color: var(--muted); max-width: 70ch; margin: 0 0 20px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 0 0 8px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.stat b { display: block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.stat span { font-size: 1.05rem; font-weight: 600; }
+main { max-width: 980px; margin: 0 auto; padding: 8px 16px 96px; }
+section { padding-top: 20px; }
+h2 { font-size: 1.5rem; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.15rem; margin: 22px 0 8px; }
+p, li { max-width: 78ch; }
+a { color: var(--accent); overflow-wrap: anywhere; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font: 0.9em ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+.tablewrap { overflow-x: auto; margin: 12px 0 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { background: var(--accent-soft); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.diagram { margin: 18px 0 22px; padding: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.dg-row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; width: 100%; }
+.dg-box { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; text-align: center; min-width: 130px; flex: 0 1 190px; }
+.dg-box b { display: block; }
+.dg-box small { display: block; color: var(--muted); font-size: 0.8rem; line-height: 1.35; margin-top: 2px; }
+.dg-hub { background: var(--hub); flex: 1 1 280px; max-width: 340px; border-color: var(--accent); }
+.dg-lb { background: var(--lb); }
+.dg-ui { background: var(--ui); }
+.dg-out { background: var(--out); }
+.dg-arrow { color: var(--muted); font-size: 0.9rem; text-align: center; }
+.dg-side { font-size: 1.4rem; }
+.shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; margin: 14px 0 20px; align-items: start; }
+.shots figure { margin: 0; }
+.shots img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.shots figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+.shots .narrow img { max-width: 260px; }
+.dg-note { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 4px; }
+@media (max-width: 560px) { .dg-side { transform: rotate(90deg); } .dg-main { flex-direction: column; } .dg-main .dg-box { flex: 0 0 auto; width: 100%; max-width: 340px; } }
+#theme { position: fixed; top: 12px; right: 12px; z-index: 20; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+#navbtn { position: fixed; right: 16px; bottom: 16px; z-index: 20; border: 0; background: var(--accent); color: #fff; border-radius: 999px; padding: 10px 16px; cursor: pointer; font: inherit; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+#navpanel { position: fixed; right: 16px; bottom: 64px; z-index: 20; width: min(340px, calc(100vw - 32px)); max-height: 70vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.25); display: none; }
+#navpanel.open { display: block; }
+#navpanel a { display: block; padding: 7px 10px; border-radius: 8px; text-decoration: none; color: var(--text); font-size: 0.93rem; }
+#navpanel a:hover { background: var(--code-bg); }
+#navpanel a.current { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<button id="theme" type="button" aria-label="Switch between light and dark">Dark mode</button>
+<header>
+  <h1>Service Monitor: what it is for and what it is built with</h1>
+  <p class="lead">A plain-language guide for someone who knows Java well and is less sure about the rest of the stack. Facts were checked against the repositories on 2026-10-25 (hub <code>main</code> at <code>1630d17</code>, dashboard <code>main</code> at <code>1ae864d</code>). For the reasoning behind the design see <code>service-monitor-design.md</code>; for how to run it see <code>README.md</code>.</p>
+  <div class="stats">
+<div class="stat"><b>Hub</b><span>Java 21, Spring Boot 4.1</span></div>
+<div class="stat"><b>Agent and CLI</b><span>Go 1.27, one program</span></div>
+<div class="stat"><b>Dashboard</b><span>Svelte 5, Vite 6, uPlot</span></div>
+<div class="stat"><b>Data</b><span>SQLite, one file</span></div>
+  </div>
+</header>
+<main>
+<section id="what-it-is-for"><h2>1. What it is for</h2><p>Service Monitor watches your servers and websites and tells you when something is wrong. You list what matters (a website, a Windows service, a Docker container, how full a disk is), it checks on a schedule, and when a check changes state it sends a message to Slack, Discord, email or a webhook. It is free and open source (Apache-2.0) and runs on Windows, Linux and macOS.</p>
+<p>A way to picture it: the <strong>hub</strong> is a control room with a logbook and an alarm bell. On each monitored server a small <strong>agent</strong> acts like a caretaker who never answers the phone. The caretaker only ever phones the control room: &quot;what should I check?&quot; and &quot;here is what I found&quot;. Because the servers only call out, they open no ports for the monitor, which is the main safety idea of the whole design. The <strong>dashboard</strong> and the <strong>command line</strong> are two ways for you to read the logbook and change the list of things to watch.</p>
+<p>What it can check:</p>
+<div class="tablewrap"><table><thead><tr><th>Check</th><th>Where it runs</th><th>In plain words</th></tr></thead><tbody><tr><td>HTTP, TCP, ping</td><td>The hub, or an agent</td><td>Does this address answer? How fast?</td></tr><tr><td>Service</td><td>An agent</td><td>Is this Windows service, systemd unit or macOS job running?</td></tr><tr><td>Container</td><td>An agent</td><td>Is this Docker or Podman container running and healthy?</td></tr><tr><td>CPU, memory, disk</td><td>An agent</td><td>How full is it, against a warning and a critical level?</td></tr></tbody></table></div></section>
+<section id="the-big-picture"><h2>2. The big picture</h2>
+<figure class="diagram" aria-label="How the servers, the hub, the dashboard and the alert channels connect">
+  <div class="dg-row">
+    <div class="dg-box"><b>web01</b><small>agent</small></div>
+    <div class="dg-box"><b>db01</b><small>agent</small></div>
+    <div class="dg-box"><b>build01</b><small>agent</small></div>
+  </div>
+  <div class="dg-arrow">monitored servers only call out &darr;</div>
+  <div class="dg-row dg-main">
+    <div class="dg-box dg-lb"><b>Load balancer</b><small>ends TLS</small></div>
+    <div class="dg-arrow dg-side">&rarr;</div>
+    <div class="dg-box dg-hub"><b>The hub</b><small>Java, Spring Boot: scheduler, REST API, alerts, one SQLite file</small></div>
+  </div>
+  <div class="dg-arrow">&darr;</div>
+  <div class="dg-row">
+    <div class="dg-box dg-ui"><b>Dashboard</b><small>Svelte, served by the hub</small></div>
+    <div class="dg-box dg-ui"><b>CLI</b><small>svcmon, the same Go program as the agent</small></div>
+    <div class="dg-box dg-out"><b>Alert channels</b><small>Slack, Discord, email, webhook</small></div>
+  </div>
+  <div class="dg-note">Optional sign-in: Keycloak or another OpenID Connect provider, checked by the hub itself</div>
+</figure>
+<p>Three programs live in two repositories:</p>
+<ul><li><strong>The hub</strong> (<code>hub/</code> in the main repository) keeps the list of checks, runs the network checks itself, stores results, works out each server's overall status and sends alerts. It is a Spring Boot application.</li><li><strong>The agent and the CLI</strong> (<code>agent/</code>) are one Go program called <code>svcmon</code>. Run as <code>svcmon agent run</code> it is the agent on a monitored server; run as <code>svcmon status</code> or <code>svcmon check add</code> it is the command-line client for the hub.</li><li><strong>The dashboard</strong> (the separate repository <code>service-monitor-ui</code>) is a web page built with Svelte. The hub can serve its files, or any web server can.</li></ul>
+<h3>What it looks like</h3>
+<p>These pictures come from a throwaway demo hub filled with made-up servers (the dashboard repository's <code>scripts/seed-demo.mjs</code> plus a small container seeder in <code>docs/tools/screenshots/</code>), so nothing in them is a real system. Click a picture to open it full size.</p>
+<div class="shots"><figure><a href="assets/dashboard-light.png"><img src="assets/dashboard-light.png" alt="The dashboard: the overall status at the top, then one card per server grouped by cluster (light theme)" loading="lazy"></a><figcaption>The dashboard: the overall status at the top, then one card per server grouped by cluster (light theme)</figcaption></figure><figure><a href="assets/dashboard-dark.png"><img src="assets/dashboard-dark.png" alt="The same page in the dark theme, which follows the system setting unless you choose one" loading="lazy"></a><figcaption>The same page in the dark theme, which follows the system setting unless you choose one</figcaption></figure></div>
+<div class="shots"><figure><a href="assets/monitors.png"><img src="assets/monitors.png" alt="Monitors: every check on one page, with filters for cluster, type and state" loading="lazy"></a><figcaption>Monitors: every check on one page, with filters for cluster, type and state</figcaption></figure></div>
+<div class="shots"><figure><a href="assets/check-chart.png"><img src="assets/check-chart.png" alt="A check's history: CPU on a server with the warning and critical lines" loading="lazy"></a><figcaption>A check's history: CPU on a server with the warning and critical lines</figcaption></figure><figure><a href="assets/check-container.png"><img src="assets/check-container.png" alt="A container check that is down: the strip shows recent results, green for up and red for down" loading="lazy"></a><figcaption>A container check that is down: the strip shows recent results, green for up and red for down</figcaption></figure></div>
+<div class="shots"><figure><a href="assets/add-container-check.png"><img src="assets/add-container-check.png" alt="Adding a container check from the dashboard; the runtime socket is optional" loading="lazy"></a><figcaption>Adding a container check from the dashboard; the runtime socket is optional</figcaption></figure><figure class="narrow"><a href="assets/dashboard-mobile.png"><img src="assets/dashboard-mobile.png" alt="The dashboard on a phone" loading="lazy"></a><figcaption>The dashboard on a phone</figcaption></figure></div></section>
+<section id="why-three-languages"><h2>3. Why three languages</h2><div class="tablewrap"><table><thead><tr><th>Piece</th><th>Language and size</th><th>Why this choice</th><th>Closest Java idea</th></tr></thead><tbody><tr><td>Hub</td><td>Java 21, Spring Boot 4.1.2, about a 37 MB jar</td><td>Your language; a long-running server that benefits from virtual threads and a mature ecosystem</td><td>The familiar part</td></tr><tr><td>Agent and CLI</td><td>Go 1.27.3, about a 12 MB single file</td><td>Must run on every monitored server, so it should need nothing installed there: no JVM, no runtime. Go builds one static program per operating system from one machine</td><td>A fat jar that does not need a JVM</td></tr><tr><td>Dashboard</td><td>Svelte 5 with Vite 6; about 213 kB of JavaScript (80 kB compressed)</td><td>Small, fast pages. Node is needed only to build; in production it is just static files</td><td>A front end that compiles down to plain files</td></tr><tr><td>Data</td><td>SQLite (one file)</td><td>No database server to install, patch or back up beyond one file</td><td>An embedded H2 or Derby, but far more widely used</td></tr></tbody></table></div></section>
+<section id="the-technologies-explained"><h2>4. The technologies, explained</h2><h3>4.1 The hub (the Java side)</h3>
+<div class="tablewrap"><table><thead><tr><th>Name</th><th>What it is</th><th>How it is used here</th></tr></thead><tbody><tr><td>Spring Boot 4.1.2</td><td>The application framework, fixed by the parent POM</td><td>REST controllers under <code>/api/v1</code>, configuration through <code>application.yml</code> or <code>--svcmon.*</code> flags, the embedded Tomcat</td></tr><tr><td>Virtual threads (Java 21, JEP 444)</td><td>Very cheap threads managed by the JVM; blocking in one costs almost nothing</td><td><code>spring.threads.virtual.enabled</code> is on. One ordinary thread keeps time in <code>CheckScheduler</code>; every check run executes on its own virtual thread, so hundreds of slow checks do not need a big pool</td></tr><tr><td>JdbcClient</td><td>Spring's plain-SQL helper (no JPA, no Hibernate)</td><td>The <code>store/</code> package writes SQL by hand and maps rows into Java records</td></tr><tr><td>SQLite and <code>sqlite-jdbc</code> 3.53.4.0</td><td>A database that is just a file</td><td>Lives in <code>svcmon.data-dir</code>. Opened in WAL mode (readers do not block the writer), with a 10 second busy timeout and foreign keys on. The jar carries the native libraries for every platform</td></tr><tr><td>Flyway</td><td>Applies numbered SQL scripts to the database on start</td><td><code>src/main/resources/db/migration/V1</code> to <code>V4</code>. An applied migration is never edited; a change is a new file</td></tr><tr><td>Spring WebSocket</td><td>A long-lived two-way connection to the browser</td><td><code>/api/v1/live</code> pushes the status to a dashboard when it changes</td></tr><tr><td>Angus Mail 2.0.5</td><td>The implementation of Jakarta Mail</td><td>Sends alert emails over SMTP</td></tr><tr><td>Nimbus JOSE+JWT 10.9.1</td><td>A library for signed tokens</td><td>Checks the signed sign-in tokens from your identity provider (section 4.5)</td></tr><tr><td>Maven</td><td>Your build tool</td><td><code>mvn -B -ntp test</code> runs the tests, which start the real hub on random ports with temporary data folders</td></tr></tbody></table></div>
+<p>All of these were checked in the build files and the local Maven cache; their licences are Apache-2.0 for Flyway, <code>sqlite-jdbc</code> and Nimbus, and EPL-2.0 or GPL-2.0 with the Classpath Exception for Angus Mail.</p>
+<h3>4.2 The agent and the CLI (the Go side)</h3>
+<p>Go is small enough to learn the shape of from a table. Left is what you will see in the code, right is the Java idea it maps to.</p>
+<div class="tablewrap"><table><thead><tr><th>In Go</th><th>Closest Java idea</th></tr></thead><tbody><tr><td><code>go.mod</code></td><td><code>pom.xml</code>: the module name and its dependencies</td></tr><tr><td><code>go build</code>, <code>go test</code>, <code>go vet</code></td><td><code>mvn package</code>, <code>mvn test</code>, a static analysis step</td></tr><tr><td>A package in <code>internal/...</code></td><td>A package that other modules cannot import</td></tr><tr><td>A goroutine (<code>go f()</code>)</td><td>A virtual thread: start thousands cheaply</td></tr><tr><td><code>context.Context</code> passed to every call</td><td>A cancellation token and deadline handed down through each method</td></tr><tr><td><code>defer x.Close()</code></td><td><code>try</code> / <code>finally</code></td></tr><tr><td>Errors are return values (<code>val, err := f()</code>)</td><td>Instead of checked exceptions; you test <code>err != nil</code></td></tr><tr><td>An interface is satisfied by having the methods</td><td>No <code>implements</code>; any type with the methods fits</td></tr><tr><td>Struct tags like `<code> </code>json:&quot;checkId&quot;<code> </code>`</td><td><code>@JsonProperty(&quot;checkId&quot;)</code></td></tr><tr><td><code>//go:build windows</code> or a file named <code>x_windows.go</code></td><td>A source set that only compiles for one operating system</td></tr><tr><td><code>GOOS=linux go build</code></td><td>Cross-compiling: one machine builds every platform</td></tr></tbody></table></div>
+<p>Libraries the agent uses (all open source):</p>
+<div class="tablewrap"><table><thead><tr><th>Library</th><th>Licence</th><th>What for</th></tr></thead><tbody><tr><td><code>gopsutil</code> v4.26.9</td><td>BSD</td><td>CPU, memory and disk readings that work on Windows, Linux and macOS alike</td></tr><tr><td><code>pro-bing</code> v0.9.1</td><td>MIT</td><td>Sending a ping (ICMP)</td></tr><tr><td><code>golang.org/x/sys</code> v0.49.0</td><td>BSD-style</td><td>Talking to the Windows Service Control Manager so the agent can run as a Windows service</td></tr><tr><td><code>go-winio</code> v0.6.4</td><td>MIT</td><td>Connecting to a Windows named pipe, which is how Docker Desktop is reached. Compiled only on Windows</td></tr></tbody></table></div>
+<p>Everything else (HTTP, JSON, TCP, files, hashing) is Go's standard library. The one program has two jobs: the agent (<code>svcmon agent run</code>) and the CLI (<code>svcmon status</code>, <code>svcmon check add</code>, and so on).</p>
+<h3>4.3 The dashboard (the JavaScript side)</h3>
+<div class="tablewrap"><table><thead><tr><th>Name</th><th>What it is</th><th>How it is used here</th></tr></thead><tbody><tr><td>Node.js (here 20.11.1)</td><td>A JavaScript runtime</td><td>Runs the build tools on your machine. It is not part of the product when it runs</td></tr><tr><td>npm and <code>package.json</code></td><td>Package manager and its manifest</td><td>Like Maven and the POM; <code>node_modules</code> is the local copy of the libraries</td></tr><tr><td>Vite 6.4.5</td><td>A development server and bundler</td><td><code>npm run build</code> produces the <code>dist/</code> folder of plain files. Vite is pinned to 6 because the newer one needs a newer Node</td></tr><tr><td>Svelte 5.57.2</td><td>A UI framework that compiles components to plain JavaScript</td><td>Each <code>.svelte</code> file is one piece of the page (see &quot;A <code>.svelte</code> file, up close&quot; below). State is written with &quot;runes&quot; such as <code>$state</code> and <code>$derived</code>, and the compiler wires the updates, so there is no virtual DOM at run time</td></tr><tr><td>uPlot 1.6.32</td><td>A very small, very fast chart library</td><td>The history charts on a check's page</td></tr><tr><td>Vitest 3.2.7</td><td>A test runner</td><td>The JUnit of this side, run with <code>npm test</code></td></tr></tbody></table></div>
+<p>The output is just files. The hub serves them from the folder set in <code>svcmon.ui-dir</code>, or the files can go on any web server if the hub allows that address with <code>svcmon.cors-allowed-origins</code>.</p>
+<p>So at run time the hub is the one server a person talks to: the page it serves calls the hub's REST API (<code>/api/v1</code>) for data and opens the live WebSocket for updates. Svelte, Vite and uPlot exist only inside the files the build produced; nothing from Node runs next to the hub.</p>
+<h3>A <code>.svelte</code> file, up close</h3>
+<p>A <code>.svelte</code> file is one screen component: its logic, its HTML and (optionally) its styles in a single file, the way a Thymeleaf or JSF template and its backing bean would be fused together. This is a shortened and simplified piece of <code>src/components/CheckForm.svelte</code>, the Add check form:</p>
+<pre><code>&lt;script&gt;
+  import { AGENT_ONLY_TYPES, CHECK_TYPES } from '../lib/format.js';
+
+  // What the parent hands in, like constructor arguments
+  let { servers = [], initial = null, busy = false, onsubmit, oncancel } = $props();
+
+  let type = $state(initial?.type ?? 'HTTP');                    // a field the screen follows
+  const agentOnly = $derived(AGENT_ONLY_TYPES.includes(type));   // recomputed when `type` changes
+&lt;/script&gt;
+
+&lt;select id=&quot;cf-type&quot; value={type} onchange={changeType}&gt;
+  {#each CHECK_TYPES as t}&lt;option value={t}&gt;{t}&lt;/option&gt;{/each}
+&lt;/select&gt;
+{#if agentOnly}&lt;span class=&quot;hint&quot;&gt;Runs on the server's agent.&lt;/span&gt;{/if}</code></pre>
+<div class="tablewrap"><table><thead><tr><th>Part of the file</th><th>What it is</th><th>Closest Java idea</th></tr></thead><tbody><tr><td><code>&lt;script&gt;</code></td><td>The component's logic, in ordinary JavaScript</td><td>The backing bean or controller class</td></tr><tr><td><code>$props()</code></td><td>The values and callbacks the parent passes in; <code>onsubmit</code> and <code>oncancel</code> are callbacks the parent supplies</td><td>Constructor parameters plus listener interfaces</td></tr><tr><td><code>$state(...)</code></td><td>A variable that, when it changes, updates exactly the parts of the screen that use it</td><td>A field with an observer attached</td></tr><tr><td><code>$derived(...)</code></td><td>A value worked out from other values and kept up to date</td><td>A getter that is recomputed on demand</td></tr><tr><td>The HTML below the script</td><td>The layout. <code>{value}</code> inserts a value, <code>{#if}</code> shows something conditionally, <code>{#each}</code> repeats it</td><td><code>th:text</code>, <code>th:if</code> and <code>th:each</code> in Thymeleaf, or <code>c:if</code> and <code>c:forEach</code> in JSTL</td></tr><tr><td><code>&lt;style&gt;</code> (not in this file)</td><td>CSS that applies only to this component</td><td>A scoped stylesheet. Here the shared styles live in <code>src/app.css</code> instead</td></tr></tbody></table></div>
+<p>Browsers never see a <code>.svelte</code> file. When Vite builds the dashboard, the Svelte compiler (connected to Vite by <code>@sveltejs/vite-plugin-svelte</code>) turns each one into plain JavaScript that updates the page directly, and <code>dist/</code> holds only ordinary files. The other file types in the dashboard repository are: <code>.js</code> (the logic that is not a screen: the hub client, formatting, sign-in, and the tests in <code>test/</code>), <code>.mjs</code> (Node scripts such as <code>scripts/seed-demo.mjs</code>), <code>.css</code> and <code>index.html</code> (the page the whole app is mounted into).</p>
+<h3>4.4 Running it as a service</h3>
+<p>A &quot;service&quot; is a program the operating system starts at boot and restarts if it dies.</p>
+<div class="tablewrap"><table><thead><tr><th>Name</th><th>What it is</th><th>How it is used here</th></tr></thead><tbody><tr><td>Windows Service Control Manager</td><td>Windows' own service manager</td><td>The agent registers itself with it (<code>svcmon agent install</code>)</td></tr><tr><td>WinSW 2.12.0 (MIT)</td><td>A small wrapper that turns any program into a Windows service</td><td>The hub is a plain jar, so WinSW starts <code>java -jar</code> for it. The installer checks the WinSW file against a pinned SHA-256 and refuses a different copy</td></tr><tr><td>systemd</td><td>The Linux service manager</td><td>A unit file starts the agent or the hub</td></tr><tr><td>launchd</td><td>The macOS service manager</td><td>The agent has a launchd installer. It compiles but has never been run on a real Mac</td></tr><tr><td><code>--dry-run</code></td><td>A flag on the install scripts</td><td>Prints exactly what would change and changes nothing</td></tr></tbody></table></div>
+<h3>4.5 Security and sign-in words</h3>
+<div class="tablewrap"><table><thead><tr><th>Word</th><th>What it means</th><th>How it is used here</th></tr></thead><tbody><tr><td>Bearer token</td><td>A secret string sent in the <code>Authorization</code> header</td><td>Every call to the hub carries one. The hub stores only a SHA-256 fingerprint of each token, never the token</td></tr><tr><td>Scopes</td><td>What a token may do</td><td><code>ADMIN</code>, <code>READ</code>, <code>ENROLL</code>, <code>JOIN</code> and <code>AGENT</code></td></tr><tr><td>Enrollment token and join key</td><td>How a server proves it may register</td><td>An enrollment token works once; a join key registers many servers until it is revoked. Each server then receives its own <code>AGENT</code> token</td></tr><tr><td>JWT and OpenID Connect</td><td>A signed token that proves who someone is, issued by a sign-in provider</td><td>Optional. The hub checks the signature, issuer, audience and expiry itself</td></tr><tr><td>Identity provider (Keycloak is the one tried)</td><td>The service that signs people in and issues the tokens. Use whichever your organisation already runs</td><td>The hub is told four things: <code>svcmon.jwt.issuer</code> (the provider's address), <code>audience</code>, <code>admin-role</code> and <code>roles-claim</code> (where the roles sit inside the token), and <code>jwks-uri</code> only if the provider keeps its signing keys somewhere unusual. Nothing else is Keycloak-specific; Keycloak is only the default for <code>roles-claim</code> and the one provider that has been tried. Another should work if its access tokens are JWTs signed with an asymmetric key and carry a role you can name. Some providers issue opaque access tokens by default, which the hub cannot check. The hub never needs to know anyone's password</td></tr><tr><td>PBKDF2</td><td>A deliberately slow way to store a password</td><td>The hub's built-in local admin account, for when the provider is down</td></tr><tr><td>TLS termination</td><td>The encryption endpoint</td><td>Done by a load balancer in front of the hub; inside the network the hub speaks plain HTTP. <code>X-Forwarded-For</code> and similar headers carry the real client address through the balancer</td></tr><tr><td>CORS</td><td>The rule a browser applies before one site may call another</td><td>Only matters when the dashboard is hosted on a different address from the hub</td></tr></tbody></table></div>
+<h3>4.6 Container checks</h3>
+<div class="tablewrap"><table><thead><tr><th>Word</th><th>What it means</th><th>How it is used here</th></tr></thead><tbody><tr><td>Docker Engine API</td><td>The interface Docker (and Podman, which copies it) offers on a local connection</td><td>The agent asks it about one container by name</td></tr><tr><td>Unix socket and named pipe</td><td>A local doorway between programs on one machine. Linux and macOS use a file called a socket; Windows uses a named pipe</td><td><code>/var/run/docker.sock</code> on Linux; <code>\\.\pipe\docker_engine</code> and <code>dockerDesktopLinuxEngine</code> for Docker Desktop on Windows</td></tr><tr><td>Read-only on purpose</td><td>The doorway is as powerful as root</td><td>The agent code has only a GET path to it, so it can read state and nothing else</td></tr></tbody></table></div>
+<h3>4.7 Delivery and workflow</h3>
+<div class="tablewrap"><table><thead><tr><th>Name</th><th>What it is</th><th>How it is used here</th></tr></thead><tbody><tr><td>GitHub and GitHub Actions</td><td>The code host and its automatic build service</td><td>CI runs the hub tests on Ubuntu and Windows, the agent tests on Ubuntu, Windows and macOS, a formatting check, a cross-compile of every platform and an installer dry run</td></tr><tr><td>Protected <code>main</code></td><td>A branch nobody pushes to directly</td><td>Changes go through a pull request, and the check named &quot;CI passed&quot; must be green</td></tr><tr><td>Squash merge</td><td>Combines a pull request into one commit</td><td>How every change was merged</td></tr><tr><td>Apache-2.0</td><td>The licence of this project</td><td>Free to use, change and share</td></tr></tbody></table></div></section>
+<section id="how-the-pieces-work-together"><h2>5. How the pieces work together</h2><h3>A new server joins</h3>
+<ol><li>An admin creates an enrollment token (or one reusable join key for many servers).</li><li>On the server, <code>svcmon agent install --hub http://hub:8080 --token ...</code> registers it and installs the service.</li><li>The hub answers with the server's own agent token, saved in <code>agent.json</code> next to the program.</li><li>Nothing is monitored yet. The admin lists the checks for that server (dashboard or <code>svcmon check add</code>).</li></ol>
+<h3>One check from creation to alert (a container example)</h3>
+<ol><li>The admin adds a container check for <code>web</code> on server <code>web01</code>. The hub stores it.</li><li>The agent asks the hub for its list every 60 seconds, so within about a minute it learns about the new check.</li><li>It runs the check on its own schedule (30 seconds by default for agent checks): it asks Docker, and works out &quot;running and healthy&quot; (UP), &quot;health check still starting&quot; (WARN) or &quot;stopped or missing&quot; (DOWN).</li><li>Results go back to the hub on its heartbeat (30 seconds by default), and a failure is sent within about a second.</li><li>The hub keeps the result for 30 days. A check turns DOWN only after the configured number of failures in a row, so one dropped packet does not page anyone.</li><li>When the status changes, the hub sends a message to every alert channel that wants that status. If a server's agent goes silent for 90 seconds, the hub shows it offline and alerts about that too.</li></ol>
+<h3>Checks declared by the agent</h3>
+<ol><li>Instead of clicking in the dashboard, you put a <code>checks.json</code> beside <code>agent.json</code> on the server.</li><li>The agent sends it to the hub at start-up and whenever the file changes (looked at once a minute).</li><li>The hub creates, updates or switches off checks to match, and the agent runs them from its normal list.</li><li>If the file and the hub disagree about a check, the file wins. This is off unless the hub sets <code>svcmon.agent-declared-checks: true</code>.</li></ol>
+<h3>The hub restarts</h3>
+<p>The agent keeps up to 5,000 results in memory and sends them when the hub is back, so a restart leaves no gap and raises no false alert.</p></section>
+<section id="where-things-live"><h2>6. Where things live</h2><div class="tablewrap"><table><thead><tr><th>Path</th><th>What is there</th></tr></thead><tbody><tr><td><code>hub/src/main/java/io/primelogiclab/svcmon/hub/</code></td><td><code>api</code> (REST controllers), <code>core</code> (scheduler, services), <code>checks</code> (HTTP, TCP and ping runners), <code>alerts</code> (senders), <code>security</code> (tokens, sign-in), <code>store</code> (SQL), <code>live</code> (WebSocket), <code>model</code>, <code>config</code></td></tr><tr><td><code>hub/src/main/resources/</code></td><td><code>application.yml</code> and the Flyway migrations</td></tr><tr><td><code>hub/service/</code></td><td>Install and uninstall scripts for the hub as a service, with their tests</td></tr><tr><td><code>agent/cmd/svcmon/</code></td><td>The program's entry point</td></tr><tr><td><code>agent/internal/</code></td><td><code>agent</code> (the run loop), <code>checks</code> (every check type), <code>cli</code> (the commands), <code>hubapi</code> (the hub client), <code>osservice</code> (the operating-system service code)</td></tr><tr><td><code>docs/</code></td><td>The design document and this guide, each as Markdown and HTML</td></tr><tr><td><code>service-monitor-ui/</code> (separate repository)</td><td>The dashboard: <code>src/</code>, <code>test/</code>, <code>scripts/seed-demo.mjs</code></td></tr></tbody></table></div></section>
+<section id="build-test-and-run"><h2>7. Build, test and run</h2><p>Run these from the folder shown; on this machine Go and Node need their cache folders set (see <code>CLAUDE.md</code>).</p>
+<div class="tablewrap"><table><thead><tr><th>What</th><th>Command</th></tr></thead><tbody><tr><td>Hub tests</td><td><code>cd hub</code> then <code>mvn -B -ntp test</code></td></tr><tr><td>Hub jar</td><td><code>mvn -B -ntp -DskipTests package</code> gives <code>hub/target/svcmon-hub-0.1.0-SNAPSHOT.jar</code></td></tr><tr><td>Agent and CLI</td><td><code>cd agent</code>, then <code>go vet ./...</code> and <code>go test ./... -count=1</code></td></tr><tr><td>Dashboard</td><td><code>npm test</code> and <code>npm run build</code> in the dashboard repository</td></tr><tr><td>Try everything together</td><td>Start the hub with <code>--svcmon.ui-dir=&lt;dashboard&gt;/dist</code>, then run <code>scripts/seed-demo.mjs</code> against a throwaway hub</td></tr></tbody></table></div></section>
+<section id="the-rules-that-shape-every-decision"><h2>8. The rules that shape every decision</h2><ol><li><strong>Agents only connect out.</strong> A monitored server opens no inbound port for the monitor.</li><li><strong>The admin lists what is monitored.</strong> Nothing is discovered and monitored on its own; the helper commands only list what exists.</li><li><strong>TLS ends at the load balancer.</strong> The hub speaks plain HTTP inside the network and must work behind <code>X-Forwarded-*</code> headers.</li><li><strong>Secrets stay hidden.</strong> Tokens (only fingerprints are stored), webhook addresses, header values, signing secrets and the SMTP password never leave the hub unmasked and never appear in logs or errors.</li><li><strong>Be strict.</strong> Unknown settings are rejected, so a typo fails loudly. Names and messages from agents are treated as untrusted (Slack markup is escaped, Discord mentions are off, mail headers cannot be injected).</li><li><strong>Free everywhere.</strong> Everything is open source, and the hub and agent run on Windows, Linux and macOS.</li></ol></section>
+<section id="limits-and-open-questions"><h2>9. Limits and open questions</h2><ul><li><strong>Not built:</strong> the multi-hub &quot;console&quot; role, a dashboard page for alerts, a bundled Java runtime and a release pipeline, a macOS hub installer, per-container CPU and memory, and Telegram or ntfy alert channels.</li><li><strong>Not tried on real systems:</strong> the macOS agent installer and service checks; container checks on Linux and with Podman; agent-declared checks on an installed service.</li><li><strong>Dashboard gap:</strong> it does not yet show where a check comes from (hub or agent file) or lock the form for a check the agent declares. The hub already refuses the edit.</li><li><strong>Resource figures</strong> in the design document (memory, disk) are estimates, not measurements.</li><li><strong>Not covered here:</strong> how the live deployment on a cloud server is laid out; that lives in a separate infrastructure repository.</li></ul></section>
+<section id="references"><h2>10. References</h2><p><strong>Hub (Java)</strong></p>
+<ul><li>Spring Boot: <a href="https://spring.io/projects/spring-boot" rel="noopener">https://spring.io/projects/spring-boot</a> and its reference documentation <a href="https://docs.spring.io/spring-boot/" rel="noopener">https://docs.spring.io/spring-boot/</a></li><li>Virtual threads (JEP 444): <a href="https://openjdk.org/jeps/444" rel="noopener">https://openjdk.org/jeps/444</a></li><li>SQLite: <a href="https://www.sqlite.org/" rel="noopener">https://www.sqlite.org/</a> and the Java driver <a href="https://github.com/xerial/sqlite-jdbc" rel="noopener">https://github.com/xerial/sqlite-jdbc</a></li><li>Flyway: <a href="https://flywaydb.org" rel="noopener">https://flywaydb.org</a> and <a href="https://github.com/flyway/flyway" rel="noopener">https://github.com/flyway/flyway</a></li><li>Nimbus JOSE+JWT: <a href="https://connect2id.com/products/nimbus-jose-jwt" rel="noopener">https://connect2id.com/products/nimbus-jose-jwt</a></li><li>Angus Mail (Jakarta Mail): <a href="https://eclipse-ee4j.github.io/angus-mail/" rel="noopener">https://eclipse-ee4j.github.io/angus-mail/</a></li><li>Maven: <a href="https://maven.apache.org/" rel="noopener">https://maven.apache.org/</a></li></ul>
+<p><strong>Agent and CLI (Go)</strong></p>
+<ul><li>Go documentation: <a href="https://go.dev/doc/" rel="noopener">https://go.dev/doc/</a> , a tour: <a href="https://go.dev/tour/" rel="noopener">https://go.dev/tour/</a> and the style guide: <a href="https://go.dev/doc/effective_go" rel="noopener">https://go.dev/doc/effective_go</a></li><li>gopsutil: <a href="https://github.com/shirou/gopsutil" rel="noopener">https://github.com/shirou/gopsutil</a></li><li>pro-bing: <a href="https://github.com/prometheus-community/pro-bing" rel="noopener">https://github.com/prometheus-community/pro-bing</a></li><li>golang.org/x/sys: <a href="https://pkg.go.dev/golang.org/x/sys" rel="noopener">https://pkg.go.dev/golang.org/x/sys</a></li><li>go-winio: <a href="https://github.com/microsoft/go-winio" rel="noopener">https://github.com/microsoft/go-winio</a></li></ul>
+<p><strong>Dashboard (JavaScript)</strong></p>
+<ul><li>Node.js: <a href="https://nodejs.org/" rel="noopener">https://nodejs.org/</a></li><li>Svelte: <a href="https://svelte.dev" rel="noopener">https://svelte.dev</a>, its interactive tutorial <a href="https://svelte.dev/tutorial" rel="noopener">https://svelte.dev/tutorial</a> and its reference <a href="https://svelte.dev/docs/svelte/overview" rel="noopener">https://svelte.dev/docs/svelte/overview</a></li><li>The plugin that connects Svelte to Vite: <a href="https://github.com/sveltejs/vite-plugin-svelte" rel="noopener">https://github.com/sveltejs/vite-plugin-svelte</a></li><li>Vite: <a href="https://vite.dev" rel="noopener">https://vite.dev</a></li><li>uPlot: <a href="https://github.com/leeoniya/uPlot" rel="noopener">https://github.com/leeoniya/uPlot</a></li><li>Vitest: <a href="https://vitest.dev" rel="noopener">https://vitest.dev</a></li></ul>
+<p><strong>Running as a service and containers</strong></p>
+<ul><li>WinSW: <a href="https://github.com/winsw/winsw" rel="noopener">https://github.com/winsw/winsw</a></li><li>systemd: <a href="https://systemd.io" rel="noopener">https://systemd.io</a></li><li>launchd (a community tutorial; Apple's own pages did not answer when checked): <a href="https://www.launchd.info/" rel="noopener">https://www.launchd.info/</a></li><li>Docker Engine API: <a href="https://docs.docker.com/reference/api/engine/" rel="noopener">https://docs.docker.com/reference/api/engine/</a></li><li>Podman's API: <a href="https://docs.podman.io/en/latest/_static/api.html" rel="noopener">https://docs.podman.io/en/latest/_static/api.html</a></li></ul>
+<p><strong>Security and web standards</strong></p>
+<ul><li>OpenID Connect: <a href="https://openid.net/connect/" rel="noopener">https://openid.net/connect/</a></li><li>JSON Web Token, RFC 7519: <a href="https://www.rfc-editor.org/rfc/rfc7519" rel="noopener">https://www.rfc-editor.org/rfc/rfc7519</a></li><li>PBKDF2, RFC 8018: <a href="https://www.rfc-editor.org/rfc/rfc8018" rel="noopener">https://www.rfc-editor.org/rfc/rfc8018</a></li><li>WebSocket, RFC 6455: <a href="https://www.rfc-editor.org/rfc/rfc6455" rel="noopener">https://www.rfc-editor.org/rfc/rfc6455</a></li><li>Keycloak, the identity provider tried with the hub (any OpenID Connect provider can be configured instead): <a href="https://www.keycloak.org" rel="noopener">https://www.keycloak.org</a></li><li>CORS: <a href="https://developer.mozilla.org/docs/Web/HTTP/CORS" rel="noopener">https://developer.mozilla.org/docs/Web/HTTP/CORS</a></li><li><code>X-Forwarded-For</code>: <a href="https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Forwarded-For" rel="noopener">https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Forwarded-For</a></li><li>Apache License 2.0: <a href="https://www.apache.org/licenses/LICENSE-2.0" rel="noopener">https://www.apache.org/licenses/LICENSE-2.0</a></li><li>GitHub Actions: <a href="https://docs.github.com/actions" rel="noopener">https://docs.github.com/actions</a></li></ul>
+<p><strong>In this repository</strong></p>
+<ul><li><code>README.md</code> (how to use it), <code>docs/service-monitor-design.md</code> (why it is built this way) and <code>CLAUDE.md</code> (the working agreement)</li></ul></section>
+</main>
+<button id="navbtn" type="button" aria-expanded="false" aria-controls="navpanel">Sections</button>
+<nav id="navpanel" aria-label="Sections"><a href="#what-it-is-for" data-id="what-it-is-for">1. What it is for</a><a href="#the-big-picture" data-id="the-big-picture">2. The big picture</a><a href="#why-three-languages" data-id="why-three-languages">3. Why three languages</a><a href="#the-technologies-explained" data-id="the-technologies-explained">4. The technologies, explained</a><a href="#how-the-pieces-work-together" data-id="how-the-pieces-work-together">5. How the pieces work together</a><a href="#where-things-live" data-id="where-things-live">6. Where things live</a><a href="#build-test-and-run" data-id="build-test-and-run">7. Build, test and run</a><a href="#the-rules-that-shape-every-decision" data-id="the-rules-that-shape-every-decision">8. The rules that shape every decision</a><a href="#limits-and-open-questions" data-id="limits-and-open-questions">9. Limits and open questions</a><a href="#references" data-id="references">10. References</a></nav>
+<script>
+(function () {
+  var root = document.documentElement;
+  var themeBtn = document.getElementById('theme');
+  function apply(t) {
+    if (t === 'dark') root.setAttribute('data-theme', 'dark'); else root.removeAttribute('data-theme');
+    themeBtn.textContent = t === 'dark' ? 'Light mode' : 'Dark mode';
+  }
+  var saved = null;
+  try { saved = localStorage.getItem('svcmon-guide-theme'); } catch (e) {}
+  apply(saved === 'dark' ? 'dark' : 'light');
+  themeBtn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    apply(next);
+    try { localStorage.setItem('svcmon-guide-theme', next); } catch (e) {}
+  });
+
+  var btn = document.getElementById('navbtn');
+  var panel = document.getElementById('navpanel');
+  function setOpen(open) { panel.classList.toggle('open', open); btn.setAttribute('aria-expanded', String(open)); }
+  btn.addEventListener('click', function (e) { e.stopPropagation(); setOpen(!panel.classList.contains('open')); });
+  panel.addEventListener('click', function (e) { if (e.target.tagName === 'A') setOpen(false); });
+  document.addEventListener('click', function (e) { if (!panel.contains(e.target)) setOpen(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
+
+  var links = {};
+  panel.querySelectorAll('a').forEach(function (a) { links[a.getAttribute('data-id')] = a; });
+  function mark(id) {
+    Object.keys(links).forEach(function (k) { links[k].classList.toggle('current', k === id); });
+  }
+  // The current section is the last one whose top has reached the upper part of the window.
+  var sectionEls = Array.prototype.slice.call(document.querySelectorAll('main section'));
+  var ticking = false;
+  function update() {
+    ticking = false;
+    var current = null;
+    sectionEls.forEach(function (s) { if (s.getBoundingClientRect().top <= 120) current = s.id; });
+    mark(current);
+  }
+  function onScroll() { if (!ticking) { ticking = true; requestAnimationFrame(update); } }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+  update();
+})();
+</script>
+</body>
+</html>

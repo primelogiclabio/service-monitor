@@ -9,7 +9,7 @@ A free, cross-platform monitor: a Java hub, a small Go agent and CLI, and a sepa
 | `hub/` | The hub: scheduler, SQLite, REST API, tokens, alerts, optional UI hosting | Java 21, Spring Boot 4.1, Maven, Flyway |
 | `agent/` | `svcmon`: the agent (service, CPU, memory, disk, network checks) and the CLI, one binary | Go 1.27, stdlib plus gopsutil, pro-bing, x/sys |
 | `hub/service/` | Install and uninstall scripts for the hub as a service, with their dry-run and smoke tests, and `windows/build-package.ps1` for the Windows package (jar, scripts, WinSW) | Bash, PowerShell, WinSW, systemd |
-| `docs/` | Design document, Markdown and self-contained HTML (keep both in sync) | |
+| `docs/` | Design document, stack guide and trust policy, each as Markdown and self-contained HTML (keep both in sync; the HTML of the guide and the policy is generated from their Markdown with `node docs/tools/md2html.mjs <in.md> <out.html>`, the policy with `docs/tools/policy-config.json` as a third argument). Pictures are in `docs/assets/`, made from a throwaway demo hub with made-up servers (`docs/tools/screenshots/README.md` says how); never put a screenshot of a real hub there. The trust policy states what the software does with data, the network and installs: change it in the same pull request as any change that adds an outbound connection, stored data, a download, a new dependency or a new licence | |
 | `../service-monitor-ui` | The web dashboard: its own repository, `primelogiclabio/service-monitor-ui` | Svelte 5, Vite 6, uPlot |
 
 Both repos are public, Apache-2.0, under the GitHub organisation `primelogiclabio`.
