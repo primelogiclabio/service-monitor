@@ -9,6 +9,7 @@ import io.primelogiclab.svcmon.hub.core.StatusService;
 import io.primelogiclab.svcmon.hub.core.StatusViews.StatusResponse;
 import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
+import io.primelogiclab.svcmon.hub.security.JwtAuth;
 import io.primelogiclab.svcmon.hub.security.TokenService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,15 +30,18 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>JSON text frames:
  * <ul>
- *   <li>client to hub {@code {"type":"auth","token":"..."}}: must be the first frame, within {@value #AUTH_TIMEOUT_MS} ms</li>
+ *   <li>client to hub {@code {"type":"auth","token":"..."}}: must be the first frame, within {@value #AUTH_TIMEOUT_MS} ms,
+ *       unless the upgrade request already carried a JWT (see {@link LiveHandshake})</li>
  *   <li>client to hub {@code {"type":"ping"}}: keeps the link open through proxies; answered with {@code {"type":"pong"}}</li>
  *   <li>hub to client {@code {"type":"status","data":{...}}}: right after authenticating, then after every change</li>
  * </ul>
  *
  * <p>A browser cannot set an Authorization header on a WebSocket, and a token in the URL would end up in access
  * logs, so the token travels in the first frame instead. It needs a READ or ADMIN token, is never logged, and the
- * connection is closed within a second if the token is revoked or expires. Because nothing but that frame
- * authenticates, the browser's Origin does not matter and is not checked (see {@link LiveConfig}).
+ * connection is closed within a second if the token is revoked or expires. An OIDC access token (JWT) works in
+ * place of a hub token, in the first frame or on the upgrade request, and ends the connection when it expires; a
+ * dashboard reconnects and gets a fresh one. Because nothing but that frame authenticates, the browser's Origin
+ * does not matter and is not checked (see {@link LiveConfig} for the one exception).
  *
  * <p>One timer thread does all the work: it drops connections that stayed silent or lost their token, builds the
  * roll-up once per second while someone is watching, and sends each client only what differs from what it last
@@ -67,6 +71,9 @@ public class LiveHandler extends TextWebSocketHandler {
         final long connectedAt = System.currentTimeMillis();
         volatile long lastFrameAt = connectedAt;
         volatile TokenRecord token;
+        /** Set instead of the token when an administrator signed in with a JWT, which also says when it ends. */
+        volatile String jwtUser;
+        volatile long jwtExpiresAt;
         /** What this client was last sent, without its timestamp, so it is only sent what changed. */
         volatile StatusResponse sent;
 
@@ -75,18 +82,20 @@ public class LiveHandler extends TextWebSocketHandler {
         }
 
         boolean authenticated() {
-            return token != null;
+            return token != null || jwtUser != null;
         }
     }
 
     private final TokenService tokens;
+    private final JwtAuth jwt;
     private final StatusService status;
     private final HubProperties props;
     private final JsonMapper json;
     private final Map<String, Client> clients = new ConcurrentHashMap<>();
 
-    public LiveHandler(TokenService tokens, StatusService status, HubProperties props, JsonMapper json) {
+    public LiveHandler(TokenService tokens, JwtAuth jwt, StatusService status, HubProperties props, JsonMapper json) {
         this.tokens = tokens;
+        this.jwt = jwt;
         this.status = status;
         this.props = props;
         this.json = json;
@@ -100,8 +109,15 @@ public class LiveHandler extends TextWebSocketHandler {
             return;
         }
         // Sends come from the timer thread and from this handler, and Tomcat allows one at a time.
-        clients.put(raw.getId(), new Client(
-                new ConcurrentWebSocketSessionDecorator(raw, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT_BYTES)));
+        Client client = new Client(
+                new ConcurrentWebSocketSessionDecorator(raw, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT_BYTES));
+        clients.put(raw.getId(), client);
+        // A JWT on the upgrade request was already checked by LiveHandshake: no first frame is needed.
+        if (raw.getAttributes().get(LiveHandshake.USER) instanceof String user) {
+            client.jwtUser = user;
+            client.jwtExpiresAt = (Long) raw.getAttributes().get(LiveHandshake.EXPIRES_AT);
+            push(client, status.status());
+        }
     }
 
     @Override
@@ -137,6 +153,10 @@ public class LiveHandler extends TextWebSocketHandler {
     }
 
     private void authenticate(Client client, String raw) {
+        if (jwt.handles(raw)) {
+            authenticateJwt(client, raw);
+            return;
+        }
         TokenRecord token = tokens.authenticate(raw).orElse(null);
         if (token == null) {
             log.warn("Rejected live connection from {}: missing or invalid token", client.session.getRemoteAddress());
@@ -150,6 +170,21 @@ public class LiveHandler extends TextWebSocketHandler {
             return;
         }
         client.token = token;
+        push(client, status.status());
+    }
+
+    private void authenticateJwt(Client client, String raw) {
+        JwtAuth.Result who = jwt.verify(raw);
+        if (who.kind() != JwtAuth.Kind.ADMIN) {
+            log.warn("Rejected live connection from {}: JWT: {}", client.session.getRemoteAddress(),
+                    who.kind() == JwtAuth.Kind.FORBIDDEN ? "user '" + who.user() + "' " + who.reason() : who.reason());
+            close(client, CloseStatus.POLICY_VIOLATION.withReason(
+                    who.kind() == JwtAuth.Kind.UNAVAILABLE ? "unavailable"
+                            : who.kind() == JwtAuth.Kind.FORBIDDEN ? "forbidden" : "unauthorized"));
+            return;
+        }
+        client.jwtUser = who.user();
+        client.jwtExpiresAt = who.expiresAtMillis();
         push(client, status.status());
     }
 
@@ -180,8 +215,11 @@ public class LiveHandler extends TextWebSocketHandler {
                 }
             } else if (now - c.lastFrameAt > IDLE_TIMEOUT_MS) {
                 close(c, CloseStatus.GOING_AWAY.withReason("idle"));
-            } else if (!tokens.isActive(c.token)) {
+            } else if (c.token != null && !tokens.isActive(c.token)) {
                 close(c, CloseStatus.POLICY_VIOLATION.withReason("token no longer valid"));
+            } else if (c.token == null && now >= c.jwtExpiresAt) {
+                // Not a refusal: the dashboard reconnects and the proxy adds a fresh token to the new request.
+                close(c, CloseStatus.GOING_AWAY.withReason("sign-in expired"));
             }
         }
         if (clients.values().stream().noneMatch(Client::authenticated)) {

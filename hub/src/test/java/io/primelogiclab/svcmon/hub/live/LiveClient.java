@@ -4,6 +4,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -22,8 +23,15 @@ final class LiveClient implements WebSocket.Listener {
 
     /** Opens the socket with no Authorization header, as a browser would. */
     static LiveClient connect(int port) {
+        return connect(port, Map.of());
+    }
+
+    /** Opens the socket with these headers on the upgrade request, as a proxy that adds a token would. */
+    static LiveClient connect(int port, Map<String, String> headers) {
         LiveClient client = new LiveClient();
-        client.socket = HttpClient.newHttpClient().newWebSocketBuilder()
+        var builder = HttpClient.newHttpClient().newWebSocketBuilder();
+        headers.forEach(builder::header);
+        client.socket = builder
                 .buildAsync(URI.create("ws://127.0.0.1:" + port + LiveHandler.PATH), client)
                 .orTimeout(10, TimeUnit.SECONDS)
                 .join();

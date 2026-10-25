@@ -71,6 +71,52 @@ The dashboard lives in its own repository, [service-monitor-ui](https://github.c
 
 CORS is off unless origins are listed. When on, only those origins may call `/api/` from a browser, with the `Authorization`, `Content-Type` and `Accept` headers, never with cookies; requests without an `Origin` header (the CLI, agents, scripts) are unaffected. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`.
 
+## Sign in with Keycloak or another OpenID Connect provider
+
+Off by default. The hub can accept an OpenID Connect access token (a JWT) sent as `Authorization: Bearer <JWT>` and checks it itself: the signature against the keys the provider publishes (found through the issuer's discovery document), the issuer, the audience and the expiry. Nothing is trusted because of where a request came from, so it does not matter who can reach the hub's port. A token whose role claim holds the admin role gets the access of an ADMIN token (except the `/agent/` calls); any other valid token gets 403. The hub's own tokens (join keys, ADMIN and READ API tokens) work unchanged for agents, the CLI and setups without a provider; the two are told apart by shape, since a JWT is three dot-separated parts that start with `eyJ`.
+
+```yaml
+svcmon:
+  jwt:
+    issuer: https://auth.example.com/realms/main    # setting this turns it on
+    audience: https://monitor.example.com/api       # the token's aud must contain this
+    admin-role: platform-admin                      # the role that makes a user an administrator
+    # roles-claim: realm_access.roles               # Keycloak's default location; dots walk into objects
+    # jwks-uri: https://...                         # only if you do not want the discovery document's
+```
+
+At the provider, give the hub an API client whose audience is the `audience` value, and have the token carry the admin role (in Keycloak a realm role is in `realm_access.roles` by default). The issuer must be https; `http` is accepted only for `localhost` while developing. The hub refuses to start if the audience or admin role is missing. If the provider cannot be reached the first time the hub needs its keys, callers get 503 (not 401) and the hub tries again after a few seconds; once fetched, the keys are cached and keep working through a provider outage, and a key the hub has not seen triggers a refresh.
+
+Typically a browser never holds the token: the dashboard calls a path on its own site, nginx asks a gateway or session service which checks the session and the role and exchanges it for a token with the hub's audience, and nginx forwards the call to the hub with that token:
+
+```nginx
+location /web-api/ {
+    if ($http_x_web_client != "1") { return 403; }       # see the note on forged requests below
+    auth_request     /oauth2/auth-api;                   # your gateway: session -> token for this hub
+    auth_request_set $api_token $upstream_http_x_access_token;
+    proxy_set_header Authorization "Bearer $api_token";
+    # rewrite /web-api/ to /api/ and proxy_pass to the hub
+}
+location = /api/v1/live {                                # the live view: the same check on the upgrade request
+    auth_request     /oauth2/auth-api;
+    auth_request_set $api_token $upstream_http_x_access_token;
+    proxy_set_header Authorization "Bearer $api_token";
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_pass http://hub:8080;
+}
+location /api/ { proxy_pass http://hub:8080; }           # agents, the CLI: their own tokens, no sign-in
+```
+
+How this is kept safe:
+- The session cookie is sent by the browser on any request, including one a foreign page makes it send, so the proxy must only exchange a session for a token when the request carries a custom header that only your dashboard adds (the example's `X-Web-Client`); a page on another site cannot add it without a CORS preflight, which you never approve.
+- A browser cannot add that header to a WebSocket, so for a JWT on the live view's upgrade request the hub also requires the browser's own `Sec-Fetch-Site` to say the page is on the same origin (a request with neither that header nor an `Origin`, such as a script, is fine). Checking `Origin` in nginx as well does no harm.
+- Only asymmetric signatures are accepted, so an unsigned token or one signed with the public key as an HMAC secret is refused. Tokens and secrets are never logged or echoed; the user's name is logged when a valid user is refused.
+- Agents never go through the sign-in, so nothing is needed from the provider for them and the provider being down does not affect them.
+- A signed-in user cannot call the `/agent/` endpoints.
+
+The live connection ends with close code 1001 when its JWT expires; the dashboard reconnects and the proxy adds a fresh token to the new request.
+
 ## Build the agent and CLI
 
 Needs Go 1.27 or newer (https://go.dev/dl/). One command builds every platform, with no C toolchain:
@@ -164,6 +210,7 @@ Safety:
 |---|---|---|
 | `GET /health` | none | Liveness probe |
 | `GET /hub` | read | Hub ID, version, Java runtime age and warning |
+| `GET /me` | read | Who is calling: `method` (`token` or `jwt`), `name` and `scope`; lets a dashboard that holds no token show who is signed in |
 | `GET /status` | read | Roll-up: summary, clusters, servers, checks |
 | `GET /live` (WebSocket) | read, sent in the first frame | Pushes the same roll-up whenever it changes, for the dashboard's Live switch; see below |
 | `GET /servers/{id}/status` | read | One server with its checks |
@@ -182,7 +229,7 @@ Safety:
 
 Polling `GET /status` is how every client works by default. For a dashboard someone is watching, `GET /api/v1/live` upgrades to a WebSocket that pushes the roll-up as it changes, so there is no refresh delay and no repeated requests. The web UI has a **Live** switch for it and turns it off again after 5 minutes without activity.
 
-A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the token: `{"type":"auth","token":"..."}`, within 5 seconds, from a READ or ADMIN token. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. No cookies are used, so any origin may open the socket and the CORS list does not apply to it. `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
+A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the token: `{"type":"auth","token":"..."}`, within 5 seconds, from a READ or ADMIN token. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. No cookies are used, so any origin may open the socket and the CORS list does not apply to it. With JWT sign-in on, a JWT works in place of a hub token: in the first frame, or as `Authorization: Bearer` on the upgrade request when a proxy adds it (then no first frame is needed, the browser must say the page is on the hub's own origin, and the connection closes with code 1001 when the token expires). `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
 
 Behind a load balancer it must pass WebSocket upgrades (`Upgrade` and `Connection` headers) to the hub and allow idle connections for at least 30 seconds. If it does not, the Live switch tells the user it is unavailable and the dashboard keeps polling.
 
@@ -200,6 +247,11 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CP
 | `svcmon.ui-dir` | unset | Folder with the built web UI, served at `/`. A missing folder only logs a warning |
 | `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
 | `svcmon.live-max-sessions` | 50 | Most dashboards that may hold the live WebSocket open at once; more are refused (close code 1013) and keep polling |
+| `svcmon.jwt.issuer` | unset | Issuer address of an OpenID Connect provider (https; http only for localhost). Setting it turns on sign-in with JWT access tokens; see above |
+| `svcmon.jwt.audience` | unset | The audience (`aud`) a token must contain; required with the issuer |
+| `svcmon.jwt.admin-role` | unset | The role that makes a user an administrator of the hub, who is the only kind let in; required with the issuer |
+| `svcmon.jwt.roles-claim` | `realm_access.roles` | Where the roles are in the token; dots walk into nested objects |
+| `svcmon.jwt.jwks-uri` | from discovery | Where the provider's signing keys are, if not the address in its discovery document |
 | `svcmon.alert-retry-delays-ms` | `0,2000,5000` | Waits between delivery attempts for a failing alert channel, in milliseconds |
 | `svcmon.allow-insecure-alert-urls` | false | Lets Slack and Discord URLs use http; for tests and local receivers only |
 | `svcmon.bootstrap-admin-token` | unset | Use this value (32+ characters) as the first admin token on a fresh database instead of generating one; ignored once an admin token exists |
