@@ -1,0 +1,12 @@
+{
+  "checks": [
+    { "type": "service", "target": "nginx.service", "name": "Web server (a Windows service name, a systemd unit or a launchd label)" },
+    { "type": "container", "target": "web", "name": "Web container (the name docker or podman shows)", "intervalSeconds": 30, "failuresBeforeDown": 2 },
+    { "type": "cpu", "name": "CPU", "config": { "warn": 85, "crit": 95 } },
+    { "type": "memory", "name": "Memory", "config": { "warn": 85, "crit": 95 } },
+    { "type": "disk", "target": "/", "name": "Disk / (a drive such as C:\\ on Windows)", "config": { "warn": 80, "crit": 90 } },
+    { "type": "http", "target": "http://localhost:8080/health", "name": "Local health page (runs from this server)", "config": { "expectStatus": "200-299" } },
+    { "type": "tcp", "target": "localhost:5432", "name": "Database port" },
+    { "type": "ping", "target": "10.0.0.1", "name": "Gateway" }
+  ]
+}

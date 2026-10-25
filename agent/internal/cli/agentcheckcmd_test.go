@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"svcmon/internal/agent"
+	"svcmon/internal/checks"
 	"svcmon/internal/hubapi"
 )
 
@@ -190,5 +191,84 @@ func TestAgentCheckRefusesToRewriteAFileItCannotRead(t *testing.T) {
 	after, _ := os.ReadFile(agent.ChecksPath(cfg))
 	if string(before) != string(after) {
 		t.Fatal("the unreadable file was rewritten")
+	}
+}
+
+func TestAgentCheckInitWritesAnExampleBesideTheConfig(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "conf", "agent.json")
+	code, out, errOut := agentCheckRun(t, "init", "--config", cfg)
+	if code != exitOK {
+		t.Fatalf("exit %d: %s%s", code, out, errOut)
+	}
+	example := agent.ChecksExamplePath(cfg)
+	got, err := os.ReadFile(example)
+	if err != nil || string(got) != string(agent.ChecksExample) {
+		t.Fatalf("the template was not written: %v", err)
+	}
+	for _, want := range []string{example, "checks.json", "agent check add"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	// The agent never reads the example, so writing it declares nothing.
+	if _, err := os.Stat(agent.ChecksPath(cfg)); err == nil {
+		t.Fatal("init created the live checks file")
+	}
+}
+
+func TestAgentCheckInitNeverReplacesAFileUnlessAsked(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "agent.json")
+	example := agent.ChecksExamplePath(cfg)
+	if err := os.WriteFile(example, []byte("my edits"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := agentCheckRun(t, "init", "--config", cfg)
+	if code == exitOK || !strings.Contains(errOut, "already exists") {
+		t.Fatalf("exit %d %q", code, errOut)
+	}
+	if got, _ := os.ReadFile(example); string(got) != "my edits" {
+		t.Fatalf("the file was changed: %q", got)
+	}
+	if code, _, errOut := agentCheckRun(t, "init", "--force", "--config", cfg); code != exitOK {
+		t.Fatalf("--force: exit %d %q", code, errOut)
+	}
+	if got, _ := os.ReadFile(example); string(got) != string(agent.ChecksExample) {
+		t.Fatal("--force did not replace it")
+	}
+}
+
+func TestAgentCheckInitStdoutWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	code, out, errOut := agentCheckRun(t, "init", "--stdout", "--config", filepath.Join(dir, "agent.json"))
+	if code != exitOK || out != string(agent.ChecksExample) {
+		t.Fatalf("exit %d, output %q %q", code, out, errOut)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("--stdout wrote %v", entries)
+	}
+}
+
+// The template is a starting point for hand-editing, so what it holds must be what the agent accepts, and the
+// other way to build the file (agent check add) must work on a file made from it.
+func TestAgentCheckExampleIsAFileTheAgentAccepts(t *testing.T) {
+	cfg, _ := declareSetup(t, "", hubapi.DeclareResponse{})
+	if err := os.WriteFile(agent.ChecksPath(cfg), agent.ChecksExample, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	list := checksIn(t, cfg)
+	seen := map[string]bool{}
+	for _, c := range list {
+		seen[strings.ToUpper(c.Type)] = true
+	}
+	for _, typ := range checks.Types {
+		if !seen[typ] {
+			t.Errorf("the example has no %s check", typ)
+		}
+	}
+	if code, out, errOut := agentCheckRun(t, "add", "cpu", "--id", "second-cpu", "--no-declare", "--config", cfg); code != exitOK {
+		t.Fatalf("adding to a file made from the example: exit %d %s%s", code, out, errOut)
+	}
+	if n := len(checksIn(t, cfg)); n != len(list)+1 {
+		t.Fatalf("%d checks, want %d", n, len(list)+1)
 	}
 }

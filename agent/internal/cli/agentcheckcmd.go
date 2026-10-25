@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -27,8 +29,10 @@ func (e *env) agentCheck(args []string) int {
 		return e.agentCheckAdd(rest)
 	case "rm", "remove", "delete":
 		return e.agentCheckRemove(rest)
+	case "init":
+		return e.agentCheckInit(rest)
 	default:
-		return e.fail(fmt.Errorf("unknown agent check command %q (list, add, rm)", sub))
+		return e.fail(fmt.Errorf("unknown agent check command %q (list, add, rm, init)", sub))
 	}
 }
 
@@ -62,6 +66,36 @@ func (e *env) agentCheckList(args []string) int {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", strings.ToUpper(strings.TrimSpace(c.Type)), c.Target, c.Name, c.ID, every)
 	}
 	tw.Flush()
+	return exitOK
+}
+
+// agentCheckInit writes a template of example checks beside agent.json, to edit by hand instead of using
+// 'agent check add'. It is not read by the agent: the edited result is saved as checks.json.
+func (e *env) agentCheckInit(args []string) int {
+	fs := e.flags("agent check init")
+	cfgPath := fs.String("config", agent.DefaultConfigPath(), "agent config file; the template is written beside it")
+	force := fs.Bool("force", false, "replace an existing "+agent.ChecksExampleFileName)
+	stdout := fs.Bool("stdout", false, "print the template instead of writing a file")
+	if _, code, ok := e.parse(fs, args); !ok {
+		return code
+	}
+	if *stdout {
+		e.out.Write(agent.ChecksExample)
+		return exitOK
+	}
+	path := agent.ChecksExamplePath(*cfgPath)
+	if _, err := os.Stat(path); err == nil && !*force {
+		return e.fail(fmt.Errorf("%s already exists; it was not changed (--force replaces it, --stdout prints the template)", path))
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return e.fail(err)
+	}
+	if err := os.WriteFile(path, agent.ChecksExample, 0o644); err != nil {
+		return e.fail(err)
+	}
+	fmt.Fprintf(e.out, "Wrote %s: one example of every kind of check.\n", path)
+	fmt.Fprintf(e.out, "Keep the ones this server needs and save the file as %s (the agent never reads the example),\n", agent.ChecksFileName)
+	fmt.Fprintf(e.out, "or skip the file and add checks one at a time: svcmon agent check add <type> [target]\n")
 	return exitOK
 }
 
