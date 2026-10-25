@@ -21,7 +21,7 @@ class AlertChannelServiceTest {
 
     private static HubProperties props(boolean insecureUrls) {
         return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), insecureUrls, 50,
-                HubProperties.Jwt.DISABLED);
+                HubProperties.Jwt.DISABLED, HubProperties.LocalAdmin.DEFAULT);
     }
 
     private final AlertChannelService strict = new AlertChannelService(null, null, props(false));

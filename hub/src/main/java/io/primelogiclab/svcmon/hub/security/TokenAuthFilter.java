@@ -51,7 +51,8 @@ public class TokenAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String path = req.getRequestURI();
-        if (!path.startsWith("/api/") || path.equals(HEALTH) || path.equals(LiveHandler.PATH) || isPreflight(req)) {
+        if (!path.startsWith("/api/") || path.equals(HEALTH) || path.equals(LiveHandler.PATH) || isPreflight(req)
+                || isLogin(req)) {
             chain.doFilter(req, resp);
             return;
         }
@@ -76,6 +77,11 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         }
         req.setAttribute(ATTR, token.get());
         chain.doFilter(req, resp);
+    }
+
+    /** The password sign-in is how a token is obtained, so it cannot ask for one; it checks the password itself. */
+    static boolean isLogin(HttpServletRequest req) {
+        return "POST".equals(req.getMethod()) && req.getRequestURI().equals("/api/v1/login");
     }
 
     /** A JWT: only an administrator's is accepted, and only where an ADMIN token would do. */

@@ -23,7 +23,26 @@ public record HubProperties(
         /** Most dashboards that may hold the live WebSocket open at once; more are told to try again later. */
         @DefaultValue("50") int liveMaxSessions,
         /** Optional sign-in with OpenID Connect access tokens (Keycloak and others); off unless an issuer is set. */
-        @DefaultValue Jwt jwt) {
+        @DefaultValue Jwt jwt,
+        /** The hub's own administrator account, for when no other sign-in works; on unless turned off. */
+        @DefaultValue LocalAdmin localAdmin) {
+
+    /**
+     * One administrator with a password, kept by the hub itself. Signing in with it returns an ADMIN token that
+     * lasts {@code sessionHours}. The password is stored only as a salted hash. Without {@code password} a random
+     * one is generated at first start and printed once; {@code newPassword} does that again (recovery).
+     */
+    public record LocalAdmin(
+            @DefaultValue("true") boolean enabled,
+            @DefaultValue("admin") String username,
+            /** Used only to create the account, 12 to 128 characters; ignored once the account exists. */
+            String password,
+            @DefaultValue("false") boolean newPassword,
+            /** How long a sign-in lasts, 1 to 168 hours. */
+            @DefaultValue("12") int sessionHours) {
+
+        public static final LocalAdmin DEFAULT = new LocalAdmin(true, "admin", null, false, 12);
+    }
 
     /**
      * How to check an access token sent as a bearer token: it must be signed by a key the issuer publishes, name

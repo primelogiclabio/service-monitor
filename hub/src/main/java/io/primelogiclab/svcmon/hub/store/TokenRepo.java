@@ -76,6 +76,19 @@ public class TokenRepo {
                 .update();
     }
 
+    /** Removes every token with this name, so a change of password ends the sign-ins made with the old one. */
+    public int deleteByName(String name) {
+        return jdbc.sql("DELETE FROM tokens WHERE name = :name").param("name", name).update();
+    }
+
+    /** Keeps the list of finished sign-ins from growing for ever. */
+    public int deleteExpiredByName(String name, long now) {
+        return jdbc.sql("DELETE FROM tokens WHERE name = :name AND expires_at IS NOT NULL AND expires_at < :now")
+                .param("name", name)
+                .param("now", now)
+                .update();
+    }
+
     public boolean delete(String id) {
         return jdbc.sql("DELETE FROM tokens WHERE id = :id").param("id", id).update() > 0;
     }
