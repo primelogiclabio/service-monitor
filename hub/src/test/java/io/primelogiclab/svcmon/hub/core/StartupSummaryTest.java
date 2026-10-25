@@ -24,10 +24,11 @@ class StartupSummaryTest {
 
     private static final List<String> URLS = List.of("http://localhost:8080", "http://hub01:8080");
     private static final Path DB = Path.of("/var/lib/svcmon-hub/svcmon.db");
+    private static final String NOT_SERVED = "not served (this jar has no dashboard inside; set svcmon.ui-dir to serve one)";
 
     private static StartupSummary.Facts facts(List<CheckDef> checks, List<ServerInfo> servers,
                                               List<AlertChannel> channels) {
-        return new StartupSummary.Facts("0.1.0", URLS, DB, null, List.of(), checks, servers, channels);
+        return new StartupSummary.Facts("0.1.0", URLS, DB, NOT_SERVED, List.of(), checks, servers, channels);
     }
 
     private static CheckDef check(String name, CheckType type, RunFrom from, String serverId, boolean enabled) {
@@ -124,7 +125,7 @@ class StartupSummaryTest {
 
     @Test
     void servedDashboardAndCorsOriginsAreShown() {
-        String text = StartupSummary.render(new StartupSummary.Facts("0.1.0", URLS, DB, Path.of("/srv/ui"),
+        String text = StartupSummary.render(new StartupSummary.Facts("0.1.0", URLS, DB, "served from " + Path.of("/srv/ui"),
                 List.of("https://monitor.example.com"), List.of(), List.of(), List.of()));
 
         assertTrue(text.contains("served from " + Path.of("/srv/ui")), text);

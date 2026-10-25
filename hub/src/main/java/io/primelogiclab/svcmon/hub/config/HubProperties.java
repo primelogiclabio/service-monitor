@@ -2,6 +2,7 @@ package io.primelogiclab.svcmon.hub.config;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -31,7 +32,33 @@ public record HubProperties(
         /** Optional sign-in with OpenID Connect access tokens (Keycloak and others); off unless an issuer is set. */
         @DefaultValue Jwt jwt,
         /** The hub's own administrator account, for when no other sign-in works; on unless turned off. */
-        @DefaultValue LocalAdmin localAdmin) {
+        @DefaultValue LocalAdmin localAdmin,
+        /** False makes the hub headless: no dashboard is served, from ui-dir or from inside the jar. */
+        @DefaultValue("true") boolean uiEnabled,
+        /** Where inside the jar the dashboard sits; a jar built without one serves none. Only tests change it. */
+        @DefaultValue("classpath:/ui/") String embeddedUi,
+        /** How the dashboard that comes from inside the jar behaves; ui-dir has its own config.json. */
+        @DefaultValue Ui ui) {
+
+    /** Settings of the dashboard, served to the page as config.json. */
+    public record Ui(@DefaultValue Proxy proxy) {
+
+        public static final Ui DEFAULT = new Ui(Proxy.DEFAULT);
+    }
+
+    /**
+     * For a deployment where a reverse proxy signs people in: the page then calls the proxy's path on its own site,
+     * sends only {@code headers} and never holds a token. {@code headers} unset means X-Web-Client: 1.
+     */
+    public record Proxy(
+            @DefaultValue("false") boolean enabled,
+            @DefaultValue("/web-api") String apiBase,
+            Map<String, String> headers,
+            @DefaultValue("/oauth2/start") String signInUrl,
+            @DefaultValue("/oauth2/sign_out") String signOutUrl) {
+
+        public static final Proxy DEFAULT = new Proxy(false, "/web-api", null, "/oauth2/start", "/oauth2/sign_out");
+    }
 
     /**
      * One administrator with a password, kept by the hub itself. Signing in with it returns an ADMIN token that

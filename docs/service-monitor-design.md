@@ -134,7 +134,7 @@ checks:
 | Alerts | Own senders: webhook (optionally HMAC-signed), Slack, Discord and email (built; HTML with a plain-text part, or plain text only); Telegram and ntfy can follow | Each is a simple HTTP call or SMTP. A watchdog also alerts when an agent goes silent. |
 | Agent | Go with `gopsutil`, `x/sys/windows/svc` | One static binary, no runtime. `gopsutil` (BSD) covers CPU, memory and disk on Linux, Windows and macOS; `x/sys/windows/svc` builds Windows services. |
 | CLI | `svcmon` (Go) or picocli (Java) | Talks to the API with a scoped token. A Go binary starts instantly. |
-| UI (optional) | Svelte single-page app in its own repository (service-monitor-ui), charts with uPlot | Built with Node at build time only. The hub serves the built files from `svcmon.ui-dir`, or the app is hosted elsewhere and the hub allows its address with `svcmon.cors-allowed-origins`. Thymeleaf plus htmx is the zero-JS alternative. |
+| UI (optional) | Svelte single-page app in its own repository (service-monitor-ui), charts with uPlot | Built with Node at build time only. The built files can be copied into the hub jar, which then serves them from inside itself (one file is then the whole hub, dashboard included), or served from a folder (`svcmon.ui-dir`), or the app is hosted elsewhere and the hub allows its address with `svcmon.cors-allowed-origins`. Thymeleaf plus htmx is the zero-JS alternative. |
 | Build | Maven or Gradle, Go toolchain, GitHub Actions matrix | |
 
 ### Server-side requirements

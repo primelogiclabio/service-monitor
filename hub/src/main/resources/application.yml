@@ -3,7 +3,8 @@ spring:
     name: svcmon-hub
   web:
     resources:
-      # The hub serves no classpath files; the web UI (if any) comes from svcmon.ui-dir.
+      # Spring's own static mappings stay off: the web UI is served by UiHostingConfig, from svcmon.ui-dir or from
+      # inside the jar.
       add-mappings: false
   threads:
     virtual:
@@ -31,9 +32,20 @@ svcmon:
   agent-heartbeat-seconds: 30
   # An agent that has not reported for this long is shown as offline.
   agent-stale-seconds: 90
-  # Optional: serve the web dashboard from this folder (the UI project's dist folder), so it shares the
-  # hub's address. Unset means the hub serves no UI.
+  # Optional: serve the web dashboard from this folder (the UI project's dist folder) instead of the one inside the
+  # jar, so it shares the hub's address. Unset means the dashboard inside the jar, if the jar has one.
   # ui-dir: ./ui
+  # Optional: false makes the hub serve no dashboard at all, only the API.
+  # ui-enabled: true
+  # Optional: sign-in through a reverse proxy for the dashboard inside the jar (see the README, "Host the web UI").
+  # ui:
+  #   proxy:
+  #     enabled: false
+  #     api-base: /web-api
+  #     headers:
+  #       X-Web-Client: "1"
+  #     sign-in-url: /oauth2/start
+  #     sign-out-url: /oauth2/sign_out
   # Optional: exact origins that may call the API from a browser, for a dashboard hosted on another
   # address (list entries like https://monitor.example.com, no path, no '*'). Empty means CORS is off.
   # cors-allowed-origins:

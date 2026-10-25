@@ -235,7 +235,7 @@ checks:
     <tr><td>Alerts</td><td>Own senders: webhook (optionally HMAC-signed), Slack, Discord and email (built; HTML with a plain-text part, or plain text only); Telegram and ntfy can follow</td><td>Each is a simple HTTP call or SMTP. A watchdog also alerts when an agent goes silent.</td></tr>
     <tr><td>Agent</td><td>Go with <code>gopsutil</code>, <code>x/sys/windows/svc</code></td><td>One static binary, no runtime. <code>gopsutil</code> (BSD) covers CPU, memory and disk on Linux, Windows and macOS; <code>x/sys/windows/svc</code> builds Windows services.</td></tr>
     <tr><td>CLI</td><td><code>svcmon</code> (Go) or picocli (Java)</td><td>Talks to the API with a scoped token. A Go binary starts instantly.</td></tr>
-    <tr><td>UI (optional)</td><td>Svelte single-page app in its own repository (service-monitor-ui), charts with uPlot</td><td>Built with Node at build time only. The hub serves the built files from <code>svcmon.ui-dir</code>, or the app is hosted elsewhere and the hub allows its address with <code>svcmon.cors-allowed-origins</code>. Thymeleaf plus htmx is the zero-JS alternative.</td></tr>
+    <tr><td>UI (optional)</td><td>Svelte single-page app in its own repository (service-monitor-ui), charts with uPlot</td><td>Built with Node at build time only. The built files can be copied into the hub jar, which then serves them from inside itself (one file is then the whole hub, dashboard included), or served from a folder (<code>svcmon.ui-dir</code>), or the app is hosted elsewhere and the hub allows its address with <code>svcmon.cors-allowed-origins</code>. Thymeleaf plus htmx is the zero-JS alternative.</td></tr>
     <tr><td>Build</td><td>Maven or Gradle, Go toolchain, GitHub Actions matrix</td><td></td></tr>
   </table></div>
 

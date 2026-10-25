@@ -2,7 +2,6 @@ package io.primelogiclab.svcmon.hub.core;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -12,6 +11,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import io.primelogiclab.svcmon.hub.config.HubProperties;
+import io.primelogiclab.svcmon.hub.config.UiHostingConfig;
 import io.primelogiclab.svcmon.hub.model.AlertChannel;
 import io.primelogiclab.svcmon.hub.model.CheckDef;
 import io.primelogiclab.svcmon.hub.model.CheckType;
@@ -46,11 +46,12 @@ public class StartupSummary {
     private static final int MAX_NAME_LENGTH = 60;
 
     /** Everything the summary prints, so the layout can be tested without a running hub. */
-    record Facts(String version, List<String> urls, Path database, Path uiDir, List<String> corsOrigins,
+    record Facts(String version, List<String> urls, Path database, String dashboard, List<String> corsOrigins,
                  List<CheckDef> checks, List<ServerInfo> servers, List<AlertChannel> channels) {
     }
 
     private final HubProperties props;
+    private final UiHostingConfig uiHosting;
     private final Environment env;
     private final String version;
     private final ServerRepo servers;
@@ -58,8 +59,9 @@ public class StartupSummary {
     private final AlertChannelRepo channels;
 
     public StartupSummary(HubProperties props, Environment env, @Value("${svcmon.version:0.1.0}") String version,
-                          ServerRepo servers, CheckRepo checks, AlertChannelRepo channels) {
+                          ServerRepo servers, CheckRepo checks, AlertChannelRepo channels, UiHostingConfig uiHosting) {
         this.props = props;
+        this.uiHosting = uiHosting;
         this.env = env;
         this.version = version;
         this.servers = servers;
@@ -80,9 +82,8 @@ public class StartupSummary {
     }
 
     String describe() {
-        Path ui = props.uiDir() == null ? null : props.uiDir().toAbsolutePath().normalize();
         return render(new Facts(version, urls(), props.dataDir().toAbsolutePath().normalize().resolve("svcmon.db"),
-                ui != null && Files.isDirectory(ui) ? ui : null, props.corsAllowedOrigins(),
+                uiHosting.served(), props.corsAllowedOrigins(),
                 checks.findAll(), servers.findAll(), channels.findAll()));
     }
 
@@ -109,9 +110,7 @@ public class StartupSummary {
         StringBuilder out = new StringBuilder("Service Monitor hub ").append(f.version()).append(" is ready\n");
         line(out, "URL", String.join(", ", f.urls()) + " (plain HTTP; TLS belongs on the load balancer)");
         line(out, "Database", f.database().toString());
-        line(out, "Dashboard", f.uiDir() == null
-                ? "not served (set svcmon.ui-dir to serve the web UI)"
-                : "served from " + f.uiDir());
+        line(out, "Dashboard", f.dashboard());
         line(out, "CORS", f.corsOrigins().isEmpty()
                 ? "off"
                 : "browser access allowed from " + String.join(", ", f.corsOrigins()));

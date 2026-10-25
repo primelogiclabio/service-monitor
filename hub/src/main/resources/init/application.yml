@@ -1,0 +1,85 @@
+## Service Monitor hub settings, written by:  java -jar svcmon-hub.jar init
+##
+## Every setting is commented out and shows its default, so this file changes nothing until you edit it.
+## Lines that start with "## " are explanations. A line that starts with "# " holds a setting: to change it, remove
+## the "# " (the hash and the space), keep the indentation, and uncomment the section name above it too.
+## The hub reads this file from the folder it is started in:  java -jar svcmon-hub-<version>.jar
+## A wrong or unknown value stops the hub with a message that names it, so a typo is found at once.
+
+# server:
+##   Plain HTTP. TLS belongs on the load balancer in front of the hub; firewall this port to it and the internal network.
+#   port: 8080
+##   Listen on one address only (the default is every address).
+#   address: 127.0.0.1
+
+# svcmon:
+##   The SQLite database lives here (created on first start). Back up this folder.
+#   data-dir: ./data
+##   Raw check results older than this many days are deleted.
+#   retention-days: 30
+##   How often agents are told to send a heartbeat and their results, in seconds.
+#   agent-heartbeat-seconds: 30
+##   A server whose agent has been silent this long is shown as offline, and an alert is sent.
+#   agent-stale-seconds: 90
+
+##   ---- The dashboard ----
+##   The dashboard is inside the hub jar and served at the hub's address. false makes the hub headless (API only).
+#   ui-enabled: true
+##   Serve a dashboard from this folder instead of the one inside the jar (the UI project's dist folder).
+#   ui-dir: ./ui
+##   Sign-in through a reverse proxy (nginx with a gateway), so the page never holds a token. The page then calls
+##   the proxy's path on its own site and sends only these headers, which your proxy must require before it turns
+##   the session into a token. Leave it off to sign in with an API token or the local admin account.
+#   ui:
+#     proxy:
+#       enabled: false
+#       api-base: /web-api
+#       headers:
+#         X-Web-Client: "1"
+#       sign-in-url: /oauth2/start
+#       sign-out-url: /oauth2/sign_out
+##   Exact origins that may call the API from a browser, for a dashboard hosted at another address. Empty means off.
+#   cors-allowed-origins:
+#     - https://monitor.example.com
+##   The address people open the dashboard at. Alert emails then get an "Open in dashboard" button.
+#   public-url: https://monitor.example.com
+
+##   ---- Signing in ----
+##   Use this value as the first admin token instead of a generated one (at least 32 characters).
+#   bootstrap-admin-token: choose-a-long-random-value-of-at-least-32-characters
+##   true prints one more new admin token at start-up (token recovery), then set it back to false.
+#   new-admin-token: false
+##   The hub's own administrator, for when nothing else works. On by default: the first start prints a random
+##   password once, and only a salted hash is stored.
+#   local-admin:
+#     enabled: true
+#     username: admin
+##     Only used to create the account (12 to 128 characters); ignored once it exists.
+#     password: choose-12-to-128-characters
+##     true prints a new password at start-up (recovery).
+#     new-password: false
+#     session-hours: 12
+##   Accept OpenID Connect access tokens (Keycloak or another provider) as Authorization: Bearer values. The hub
+##   checks the signature, issuer, audience and expiry itself. Setting issuer turns it on; audience and admin-role
+##   are then required.
+#   jwt:
+#     issuer: https://auth.example.com/realms/main
+#     audience: https://monitor.example.com/api
+#     admin-role: platform-admin
+#     roles-claim: realm_access.roles
+#     jwks-uri: https://auth.example.com/realms/main/protocol/openid-connect/certs
+
+##   ---- Agents ----
+##   Agents may declare their own checks in a checks.json beside their config, so the person setting up a server
+##   lists what it monitors there. false makes the hub refuse declarations: only the admin lists checks.
+#   agent-declared-checks: true
+##   The most checks one server may declare (1 to 1000).
+#   agent-declared-checks-limit: 200
+
+##   ---- Alerts and the live view ----
+##   Let Slack and Discord alert URLs use http instead of https. For tests and local receivers only.
+#   allow-insecure-alert-urls: false
+##   Waits between delivery attempts for a failing alert channel, in milliseconds.
+#   alert-retry-delays-ms: 0,2000,5000
+##   The most dashboards that may hold the live WebSocket (/api/v1/live) open at once.
+#   live-max-sessions: 50
