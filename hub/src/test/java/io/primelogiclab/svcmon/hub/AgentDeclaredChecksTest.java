@@ -35,7 +35,7 @@ class AgentDeclaredChecksTest {
         Path dir = Files.createTempDirectory("svcmon-declared");
         registry.add("svcmon.data-dir", dir::toString);
         registry.add("svcmon.bootstrap-admin-token", () -> ADMIN);
-        registry.add("svcmon.agent-declared-checks", () -> "true");
+        // svcmon.agent-declared-checks is not set: declaring is on by default
         registry.add("svcmon.agent-declared-checks-limit", () -> "4");
     }
 

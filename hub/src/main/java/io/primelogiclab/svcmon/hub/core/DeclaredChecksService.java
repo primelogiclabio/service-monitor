@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
 /**
  * Checks an agent declares in the checks file beside its config. An agent states the whole list for its own
  * server; the hub creates, updates and switches off checks to match. When the file and the hub disagree about a
- * check, the file wins. Off unless {@code svcmon.agent-declared-checks} is set.
+ * check, the file wins. On unless {@code svcmon.agent-declared-checks} is set to false.
  */
 @Service
 public class DeclaredChecksService {

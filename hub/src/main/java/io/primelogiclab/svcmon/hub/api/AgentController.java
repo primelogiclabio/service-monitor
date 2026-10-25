@@ -35,7 +35,7 @@ public class AgentController {
         this.declared = declared;
     }
 
-    /** The agent's whole list of declared checks, from the checks file beside its config. Off unless enabled. */
+    /** The agent's whole list of declared checks, from the checks file beside its config. Refused when the admin turned the setting off. */
     @PutMapping("/checks")
     public DeclareResponse declare(@RequestAttribute(TokenAuthFilter.ATTR) TokenRecord token,
                                    @RequestBody DeclareRequest request) {

@@ -142,6 +142,15 @@ Agent commands (run on a monitored server):
   agent containers [--filter TEXT] [--socket PATH]
                                   List Docker/Podman containers on this machine (nothing is monitored
                                   automatically); --socket if the runtime is not in the usual place
+  agent check list [--json] [--config FILE]
+                                  The checks this server declares (the checks file beside agent.json)
+  agent check add <type> [target] [flags]
+                                  Add one to the checks file and tell the hub; no admin login needed. Flags as
+                                  for 'check add' (--name --interval --timeout --failures --warn --crit
+                                  --keyword --expect-status --ignore-tls --no-redirects --cert-warn-days
+                                  --socket --set k=v), plus --id, --config FILE and --no-declare
+  agent check rm <name|id|type [target]> [--config FILE] [--no-declare]
+                                  Take one out of the checks file (the hub switches it off, history is kept)
   agent declare [--config FILE] [--dry-run]
                                   Send the checks file beside agent.json to the hub now (the agent also does
                                   this itself at start-up and when the file changes); --dry-run only checks it
