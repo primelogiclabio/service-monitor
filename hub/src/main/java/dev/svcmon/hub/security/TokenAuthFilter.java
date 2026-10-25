@@ -21,7 +21,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * Bearer-token check for everything under /api/ except the health probe and the live WebSocket, which cannot
  * send a header and checks its token in its first frame instead.
- * Reads need READ or ADMIN, writes need ADMIN, /agent/register needs an ENROLL token and the other
+ * Reads need READ or ADMIN, writes need ADMIN, /agent/register needs an ENROLL token or a join key and the other
  * /agent/ calls need the agent's own token.
  */
 @Component
@@ -79,13 +79,13 @@ public class TokenAuthFilter extends OncePerRequestFilter {
 
     static Set<Scope> required(String method, String path) {
         if (path.equals("/api/v1/agent/register")) {
-            return EnumSet.of(Scope.ENROLL);
+            return EnumSet.of(Scope.ENROLL, Scope.JOIN);
         }
         if (path.startsWith("/api/v1/agent/")) {
             return EnumSet.of(Scope.AGENT);
         }
         if (path.startsWith("/api/v1/tokens") || path.startsWith("/api/v1/enrollment-tokens")
-                || path.startsWith("/api/v1/alert-channels")) {
+                || path.startsWith("/api/v1/alert-channels") || path.startsWith("/api/v1/join-keys")) {
             return EnumSet.of(Scope.ADMIN);
         }
         boolean read = method.equals("GET") || method.equals("HEAD");

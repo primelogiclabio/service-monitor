@@ -29,12 +29,17 @@ public class TokenController {
     public record EnrollmentRequest(String name, Integer ttlMinutes) {
     }
 
-    /** The raw token appears only in this response. */
-    public record IssuedToken(String id, String name, Scope scope, String token, Long expiresAt) {
+    /** A join key: optional cluster its servers go to, optional lifetime in days (none means until revoked). */
+    public record JoinKeyRequest(String name, String cluster, Integer expiresInDays) {
     }
 
+    /** The raw token appears only in this response. */
+    public record IssuedToken(String id, String name, Scope scope, String token, Long expiresAt, String cluster) {
+    }
+
+    /** useCount is only set for join keys: how many servers they registered (usedAt is the last time). */
     public record TokenView(String id, String name, Scope scope, String serverId, long createdAt,
-                            Long expiresAt, Long usedAt) {
+                            Long expiresAt, Long usedAt, String cluster, Integer useCount) {
     }
 
     private final TokenService tokens;
@@ -85,12 +90,52 @@ public class TokenController {
         return issued(tokens.issue(name, Scope.ENROLL, null, expires));
     }
 
+    @GetMapping("/join-keys")
+    public List<TokenView> joinKeys() {
+        return repo.findAll().stream().filter(t -> t.scope() == Scope.JOIN).map(TokenController::view).toList();
+    }
+
+    /**
+     * A reusable key that registers any number of agents (the same install command works on every server) until it
+     * is revoked or expires. Treat it like a password: anyone holding it can add servers.
+     */
+    @PostMapping("/join-keys")
+    @ResponseStatus(HttpStatus.CREATED)
+    public IssuedToken createJoinKey(@RequestBody JoinKeyRequest req) {
+        if (req == null || req.name() == null || req.name().isBlank() || req.name().trim().length() > 100) {
+            throw ApiException.badRequest("name is required (max 100 characters)");
+        }
+        String cluster = req.cluster() == null || req.cluster().isBlank() ? null : req.cluster().trim();
+        if (cluster != null && cluster.length() > 100) {
+            throw ApiException.badRequest("cluster must be at most 100 characters");
+        }
+        Long expires = null;
+        if (req.expiresInDays() != null) {
+            if (req.expiresInDays() < 1 || req.expiresInDays() > 3650) {
+                throw ApiException.badRequest("expiresInDays must be between 1 and 3650, or left out for no expiry");
+            }
+            expires = System.currentTimeMillis() + TimeUnit.DAYS.toMillis(req.expiresInDays());
+        }
+        return issued(tokens.issueJoinKey(req.name().trim(), cluster, expires));
+    }
+
+    /** Stops a join key working. Servers it already registered keep their own credentials and are not affected. */
+    @DeleteMapping("/join-keys/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revokeJoinKey(@PathVariable String id) {
+        boolean isJoinKey = repo.findAll().stream().anyMatch(t -> t.id().equals(id) && t.scope() == Scope.JOIN);
+        if (!isJoinKey || !repo.delete(id)) {
+            throw ApiException.notFound("Join key");
+        }
+    }
+
     private static IssuedToken issued(TokenService.Issued i) {
         TokenRecord r = i.record();
-        return new IssuedToken(r.id(), r.name(), r.scope(), i.raw(), r.expiresAt());
+        return new IssuedToken(r.id(), r.name(), r.scope(), i.raw(), r.expiresAt(), r.cluster());
     }
 
     private static TokenView view(TokenRecord r) {
-        return new TokenView(r.id(), r.name(), r.scope(), r.serverId(), r.createdAt(), r.expiresAt(), r.usedAt());
+        return new TokenView(r.id(), r.name(), r.scope(), r.serverId(), r.createdAt(), r.expiresAt(), r.usedAt(),
+                r.cluster(), r.scope() == Scope.JOIN ? r.useCount() : null);
     }
 }

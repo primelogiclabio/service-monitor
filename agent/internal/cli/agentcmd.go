@@ -70,7 +70,7 @@ func (e *env) agentToken(args []string) int {
 func (e *env) agentEnroll(args []string) int {
 	fs := e.flags("agent enroll")
 	hub := fs.String("hub", "", "hub base URL (internal address)")
-	token := fs.String("token", "", "enrollment token from 'svcmon agent token'")
+	token := fs.String("token", "", "enrollment token from 'svcmon agent token', or a join key")
 	name := fs.String("name", "", "name for this server (default: host name)")
 	cluster := fs.String("cluster", "", "cluster to place the server in")
 	cfgPath := fs.String("config", agent.DefaultConfigPath(), "where to store the agent's config")
@@ -162,7 +162,7 @@ func checkWritable(path string) error {
 func (e *env) agentInstall(args []string) int {
 	fs := e.flags("agent install")
 	hub := fs.String("hub", "", "hub base URL (internal address); not needed if already enrolled")
-	token := fs.String("token", "", "enrollment token; not needed if already enrolled, and enrolls again if given")
+	token := fs.String("token", "", "enrollment token or join key; not needed if already enrolled, and enrolls again if given")
 	name := fs.String("name", "", "name for this server (default: host name)")
 	cluster := fs.String("cluster", "", "cluster to place the server in")
 	cfgPath := fs.String("config", agent.DefaultConfigPath(), "agent config file")

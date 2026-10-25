@@ -8,5 +8,9 @@ public record TokenRecord(
         String tokenHash,
         long createdAt,
         Long expiresAt,
-        Long usedAt) {
+        Long usedAt,
+        /** Join keys only: the cluster every server it registers is placed in, or null for any. */
+        String cluster,
+        /** Join keys only: how many servers it has registered. */
+        int useCount) {
 }

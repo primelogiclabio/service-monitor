@@ -164,9 +164,9 @@ footer { max-width: 980px; margin: 0 auto; padding: 8px 20px 90px; color: var(--
 
   <h3>Scenario: a new Windows server joins</h3>
   <ol>
-    <li>The admin runs <code>svcmon agent token</code> on the hub side and gets an enrollment token and an install command.</li>
+    <li>The admin runs <code>svcmon agent token</code> on the hub side and gets an enrollment token and an install command. For many servers, a reusable join key (<code>svcmon join-key create</code>) gives one install command that works on all of them until it is revoked; it can pin the cluster its servers land in.</li>
     <li>On the server, an admin runs <code>svcmon agent install --hub http://hub:8080 --token ...</code> (the hub's internal address). This registers a Windows service (Linux: a systemd unit).</li>
-    <li>The agent presents the one-time token, receives its own credential and appears in the dashboard.</li>
+    <li>The agent presents the one-time token (or the join key), receives its own credential and appears in the dashboard.</li>
     <li>The admin assigns it to a cluster and lists the checks to run. Until the admin lists checks, nothing is monitored beyond the heartbeat.</li>
     <li>The agent fetches the list, starts reporting, and the hub rolls its status up into the cluster.</li>
   </ol>
@@ -278,7 +278,7 @@ checks:
 <section id="security">
   <h2>8. Security and alerts</h2>
   <ul>
-    <li>Agents authenticate with a per-agent credential issued from a one-time enrollment token. TLS is terminated at the load balancer. Agents, hubs and consoles talk over the internal network in plain HTTP, so anyone who can sniff that network can read the bearer tokens; keep the hub port firewalled to the load balancer and internal ranges.</li>
+    <li>Agents authenticate with a per-agent credential issued from a one-time enrollment token or a reusable join key. A join key can only register agents, is never shown again after it is created, and revoking it does not affect the servers it registered. TLS is terminated at the load balancer. Agents, hubs and consoles talk over the internal network in plain HTTP, so anyone who can sniff that network can read the bearer tokens; keep the hub port firewalled to the load balancer and internal ranges.</li>
     <li>The CLI and console use scoped API tokens. The console holds only read-scoped tokens for hubs.</li>
     <li>The hub (behind the load balancer) is the only exposed component; monitored servers open nothing. Because agents are internal, the load balancer can refuse <code>/api/v1/agent/*</code> from outside. It must also overwrite any client-supplied <code>X-Forwarded-For</code> header, which the hub trusts from private-range proxies so rejected requests are logged with the real client address.</li>
     <li>The admin's allowlist limits what an agent reports.</li>

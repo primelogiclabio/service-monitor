@@ -58,9 +58,9 @@ Rules that keep it simple:
 
 ### Scenario: a new Windows server joins
 
-1. The admin runs `svcmon agent token` on the hub side and gets an enrollment token and an install command.
+1. The admin runs `svcmon agent token` on the hub side and gets an enrollment token and an install command. For many servers, a reusable join key (`svcmon join-key create`) gives one install command that works on all of them until it is revoked; it can pin the cluster its servers land in.
 2. On the server, an admin runs `svcmon agent install --hub http://hub:8080 --token ...` (the hub's internal address). This registers a Windows service (Linux: a systemd unit).
-3. The agent presents the one-time token, receives its own credential and appears in the dashboard.
+3. The agent presents the one-time token (or the join key), receives its own credential and appears in the dashboard.
 4. The admin assigns it to a cluster and lists the checks to run. Until the admin lists checks, nothing is monitored beyond the heartbeat.
 5. The agent fetches the list, starts reporting, and the hub rolls its status up into the cluster.
 
@@ -168,7 +168,7 @@ Keeping it safe:
 
 ## 8. Security and alerts
 
-- Agents authenticate with a per-agent credential issued from a one-time enrollment token. TLS is terminated at the load balancer. Agents, hubs and consoles talk over the internal network in plain HTTP, so anyone who can sniff that network can read the bearer tokens; keep the hub port firewalled to the load balancer and internal ranges.
+- Agents authenticate with a per-agent credential issued from a one-time enrollment token or a reusable join key. A join key can only register agents, is never shown again after it is created, and revoking it does not affect the servers it registered. TLS is terminated at the load balancer. Agents, hubs and consoles talk over the internal network in plain HTTP, so anyone who can sniff that network can read the bearer tokens; keep the hub port firewalled to the load balancer and internal ranges.
 - The CLI and console use scoped API tokens. The console holds only read-scoped tokens for hubs.
 - The hub (behind the load balancer) is the only exposed component; monitored servers open nothing. Because agents are internal, the load balancer can refuse `/api/v1/agent/*` from outside. It must also overwrite any client-supplied `X-Forwarded-For` header, which the hub trusts from private-range proxies so rejected requests are logged with the real client address.
 - The admin's allowlist limits what an agent reports.

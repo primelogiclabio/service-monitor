@@ -66,6 +66,8 @@ class TokenAuthFilterTest {
         assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("GET", "/api/v1/alert-channels/abc"));
         assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("POST", "/api/v1/alert-channels/abc/test"));
         assertEquals(EnumSet.of(Scope.AGENT), TokenAuthFilter.required("POST", "/api/v1/agent/report"));
-        assertEquals(EnumSet.of(Scope.ENROLL), TokenAuthFilter.required("POST", "/api/v1/agent/register"));
+        assertEquals(EnumSet.of(Scope.ENROLL, Scope.JOIN), TokenAuthFilter.required("POST", "/api/v1/agent/register"));
+        assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("GET", "/api/v1/join-keys"));
+        assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("DELETE", "/api/v1/join-keys/abc"));
     }
 }
