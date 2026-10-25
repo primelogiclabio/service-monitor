@@ -188,12 +188,37 @@ func primaryName(names []string) string {
 	return ""
 }
 
+// isPipe tells a Windows named pipe from a unix socket path. People write a pipe as \\.\pipe\name,
+// as //./pipe/name, or the way DOCKER_HOST does, npipe:////./pipe/name.
+func isPipe(socket string) bool {
+	return strings.HasPrefix(socket, `\\.\pipe\`) || strings.HasPrefix(socket, "//./pipe/") ||
+		strings.HasPrefix(socket, "npipe://")
+}
+
+// pipePath turns the written forms of a named pipe into \\.\pipe\name.
+func pipePath(socket string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(socket, "npipe://"), "/", `\`)
+}
+
+// socketExists says whether a candidate is worth trying. A socket is a file; a pipe is only found by
+// connecting to it.
+func socketExists(socket string) bool {
+	if isPipe(socket) {
+		return pipeReachable(pipePath(socket))
+	}
+	_, err := os.Stat(socket)
+	return err == nil
+}
+
 // socketCandidates are the places a container runtime usually listens, most common first.
 func socketCandidates() []string {
 	var list []string
 	if h := os.Getenv("DOCKER_HOST"); strings.HasPrefix(h, "unix://") {
 		list = append(list, strings.TrimPrefix(h, "unix://"))
+	} else if strings.HasPrefix(h, "npipe://") {
+		list = append(list, h)
 	}
+	list = append(list, defaultPipes...)
 	list = append(list, "/var/run/docker.sock", "/run/podman/podman.sock")
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
 		list = append(list, filepath.Join(dir, "podman", "podman.sock"), filepath.Join(dir, "docker.sock"))
@@ -204,15 +229,15 @@ func socketCandidates() []string {
 	return list
 }
 
-// resolveSocket returns the socket to use: the one the check names, or else the first usual place
-// that exists. Windows named pipes (Docker Desktop) are not supported.
+// resolveSocket returns the socket or pipe to use: the one the check names, or else the first usual
+// place that exists.
 func resolveSocket(configured string) (string, error) {
 	if configured != "" {
 		return strings.TrimPrefix(configured, "unix://"), nil
 	}
 	candidates := socketCandidates()
 	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
+		if socketExists(p) {
 			return p, nil
 		}
 	}
@@ -226,6 +251,9 @@ func resolveSocket(configured string) (string, error) {
 func runtimeGet(ctx context.Context, socket, path string, out any) (int, error) {
 	client := &http.Client{Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			if isPipe(socket) {
+				return dialPipe(ctx, pipePath(socket))
+			}
 			var d net.Dialer
 			return d.DialContext(ctx, "unix", socket)
 		},
@@ -257,7 +285,7 @@ func runtimeError(ctx context.Context, err error, timeout time.Duration) string 
 		msg = describe(ctx, err, timeout)
 	}
 	if errors.Is(err, fs.ErrPermission) {
-		msg += " (the agent needs access to the socket: run it as root or add its user to the runtime's group)"
+		msg += " (the agent needs access to the runtime: run it as root or an administrator, or add its user to the runtime's group)"
 	}
 	return msg
 }

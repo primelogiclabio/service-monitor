@@ -126,10 +126,19 @@ public class CheckService {
                 runFrom, r.serverId(), enabled, createdAt);
     }
 
+    /** A unix socket path, or a Windows named pipe: \\.\pipe\name, //./pipe/name or npipe:////./pipe/name. */
     private static boolean validSocket(String socket) {
-        String path = socket.startsWith("unix://") ? socket.substring("unix://".length()) : socket;
-        return path.length() > 1 && path.length() <= 256 && path.startsWith("/")
-                && path.chars().noneMatch(ch -> ch < 0x20 || ch == 0x7f);
+        if (socket.length() > 256 || socket.chars().anyMatch(ch -> ch < 0x20 || ch == 0x7f)) {
+            return false;
+        }
+        String pipePrefix = "\\\\.\\pipe\\";
+        String path = socket.startsWith("npipe://") ? socket.substring("npipe://".length()) : socket;
+        if (socket.startsWith("npipe://") || path.startsWith("\\\\.\\pipe\\") || path.startsWith("//./pipe/")) {
+            String pipe = path.replace('/', '\\');
+            return pipe.startsWith(pipePrefix) && pipe.length() > pipePrefix.length();
+        }
+        path = path.startsWith("unix://") ? path.substring("unix://".length()) : path;
+        return path.length() > 1 && path.startsWith("/");
     }
 
     private static void validateTarget(CheckType type, String target, Map<String, Object> config) {
@@ -176,7 +185,7 @@ public class CheckService {
                 if (config.containsKey("socket")
                         && !(config.get("socket") instanceof String socket && validSocket(socket))) {
                     throw ApiException.badRequest("socket must be the absolute path of the container runtime's"
-                            + " unix socket, such as /var/run/docker.sock");
+                            + " unix socket (/var/run/docker.sock) or of its Windows named pipe (\\\\.\\pipe\\docker_engine)");
                 }
             }
             case CPU, MEMORY -> {
