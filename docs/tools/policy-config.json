@@ -1,0 +1,9 @@
+{
+  "themeKey": "svcmon-policy-theme",
+  "stats": [
+    ["Licence needed", "None paid. Project: Apache-2.0"],
+    ["Telemetry", "None found"],
+    ["Self-update", "None"],
+    ["Monitored servers", "Open no port; only call out"]
+  ]
+}

@@ -2,7 +2,7 @@
 
 A free, cross-platform monitor for HTTP, TCP, ping, Windows/Linux/macOS services, CPU, memory and disk. A headless Java hub with a REST API, one small Go binary (`svcmon`) that is both the agent and the command-line client, an optional web dashboard in its own repository, and a multi-hub console that is still to come.
 
-Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-design.md) (also as [HTML](docs/service-monitor-design.html)).
+Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-design.md) (also as [HTML](docs/service-monitor-design.html)). What it is built with, explained for a Java developer: [docs/service-monitor-stack-guide.md](docs/service-monitor-stack-guide.md) ([HTML](docs/service-monitor-stack-guide.html)). Licences, what data it handles, what it connects to and what it installs: [docs/service-monitor-trust-policy.md](docs/service-monitor-trust-policy.md) ([HTML](docs/service-monitor-trust-policy.html)).
 
 ## Status (v0.1)
 
@@ -322,7 +322,7 @@ CI runs both on every pull request that changes more than documentation (Markdow
 ## Layout
 
 ```text
-docs/                design document (Markdown + HTML)
+docs/                design document, stack guide, trust policy (each Markdown + HTML)
 hub/                 Java 21, Spring Boot 4.1, SQLite (Maven project)
 hub/service/         install and uninstall scripts for the hub as a service (Windows, Linux) and their tests
 agent/               Go 1.27: svcmon agent + CLI (cmd/svcmon, internal/...)
