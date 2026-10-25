@@ -305,7 +305,7 @@ checks:
   <h2>10. Open questions and limits</h2>
   <div class="callout warn">
     <ul>
-      <li><b>Untested on real targets:</b> the agent was run end to end on Windows 11 only. The Linux (systemd) and macOS (launchd) service installers and service checks compile and pass <code>go vet</code> but have not been run on those systems. On Windows, <code>agent install</code> was only checked for its not-elevated error message; installing the service needs an Administrator prompt.</li>
+      <li><b>Untested on real targets:</b> the agent was run end to end on Windows 11 (service installed from an elevated prompt) and on Ubuntu 26.04 (systemd unit installed as root; HTTP, CPU, memory, disk and service checks ran). The macOS (launchd) service installer and service checks compile and pass <code>go vet</code> but have not been run on that system.</li>
       <li><b>Hub service installers:</b> CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server; its last install runs from the Windows hub package. There is no macOS installer.</li>
       <li><b>Java version:</b> the machine has Java 21, so v1 targets 21. This doc assumes 25 is a long-term-support release but that could not be confirmed from Oracle's roadmap page (it returned HTTP 403).</li>
       <li><b>macOS ping:</b> unprivileged ICMP on macOS is not confirmed by the sources used.</li>
