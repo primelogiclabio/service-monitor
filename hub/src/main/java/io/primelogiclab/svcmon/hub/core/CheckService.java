@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import io.primelogiclab.svcmon.hub.checks.PingChecker;
 import io.primelogiclab.svcmon.hub.checks.TcpChecker;
@@ -18,6 +19,9 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class CheckService {
+
+    /** What Docker and Podman accept as a container name; also covers an ID prefix. */
+    private static final Pattern CONTAINER_NAME = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_.-]{0,254}");
 
     private final CheckRepo checks;
     private final ServerRepo servers;
@@ -84,7 +88,7 @@ public class CheckService {
             throw ApiException.badRequest("name is required (max 200 characters)");
         }
         if (r.type() == null) {
-            throw ApiException.badRequest("type is required (HTTP, TCP, PING, SERVICE, CPU, MEMORY, DISK)");
+            throw ApiException.badRequest("type is required (HTTP, TCP, PING, SERVICE, CONTAINER, CPU, MEMORY, DISK)");
         }
         CheckType type = r.type();
         RunFrom runFrom = r.runFrom() != null ? r.runFrom() : (type.hubCapable() ? RunFrom.HUB : RunFrom.AGENT);
@@ -122,6 +126,12 @@ public class CheckService {
                 runFrom, r.serverId(), enabled, createdAt);
     }
 
+    private static boolean validSocket(String socket) {
+        String path = socket.startsWith("unix://") ? socket.substring("unix://".length()) : socket;
+        return path.length() > 1 && path.length() <= 256 && path.startsWith("/")
+                && path.chars().noneMatch(ch -> ch < 0x20 || ch == 0x7f);
+    }
+
     private static void validateTarget(CheckType type, String target, Map<String, Object> config) {
         switch (type) {
             case HTTP -> {
@@ -151,6 +161,22 @@ public class CheckService {
                 if (target == null || target.isBlank() || target.length() > 512) {
                     throw ApiException.badRequest(type + " target is required"
                             + (type == CheckType.SERVICE ? " (service name)" : " (volume or path)"));
+                }
+            }
+            case CONTAINER -> {
+                if (target == null || !CONTAINER_NAME.matcher(target).matches()) {
+                    throw ApiException.badRequest("CONTAINER target must be a container name"
+                            + " (letters, digits, underscore, dot and hyphen, starting with a letter or digit)");
+                }
+                for (String key : config.keySet()) {
+                    if (!key.equals("socket")) {
+                        throw ApiException.badRequest("CONTAINER checks accept only the config key socket, not " + key);
+                    }
+                }
+                if (config.containsKey("socket")
+                        && !(config.get("socket") instanceof String socket && validSocket(socket))) {
+                    throw ApiException.badRequest("socket must be the absolute path of the container runtime's"
+                            + " unix socket, such as /var/run/docker.sock");
                 }
             }
             case CPU, MEMORY -> {

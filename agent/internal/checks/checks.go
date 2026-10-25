@@ -60,6 +60,8 @@ func Run(ctx context.Context, c Check) (res Result) {
 		return pingCheck(ctx, c)
 	case "SERVICE":
 		return serviceCheck(ctx, c)
+	case "CONTAINER":
+		return containerCheck(ctx, c)
 	case "CPU":
 		return cpuCheck(ctx, c)
 	case "MEMORY":

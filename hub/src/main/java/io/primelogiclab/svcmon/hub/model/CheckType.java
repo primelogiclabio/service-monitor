@@ -1,7 +1,7 @@
 package io.primelogiclab.svcmon.hub.model;
 
 public enum CheckType {
-    HTTP, TCP, PING, SERVICE, CPU, MEMORY, DISK;
+    HTTP, TCP, PING, SERVICE, CONTAINER, CPU, MEMORY, DISK;
 
     /** Network checks the hub can run itself. */
     public boolean hubCapable() {
