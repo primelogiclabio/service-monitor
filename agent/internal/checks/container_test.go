@@ -184,17 +184,40 @@ func TestResolveSocket(t *testing.T) {
 	if got, err := resolveSocket(""); err != nil || got != sock {
 		t.Fatalf("DOCKER_HOST socket = %q, %v", got, err)
 	}
-	// Nothing found: the error names where it looked, so the admin knows what to set.
+	// Nothing found: the error names where it looked, so the admin knows what to set. Skipped where a
+	// real runtime is installed, since the usual places are then not empty (a Windows machine with
+	// Docker Desktop running has its pipe).
 	t.Setenv("DOCKER_HOST", "tcp://elsewhere:2375")
 	t.Setenv("XDG_RUNTIME_DIR", dir)
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
-	if _, err := os.Stat("/var/run/docker.sock"); err != nil {
-		if _, err := os.Stat("/run/podman/podman.sock"); err != nil {
-			if _, err := resolveSocket(""); err == nil || !strings.Contains(err.Error(), "set the check's socket") {
-				t.Fatalf("no socket: %v", err)
-			}
+	for _, usual := range socketCandidates() {
+		if socketExists(usual) {
+			return
 		}
+	}
+	if _, err := resolveSocket(""); err == nil || !strings.Contains(err.Error(), "set the check's socket") {
+		t.Fatalf("no socket: %v", err)
+	}
+}
+
+func TestNamedPipeForms(t *testing.T) {
+	for _, written := range []string{`\\.\pipe\docker_engine`, "//./pipe/docker_engine", "npipe:////./pipe/docker_engine"} {
+		if !isPipe(written) {
+			t.Errorf("%q is not seen as a pipe", written)
+		}
+		if got := pipePath(written); got != `\\.\pipe\docker_engine` {
+			t.Errorf("pipePath(%q) = %q", written, got)
+		}
+	}
+	for _, path := range []string{"/var/run/docker.sock", `C:\tmp\r.sock`, "unix:///x.sock", ""} {
+		if isPipe(path) {
+			t.Errorf("%q is seen as a pipe", path)
+		}
+	}
+	t.Setenv("DOCKER_HOST", "npipe:////./pipe/docker_engine")
+	if got := socketCandidates()[0]; got != "npipe:////./pipe/docker_engine" {
+		t.Errorf("DOCKER_HOST pipe is not tried first: %q", got)
 	}
 }
 

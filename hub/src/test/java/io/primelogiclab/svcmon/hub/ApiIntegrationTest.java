@@ -196,6 +196,8 @@ class ApiIntegrationTest {
                 "\"target\":\"web\",\"runFrom\":\"HUB\"",
                 "\"target\":\"web\",\"config\":{\"socket\":\"relative.sock\"}",
                 "\"target\":\"web\",\"config\":{\"socket\":\"/\"}",
+                "\"target\":\"web\",\"config\":{\"socket\":\"npipe:///var/run/docker.sock\"}",
+                "\"target\":\"web\",\"config\":{\"socket\":\"//./pipe/\"}",
                 "\"target\":\"web\",\"config\":{\"socket\":5}",
                 "\"target\":\"web\",\"config\":{\"sokcet\":\"/var/run/docker.sock\"}")) {
             assertEquals(400, call("POST", "/api/v1/checks", ADMIN, head + bad + "}").status(), bad);
@@ -218,6 +220,13 @@ class ApiIntegrationTest {
         assertTrue(assigned.stream().allMatch(c -> "CONTAINER".equals(c.get("type"))));
         assertEquals(List.of("cache", "db-1.prod", "web"),
                 assigned.stream().map(c -> (String) c.get("target")).sorted().toList());
+
+        // Docker Desktop on Windows listens on a named pipe, written in any of its usual forms.
+        for (String pipe : List.of("npipe:////./pipe/docker_engine", "//./pipe/dockerDesktopLinuxEngine",
+                "\\\\\\\\.\\\\pipe\\\\podman-machine-default")) {
+            assertEquals(201, call("POST", "/api/v1/checks", ADMIN, head
+                    + "\"target\":\"pipe-test\",\"config\":{\"socket\":\"" + pipe + "\"}}").status(), pipe);
+        }
     }
 
     @Test
