@@ -26,7 +26,7 @@ This document is for anyone deciding whether to run Service Monitor, or who has 
 | The hub | Java 21, Spring Boot 4.1.2, Maven. SQLite for storage, Flyway for database changes | A jar of about 37 MB that runs on any Java 21 or newer runtime. It serves the API, the optional dashboard files and a live WebSocket |
 | The agent and the CLI | Go 1.27.3. One program, `svcmon`, about 12 MB | No runtime needed on the monitored server. Builds for Windows, Linux and macOS |
 | The dashboard | Svelte 5, Vite 6, uPlot, Node.js 20 or newer to build | Plain static files once built. Node is not needed to run it |
-| Optional | Keycloak (or another OpenID Connect provider) for sign-in; a load balancer for TLS | Not part of this project; you run them yourself if you want them |
+| Optional | An OpenID Connect identity provider of your choice for sign-in (Keycloak is the one tried; the hub is configured with the provider's address, so nothing is tied to it); a load balancer for TLS | Not part of this project; you run them yourself if you want them |
 
 ## 3. Licences
 
@@ -219,4 +219,4 @@ Things to know and handle yourself:
 - uPlot: https://github.com/leeoniya/uPlot
 - WinSW (the one thing the installer may download): https://github.com/winsw/winsw
 - Eclipse Temurin, one free Java runtime: https://adoptium.net/
-- Keycloak, a sign-in provider that works with the hub: https://www.keycloak.org
+- Keycloak, the sign-in provider tried with the hub (any OpenID Connect provider that issues JWT access tokens can be configured instead): https://www.keycloak.org

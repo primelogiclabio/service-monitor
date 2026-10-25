@@ -80,7 +80,7 @@ These pictures come from a throwaway demo hub filled with made-up servers (the d
 | Flyway | Applies numbered SQL scripts to the database on start | `src/main/resources/db/migration/V1` to `V4`. An applied migration is never edited; a change is a new file |
 | Spring WebSocket | A long-lived two-way connection to the browser | `/api/v1/live` pushes the status to a dashboard when it changes |
 | Angus Mail 2.0.5 | The implementation of Jakarta Mail | Sends alert emails over SMTP |
-| Nimbus JOSE+JWT 10.9.1 | A library for signed tokens | Checks the sign-in tokens from Keycloak (section 4.5) |
+| Nimbus JOSE+JWT 10.9.1 | A library for signed tokens | Checks the signed sign-in tokens from your identity provider (section 4.5) |
 | Maven | Your build tool | `mvn -B -ntp test` runs the tests, which start the real hub on random ports with temporary data folders |
 
 All of these were checked in the build files and the local Maven cache; their licences are Apache-2.0 for Flyway, `sqlite-jdbc` and Nimbus, and EPL-2.0 or GPL-2.0 with the Classpath Exception for Angus Mail.
@@ -121,13 +121,45 @@ Everything else (HTTP, JSON, TCP, files, hashing) is Go's standard library. The 
 | Node.js (here 20.11.1) | A JavaScript runtime | Runs the build tools on your machine. It is not part of the product when it runs |
 | npm and `package.json` | Package manager and its manifest | Like Maven and the POM; `node_modules` is the local copy of the libraries |
 | Vite 6.4.5 | A development server and bundler | `npm run build` produces the `dist/` folder of plain files. Vite is pinned to 6 because the newer one needs a newer Node |
-| Svelte 5.57.2 | A UI framework that compiles components to plain JavaScript | Each `.svelte` file is one piece of the page. State is written with "runes" such as `$state` and `$derived`, and the compiler wires the updates, so there is no virtual DOM at run time |
+| Svelte 5.57.2 | A UI framework that compiles components to plain JavaScript | Each `.svelte` file is one piece of the page (see "A `.svelte` file, up close" below). State is written with "runes" such as `$state` and `$derived`, and the compiler wires the updates, so there is no virtual DOM at run time |
 | uPlot 1.6.32 | A very small, very fast chart library | The history charts on a check's page |
 | Vitest 3.2.7 | A test runner | The JUnit of this side, run with `npm test` |
 
 The output is just files. The hub serves them from the folder set in `svcmon.ui-dir`, or the files can go on any web server if the hub allows that address with `svcmon.cors-allowed-origins`.
 
 So at run time the hub is the one server a person talks to: the page it serves calls the hub's REST API (`/api/v1`) for data and opens the live WebSocket for updates. Svelte, Vite and uPlot exist only inside the files the build produced; nothing from Node runs next to the hub.
+
+### A `.svelte` file, up close
+
+A `.svelte` file is one screen component: its logic, its HTML and (optionally) its styles in a single file, the way a Thymeleaf or JSF template and its backing bean would be fused together. This is a shortened and simplified piece of `src/components/CheckForm.svelte`, the Add check form:
+
+```svelte
+<script>
+  import { AGENT_ONLY_TYPES, CHECK_TYPES } from '../lib/format.js';
+
+  // What the parent hands in, like constructor arguments
+  let { servers = [], initial = null, busy = false, onsubmit, oncancel } = $props();
+
+  let type = $state(initial?.type ?? 'HTTP');                    // a field the screen follows
+  const agentOnly = $derived(AGENT_ONLY_TYPES.includes(type));   // recomputed when `type` changes
+</script>
+
+<select id="cf-type" value={type} onchange={changeType}>
+  {#each CHECK_TYPES as t}<option value={t}>{t}</option>{/each}
+</select>
+{#if agentOnly}<span class="hint">Runs on the server's agent.</span>{/if}
+```
+
+| Part of the file | What it is | Closest Java idea |
+|---|---|---|
+| `<script>` | The component's logic, in ordinary JavaScript | The backing bean or controller class |
+| `$props()` | The values and callbacks the parent passes in; `onsubmit` and `oncancel` are callbacks the parent supplies | Constructor parameters plus listener interfaces |
+| `$state(...)` | A variable that, when it changes, updates exactly the parts of the screen that use it | A field with an observer attached |
+| `$derived(...)` | A value worked out from other values and kept up to date | A getter that is recomputed on demand |
+| The HTML below the script | The layout. `{value}` inserts a value, `{#if}` shows something conditionally, `{#each}` repeats it | `th:text`, `th:if` and `th:each` in Thymeleaf, or `c:if` and `c:forEach` in JSTL |
+| `<style>` (not in this file) | CSS that applies only to this component | A scoped stylesheet. Here the shared styles live in `src/app.css` instead |
+
+Browsers never see a `.svelte` file. When Vite builds the dashboard, the Svelte compiler (connected to Vite by `@sveltejs/vite-plugin-svelte`) turns each one into plain JavaScript that updates the page directly, and `dist/` holds only ordinary files. The other file types in the dashboard repository are: `.js` (the logic that is not a screen: the hub client, formatting, sign-in, and the tests in `test/`), `.mjs` (Node scripts such as `scripts/seed-demo.mjs`), `.css` and `index.html` (the page the whole app is mounted into).
 
 ### 4.4 Running it as a service
 
@@ -149,7 +181,7 @@ A "service" is a program the operating system starts at boot and restarts if it 
 | Scopes | What a token may do | `ADMIN`, `READ`, `ENROLL`, `JOIN` and `AGENT` |
 | Enrollment token and join key | How a server proves it may register | An enrollment token works once; a join key registers many servers until it is revoked. Each server then receives its own `AGENT` token |
 | JWT and OpenID Connect | A signed token that proves who someone is, issued by a sign-in provider | Optional. The hub checks the signature, issuer, audience and expiry itself |
-| Keycloak | An open-source sign-in provider | What this deployment uses for people; the hub does not need to know passwords |
+| Identity provider (Keycloak is the one tried) | The service that signs people in and issues the tokens. Use whichever your organisation already runs | The hub is told four things: `svcmon.jwt.issuer` (the provider's address), `audience`, `admin-role` and `roles-claim` (where the roles sit inside the token), and `jwks-uri` only if the provider keeps its signing keys somewhere unusual. Nothing else is Keycloak-specific; Keycloak is only the default for `roles-claim` and the one provider that has been tried. Another should work if its access tokens are JWTs signed with an asymmetric key and carry a role you can name. Some providers issue opaque access tokens by default, which the hub cannot check. The hub never needs to know anyone's password |
 | PBKDF2 | A deliberately slow way to store a password | The hub's built-in local admin account, for when the provider is down |
 | TLS termination | The encryption endpoint | Done by a load balancer in front of the hub; inside the network the hub speaks plain HTTP. `X-Forwarded-For` and similar headers carry the real client address through the balancer |
 | CORS | The rule a browser applies before one site may call another | Only matters when the dashboard is hosted on a different address from the hub |
@@ -264,7 +296,8 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 **Dashboard (JavaScript)**
 
 - Node.js: https://nodejs.org/
-- Svelte: https://svelte.dev
+- Svelte: https://svelte.dev, its interactive tutorial https://svelte.dev/tutorial and its reference https://svelte.dev/docs/svelte/overview
+- The plugin that connects Svelte to Vite: https://github.com/sveltejs/vite-plugin-svelte
 - Vite: https://vite.dev
 - uPlot: https://github.com/leeoniya/uPlot
 - Vitest: https://vitest.dev
@@ -283,7 +316,7 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 - JSON Web Token, RFC 7519: https://www.rfc-editor.org/rfc/rfc7519
 - PBKDF2, RFC 8018: https://www.rfc-editor.org/rfc/rfc8018
 - WebSocket, RFC 6455: https://www.rfc-editor.org/rfc/rfc6455
-- Keycloak: https://www.keycloak.org
+- Keycloak, the identity provider tried with the hub (any OpenID Connect provider can be configured instead): https://www.keycloak.org
 - CORS: https://developer.mozilla.org/docs/Web/HTTP/CORS
 - `X-Forwarded-For`: https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Forwarded-For
 - Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
