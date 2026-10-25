@@ -245,14 +245,40 @@ class JwtAuthTest {
         });
     }
 
+    private static final List<String> LISTED = List.of("https://dashboard.example.test");
+
+    private static boolean page(String site, String origin, String scheme, String host) {
+        return JwtAuth.fromOwnPage(site, origin, scheme, host, LISTED);
+    }
+
     @Test
-    void changesFromAnotherSiteCannotUseASessionTurnedIntoAToken() {
-        assertTrue(JwtAuth.fromOwnPage(null, null), "a script or the CLI sends neither header");
-        assertTrue(JwtAuth.fromOwnPage("same-origin", "https://monitor.example.test"));
-        assertTrue(JwtAuth.fromOwnPage("none", null));
+    void aPageOnAnotherSiteCannotUseASessionTurnedIntoAToken() {
+        assertTrue(page(null, null, "https", "monitor.example.test"), "a script or the CLI sends neither header");
+
+        // Sec-Fetch-Site decides whenever the browser sends it.
+        assertTrue(page("same-origin", "https://monitor.example.test", "https", "monitor.example.test"));
+        assertTrue(page("none", null, "https", "monitor.example.test"));
         for (String site : new String[] {"cross-site", "same-site", "bogus"}) {
-            assertFalse(JwtAuth.fromOwnPage(site, "https://evil.example.test"), site);
+            assertFalse(page(site, "https://monitor.example.test", "https", "monitor.example.test"),
+                    site + " is refused even when the Origin looks right");
         }
-        assertFalse(JwtAuth.fromOwnPage(null, "https://evil.example.test"), "an Origin without Sec-Fetch-Site cannot be verified");
+    }
+
+    @Test
+    void withoutSecFetchSiteTheOriginMustBeTheHubsOwnAddressOrListed() {
+        // Chrome sends an Origin but no Sec-Fetch-Site on a WebSocket request.
+        assertTrue(page(null, "https://monitor.example.test", "https", "monitor.example.test"));
+        assertTrue(page(null, "https://MONITOR.example.test", "https", "monitor.example.test"), "case does not matter");
+        assertTrue(page(null, "https://monitor.example.test:443", "https", "monitor.example.test"), "nor does a default port");
+        assertTrue(page(null, "https://monitor.example.test", "https", "monitor.example.test:443"));
+        assertTrue(page(null, "http://127.0.0.1:8080", "http", "127.0.0.1:8080"));
+        assertTrue(page(null, "https://dashboard.example.test", "https", "monitor.example.test"), "a listed origin");
+
+        for (String origin : new String[] {"https://evil.example.test", "http://monitor.example.test",
+                "https://monitor.example.test:8443", "https://monitor.example.test.evil.example.test", "null", "",
+                "https://evil.example.test/https://monitor.example.test"}) {
+            assertFalse(page(null, origin, "https", "monitor.example.test"), origin);
+        }
+        assertFalse(page(null, "https://monitor.example.test", null, null), "the hub's own address is not known");
     }
 }

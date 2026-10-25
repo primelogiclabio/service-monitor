@@ -47,7 +47,7 @@ public class CorsConfig {
      * A wildcard is rejected on purpose; list the sites you trust. Throws so a typo stops the hub from
      * starting instead of silently widening or narrowing access.
      */
-    static List<String> validate(List<String> configured) {
+    public static List<String> validate(List<String> configured) {
         List<String> origins = new ArrayList<>();
         for (String raw : configured == null ? List.<String>of() : configured) {
             String entry = raw == null ? "" : raw.trim();

@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.text.ParseException;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -163,14 +164,37 @@ public class JwtAuth {
     /**
      * A signed-in browser's session cookie is sent on any request, so a proxy that turns the cookie into a bearer
      * token can be driven by a foreign page. A socket cannot carry the custom header the proxy uses to stop that,
-     * so the browser's own Sec-Fetch-Site must say the page is on this origin (or that the user typed it); a
-     * browser too old to send it must not send an Origin either. Scripts, which send neither, are not affected.
+     * so the browser itself must say the page is on this site, and a page cannot change what the browser says.
+     * Sec-Fetch-Site decides when the browser sends it (Chrome does not on WebSocket requests); otherwise the
+     * Origin must be this hub's own address as the browser used it ({@code scheme} and {@code host}, from the
+     * proxy's forwarding headers) or one of {@code allowedOrigins}. A request with neither header is not from a
+     * browser page (a script, the CLI) and is not affected.
      */
-    public static boolean fromOwnPage(String secFetchSite, String origin) {
+    public static boolean fromOwnPage(String secFetchSite, String origin, String scheme, String host,
+                                      Collection<String> allowedOrigins) {
         if (secFetchSite != null) {
             return secFetchSite.equals("same-origin") || secFetchSite.equals("none");
         }
-        return origin == null;
+        if (origin == null) {
+            return true;
+        }
+        String page = normalizeOrigin(origin);
+        if (allowedOrigins.contains(page)) {
+            return true;
+        }
+        return scheme != null && host != null && page.equals(normalizeOrigin(scheme + "://" + host));
+    }
+
+    /** Lower case, without the port a scheme implies, so https://a.example and https://a.example:443 are equal. */
+    static String normalizeOrigin(String origin) {
+        String o = origin.strip().toLowerCase(Locale.ROOT);
+        if (o.endsWith(":80") && o.startsWith("http://")) {
+            return o.substring(0, o.length() - 3);
+        }
+        if (o.endsWith(":443") && o.startsWith("https://")) {
+            return o.substring(0, o.length() - 4);
+        }
+        return o;
     }
 
     private synchronized DefaultJWTProcessor<SecurityContext> processor() throws IOException {

@@ -101,6 +101,9 @@ location = /api/v1/live {                                # the live view: the sa
     auth_request     /oauth2/auth-api;
     auth_request_set $api_token $upstream_http_x_access_token;
     proxy_set_header Authorization "Bearer $api_token";
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-Host  $http_host;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_pass http://hub:8080;
@@ -110,7 +113,7 @@ location /api/ { proxy_pass http://hub:8080; }           # agents, the CLI: thei
 
 How this is kept safe:
 - The session cookie is sent by the browser on any request, including one a foreign page makes it send, so the proxy must only exchange a session for a token when the request carries a custom header that only your dashboard adds (the example's `X-Web-Client`); a page on another site cannot add it without a CORS preflight, which you never approve.
-- A browser cannot add that header to a WebSocket, so for a JWT on the live view's upgrade request the hub also requires the browser's own `Sec-Fetch-Site` to say the page is on the same origin (a request with neither that header nor an `Origin`, such as a script, is fine). Checking `Origin` in nginx as well does no harm.
+- A browser cannot add that header to a WebSocket, so for a JWT on the live view's upgrade request the hub checks that the page is on its own site, as the browser itself says: `Sec-Fetch-Site` when the browser sends it (Chrome does not on WebSocket requests), otherwise the `Origin` must be this hub's address as the proxy passed it (`X-Forwarded-Host` and `X-Forwarded-Proto`, or else `Host`) or be listed in `svcmon.cors-allowed-origins`. A request with neither header, such as a script, is not affected. Pass those headers in the live location, as in the example; a refused connection is logged with what was compared.
 - Only asymmetric signatures are accepted, so an unsigned token or one signed with the public key as an HMAC secret is refused. Tokens and secrets are never logged or echoed; the user's name is logged when a valid user is refused.
 - Agents never go through the sign-in, so nothing is needed from the provider for them and the provider being down does not affect them.
 - A signed-in user cannot call the `/agent/` endpoints.
@@ -229,7 +232,7 @@ Safety:
 
 Polling `GET /status` is how every client works by default. For a dashboard someone is watching, `GET /api/v1/live` upgrades to a WebSocket that pushes the roll-up as it changes, so there is no refresh delay and no repeated requests. The web UI has a **Live** switch for it and turns it off again after 5 minutes without activity.
 
-A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the token: `{"type":"auth","token":"..."}`, within 5 seconds, from a READ or ADMIN token. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. No cookies are used, so any origin may open the socket and the CORS list does not apply to it. With JWT sign-in on, a JWT works in place of a hub token: in the first frame, or as `Authorization: Bearer` on the upgrade request when a proxy adds it (then no first frame is needed, the browser must say the page is on the hub's own origin, and the connection closes with code 1001 when the token expires). `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
+A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the token: `{"type":"auth","token":"..."}`, within 5 seconds, from a READ or ADMIN token. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. No cookies are used, so any origin may open the socket and the CORS list does not apply to it. With JWT sign-in on, a JWT works in place of a hub token: in the first frame, or as `Authorization: Bearer` on the upgrade request when a proxy adds it (then no first frame is needed, the page must be on the hub's own address, and the connection closes with code 1001 when the token expires). `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
 
 Behind a load balancer it must pass WebSocket upgrades (`Upgrade` and `Connection` headers) to the hub and allow idle connections for at least 30 seconds. If it does not, the Live switch tells the user it is unavailable and the dashboard keeps polling.
 

@@ -1,7 +1,10 @@
 package io.primelogiclab.svcmon.hub.live;
 
+import java.util.List;
 import java.util.Map;
 
+import io.primelogiclab.svcmon.hub.config.CorsConfig;
+import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.security.JwtAuth;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +23,7 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
  * a token in its first frame, as before.
  *
  * <p>Unlike the first frame, this credential is added by the proxy from the browser's session cookie, which any
- * site can make a browser send. So the browser must say the page is on this origin (see {@link JwtAuth#fromOwnPage}).
+ * site can make a browser send. So the page must be on this site, as the browser itself says (see {@link JwtAuth#fromOwnPage}).
  */
 @Component
 public class LiveHandshake implements HandshakeInterceptor {
@@ -31,9 +34,11 @@ public class LiveHandshake implements HandshakeInterceptor {
     private static final Logger log = LoggerFactory.getLogger(LiveHandshake.class);
 
     private final JwtAuth jwt;
+    private final List<String> allowedOrigins;
 
-    public LiveHandshake(JwtAuth jwt) {
+    public LiveHandshake(JwtAuth jwt, HubProperties props) {
         this.jwt = jwt;
+        this.allowedOrigins = CorsConfig.validate(props.corsAllowedOrigins());
     }
 
     @Override
@@ -50,19 +55,59 @@ public class LiveHandshake implements HandshakeInterceptor {
             case INVALID -> HttpStatus.UNAUTHORIZED;
             case UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
-            case ADMIN -> JwtAuth.fromOwnPage(headers.getFirst("Sec-Fetch-Site"), headers.getFirst(HttpHeaders.ORIGIN))
-                    ? null : HttpStatus.FORBIDDEN;
+            case ADMIN -> fromOwnPage(request) ? null : HttpStatus.FORBIDDEN;
             case NOT_JWT -> null;
         };
         if (refused != null) {
             log.warn("Rejected live connection from {}: {}", request.getRemoteAddress(),
-                    who.kind() == JwtAuth.Kind.ADMIN ? "opened from another site" : who.reason());
+                    who.kind() == JwtAuth.Kind.ADMIN ? notOnThisSite(request) : who.reason());
             response.setStatusCode(refused);
             return false;
         }
         attributes.put(USER, who.user());
         attributes.put(EXPIRES_AT, who.expiresAtMillis());
         return true;
+    }
+
+    /** Says what was compared, because the usual cause is a proxy that does not pass the public address on. */
+    private String notOnThisSite(ServerHttpRequest request) {
+        HttpHeaders headers = request.getHeaders();
+        return "the page is not on this site (Origin " + clip(headers.getFirst(HttpHeaders.ORIGIN))
+                + ", Sec-Fetch-Site " + clip(headers.getFirst("Sec-Fetch-Site"))
+                + ", this hub's address as the proxy passed it " + clip(first(headers.getFirst("X-Forwarded-Proto")))
+                + "/" + clip(first(headers.getFirst("X-Forwarded-Host")) != null
+                        ? first(headers.getFirst("X-Forwarded-Host")) : headers.getFirst(HttpHeaders.HOST))
+                + "); the proxy must send X-Forwarded-Host and X-Forwarded-Proto, or list the origin in svcmon.cors-allowed-origins";
+    }
+
+    private static String clip(String value) {
+        if (value == null) {
+            return "none";
+        }
+        String one = value.replaceAll("[\\p{Cntrl}]+", " ").strip();
+        return one.length() > 100 ? one.substring(0, 100) + "..." : one;
+    }
+
+    /** The address the browser used comes from the proxy's X-Forwarded-Host and -Proto, or else the request itself. */
+    private boolean fromOwnPage(ServerHttpRequest request) {
+        HttpHeaders headers = request.getHeaders();
+        String scheme = first(headers.getFirst("X-Forwarded-Proto"));
+        if (scheme == null) {
+            scheme = request.getURI().getScheme();
+        }
+        String host = first(headers.getFirst("X-Forwarded-Host"));
+        if (host == null) {
+            host = first(headers.getFirst(HttpHeaders.HOST));
+        }
+        return JwtAuth.fromOwnPage(headers.getFirst("Sec-Fetch-Site"), headers.getFirst(HttpHeaders.ORIGIN), scheme, host,
+                allowedOrigins);
+    }
+
+    private static String first(String commaSeparated) {
+        if (commaSeparated == null || commaSeparated.isBlank()) {
+            return null;
+        }
+        return commaSeparated.split(",")[0].strip();
     }
 
     @Override

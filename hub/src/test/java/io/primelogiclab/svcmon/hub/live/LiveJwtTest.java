@@ -54,6 +54,7 @@ class LiveJwtTest {
         registry.add("svcmon.jwt.issuer", () -> issuer);
         registry.add("svcmon.jwt.audience", () -> JwtFixture.AUDIENCE);
         registry.add("svcmon.jwt.admin-role", () -> JwtFixture.ADMIN_ROLE);
+        registry.add("svcmon.cors-allowed-origins", () -> "https://dashboard.example.test");
     }
 
     private static void serve(String path, String body) {
@@ -135,7 +136,28 @@ class LiveJwtTest {
         assertEquals(403, refusedWith(handshake(keys.admin(), "Sec-Fetch-Site", "cross-site",
                 "Origin", "https://evil.example.test")));
         assertEquals(403, refusedWith(handshake(keys.admin(), "Origin", "https://evil.example.test")),
-                "a browser that does not send Sec-Fetch-Site cannot be told apart");
+                "an Origin that is not this hub's own address is refused");
+    }
+
+    @Test
+    void aBrowserThatSendsOnlyAnOriginIsJudgedByIt() throws Exception {
+        // Chrome sends an Origin but no Sec-Fetch-Site on a WebSocket request. The test client's Host is 127.0.0.1:port.
+        for (Map<String, String> ok : List.of(
+                handshake(keys.admin(), "Origin", "http://127.0.0.1:" + port),
+                handshake(keys.admin(), "Origin", "https://monitor.example.test", "X-Forwarded-Host", "monitor.example.test",
+                        "X-Forwarded-Proto", "https"),
+                handshake(keys.admin(), "Origin", "https://dashboard.example.test"))) {
+            LiveClient live = LiveClient.connect(port, ok);
+            try {
+                assertNotNull(live.next(Duration.ofSeconds(5)), String.valueOf(ok));
+            } finally {
+                live.close();
+            }
+        }
+        assertEquals(403, refusedWith(handshake(keys.admin(), "Origin", "https://evil.example.test",
+                "X-Forwarded-Host", "monitor.example.test", "X-Forwarded-Proto", "https")));
+        assertEquals(403, refusedWith(handshake(keys.admin(), "Sec-Fetch-Site", "cross-site",
+                "Origin", "http://127.0.0.1:" + port)), "what the browser says about the page wins over the Origin");
     }
 
     @Test
