@@ -213,6 +213,8 @@ Checks are normally made in the hub (the dashboard, `svcmon check add`, the API)
 - **The agent wins.** A declared check replaces the hub's settings for that check on every sync, and a check made in the hub with the same type and target is taken over, with its history. A check shows where it comes from (`source` is `HUB` or `AGENT` in the API). The hub refuses to edit or delete a declared check, since the next sync would undo it, except its on/off switch, so a noisy one can be muted without touching the server.
 - **Taking a check out of the file** switches it off and marks it `removedFromFile`; it is not deleted, so its history stays, and it can be deleted in the hub. It comes back on when the file lists it again. A missing file declares nothing, so deleting the file switches nothing off; an empty list (`{"checks":[]}`) does.
 - **Mistakes:** the hub refuses a bad entry and says why, and the others still apply. A broken file is logged by the agent and the hub keeps the last list it was given.
+- **Manage it from the server:** `svcmon agent check add <type> [target] [flags]`, `svcmon agent check rm <name|id|type [target]>` and `svcmon agent check list [--json]` edit the file and send it to the hub at once, with the agent's own token, so no CLI or dashboard login is needed. `add` takes the flags of `svcmon check add` (`--name --interval --timeout --failures --warn --crit --keyword --expect-status --ignore-tls --no-redirects --cert-warn-days --socket --set k=v`) plus `--id`, `--config FILE` and `--no-declare` (only change the file). The same type and target twice is refused unless you give `--id`; to change a check, `rm` and `add` it again (it keeps its history). The file is saved even if the hub cannot be reached or still has the switch off, and the command then exits with a warning; the running agent sends it later.
+- **If the hub is down:** the agent keeps the check list the hub last gave it in `assigned.json` beside `agent.json` (private to the owner, safe to delete). An agent started while the hub does not answer runs that list at once, buffers results and sends them when the hub is back; the next config poll swaps in the hub's list. A hub that answers with a refusal (token revoked, server deleted) is not worked around. Alerts are still sent by the hub, so a hub that is down alerts nobody. A check the hub never saw has no id and is not in the cache.
 - `svcmon agent declare [--config FILE]` sends the file now and shows what the hub did with each entry; `--dry-run` only checks the file. `svcmon agent run --once` declares first. A UTF-8 byte order mark from Notepad or PowerShell is fine.
 
 ### More commands
@@ -226,6 +228,7 @@ svcmon token create --name ci --scope read
 svcmon token list                # also: token revoke <id>
 svcmon join-key create --name "app servers" --cluster prod   # reusable; also: join-key list, join-key revoke <id>
 svcmon agent enroll --hub http://hub:8080 --token svm_e_...   # enroll without installing the service
+svcmon agent check add cpu --warn 80 --crit 90   # on the server: edit checks.json and send it; also: check rm, check list
 svcmon agent declare             # send checks.json to the hub now; --dry-run only checks the file
 svcmon agent uninstall           # stop and remove the OS service
 ```

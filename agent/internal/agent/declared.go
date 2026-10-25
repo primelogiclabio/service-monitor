@@ -65,6 +65,59 @@ func LoadChecks(path string) (list []hubapi.DeclaredCheck, sum string, err error
 	return f.Checks, hex.EncodeToString(sha[:]), nil
 }
 
+// CheckKey is what tells two declared checks apart, the same rule the hub applies: the id the file gives, or
+// the type and target. Two entries with one key would be one check to the hub.
+func CheckKey(c hubapi.DeclaredCheck) string {
+	if id := strings.TrimSpace(c.ID); id != "" {
+		return "id:" + id
+	}
+	return "type:" + strings.ToUpper(strings.TrimSpace(c.Type)) + ":" + strings.TrimSpace(c.Target)
+}
+
+// SaveChecks writes the list in the form LoadChecks reads. The file is replaced in one step, so an agent that
+// looks at it while it is being written never sees half a list. It is private to its owner like agent.json,
+// since a check can carry HTTP headers.
+func SaveChecks(path string, list []hubapi.DeclaredCheck) error {
+	if list == nil {
+		list = []hubapi.DeclaredCheck{}
+	}
+	data, err := json.MarshalIndent(checksFile{Checks: list}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(path, append(data, '\n'))
+}
+
+// writeFileAtomic writes next to path and renames over it, so a crash leaves the old file or the new one.
+func writeFileAtomic(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	if err := restrict(name); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	return nil
+}
+
 // SetChecksFile makes the agent declare the checks in this file to its hub: when it starts and whenever the file
 // has changed, looked at on each config poll.
 func (a *Agent) SetChecksFile(path string) { a.checksPath = path }

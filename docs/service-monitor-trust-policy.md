@@ -88,6 +88,14 @@ Only what a check the admin listed needs, and nothing is discovered on its own. 
 | Container | The named container's state, health, image name, uptime and restart count, asked of the local Docker or Podman with read-only requests. Its environment variables, mounts and labels are never read into a message |
 | HTTP, TCP, ping | Whether the address answers, how fast, the status code, and (HTTP) a keyword in the body, which is checked in memory and not kept. For https addresses, the certificate's expiry date |
 
+### What an agent keeps on the server
+
+Beside the program, next to `agent.json` (the hub address and the agent's token). The files the agent or `svcmon agent check` writes are readable only by the owner, or on Windows by SYSTEM, Administrators and the account that wrote them:
+
+- `checks.json`, only if someone makes one, by hand or with `svcmon agent check add`: the checks this server declares.
+- `assigned.json`, written by the running agent: the check list the hub last gave it (targets, settings and intervals, and any HTTP headers set on those checks). An agent that is started while the hub cannot be reached runs that list instead of waiting. It is rewritten when the list changes and can be deleted at any time.
+- `agent.log`, when it runs as a service (see Logs below).
+
 ### What the hub stores
 
 In one SQLite file in its data folder:

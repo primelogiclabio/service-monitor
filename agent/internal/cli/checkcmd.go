@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -248,6 +249,66 @@ func (k kvFlag) Set(s string) error {
 	return nil
 }
 
+// settingFlags are the flags that become a check's config, shared by 'check add' (the hub) and
+// 'agent check add' (the checks file).
+type settingFlags struct {
+	warn, crit  *float64
+	keyword     *string
+	expect      *string
+	ignoreTLS   *bool
+	noRedirects *bool
+	certDays    *int
+	socket      *string
+	extra       kvFlag
+}
+
+func addSettingFlags(fs *flag.FlagSet) *settingFlags {
+	s := &settingFlags{extra: kvFlag{}}
+	s.warn = fs.Float64("warn", -1, "warning threshold, percent used (cpu, memory, disk)")
+	s.crit = fs.Float64("crit", -1, "critical threshold, percent used (cpu, memory, disk)")
+	s.keyword = fs.String("keyword", "", "http: text the body must contain")
+	s.expect = fs.String("expect-status", "", "http: accepted status codes, e.g. 200-299,301")
+	s.ignoreTLS = fs.Bool("ignore-tls", false, "http: accept any TLS certificate")
+	s.noRedirects = fs.Bool("no-redirects", false, "http: do not follow redirects")
+	s.certDays = fs.Int("cert-warn-days", 0, "http: warn this many days before the certificate expires")
+	s.socket = fs.String("socket", "", "container: runtime socket, if it is not in the usual place")
+	fs.Var(s.extra, "set", "extra config as key=value (repeatable)")
+	return s
+}
+
+// config is the check's config map built from the flags that were given.
+func (s *settingFlags) config() map[string]any {
+	cfg := map[string]any{}
+	for k, v := range s.extra {
+		cfg[k] = v
+	}
+	if *s.warn >= 0 {
+		cfg["warn"] = *s.warn
+	}
+	if *s.crit >= 0 {
+		cfg["crit"] = *s.crit
+	}
+	if *s.keyword != "" {
+		cfg["keyword"] = *s.keyword
+	}
+	if *s.expect != "" {
+		cfg["expectStatus"] = *s.expect
+	}
+	if *s.ignoreTLS {
+		cfg["ignoreTls"] = true
+	}
+	if *s.noRedirects {
+		cfg["followRedirects"] = false
+	}
+	if *s.certDays > 0 {
+		cfg["certWarnDays"] = *s.certDays
+	}
+	if *s.socket != "" {
+		cfg["socket"] = *s.socket
+	}
+	return cfg
+}
+
 func (e *env) checkAdd(args []string) int {
 	fs := e.flags("check add")
 	name := fs.String("name", "", "display name")
@@ -256,17 +317,8 @@ func (e *env) checkAdd(args []string) int {
 	failures := fs.Int("failures", 0, "consecutive failures before the check is DOWN")
 	server := fs.String("server", "", "server (name or ID) this check belongs to; required for agent checks")
 	runFrom := fs.String("run-from", "", "hub or agent")
-	warn := fs.Float64("warn", -1, "warning threshold, percent used (cpu, memory, disk)")
-	crit := fs.Float64("crit", -1, "critical threshold, percent used (cpu, memory, disk)")
-	keyword := fs.String("keyword", "", "http: text the body must contain")
-	expect := fs.String("expect-status", "", "http: accepted status codes, e.g. 200-299,301")
-	ignoreTLS := fs.Bool("ignore-tls", false, "http: accept any TLS certificate")
-	noRedirects := fs.Bool("no-redirects", false, "http: do not follow redirects")
-	certDays := fs.Int("cert-warn-days", 0, "http: warn this many days before the certificate expires")
-	socket := fs.String("socket", "", "container: runtime socket, if it is not in the usual place")
+	settings := addSettingFlags(fs)
 	disabled := fs.Bool("disabled", false, "create the check disabled")
-	extra := kvFlag{}
-	fs.Var(extra, "set", "extra config as key=value (repeatable)")
 	pos, code, ok := e.parse(fs, args)
 	if !ok {
 		return code
@@ -289,35 +341,7 @@ func (e *env) checkAdd(args []string) int {
 	if target != "" {
 		body["target"] = target
 	}
-	cfg := map[string]any{}
-	for k, v := range extra {
-		cfg[k] = v
-	}
-	if *warn >= 0 {
-		cfg["warn"] = *warn
-	}
-	if *crit >= 0 {
-		cfg["crit"] = *crit
-	}
-	if *keyword != "" {
-		cfg["keyword"] = *keyword
-	}
-	if *expect != "" {
-		cfg["expectStatus"] = *expect
-	}
-	if *ignoreTLS {
-		cfg["ignoreTls"] = true
-	}
-	if *noRedirects {
-		cfg["followRedirects"] = false
-	}
-	if *certDays > 0 {
-		cfg["certWarnDays"] = *certDays
-	}
-	if *socket != "" {
-		cfg["socket"] = *socket
-	}
-	if len(cfg) > 0 {
+	if cfg := settings.config(); len(cfg) > 0 {
 		body["config"] = cfg
 	}
 	if *interval > 0 {

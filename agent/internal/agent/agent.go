@@ -46,6 +46,10 @@ type Agent struct {
 	checksPath  string // the checks file to declare to the hub, if any
 	declaredSum string // checksum of the file the hub last took
 	declareErr  string // the last problem logged about it, so a repeating one is logged once
+
+	cachePath string   // where the hub's last check list is kept, if anywhere
+	cachedSum [32]byte // checksum of what that file holds, so an unchanged list is not written again
+	cacheErr  string   // the last problem logged about the cache, logged once
 }
 
 // New prepares an agent. It does not contact the hub until Run or RunOnce.
@@ -73,11 +77,12 @@ func DescribeOS() string {
 // Run works until ctx is cancelled: fetch config, run checks, report on the hub's heartbeat interval.
 func (a *Agent) Run(ctx context.Context) error {
 	a.log.Printf("svcmon agent %s starting as %q, hub %s", a.version, a.cfg.Name, a.cfg.Hub)
-	cfg, err := a.fetchConfigRetry(ctx)
+	cfg, fromCache, err := a.fetchConfigRetry(ctx)
 	if err != nil {
 		return nil // cancelled before the hub ever answered
 	}
-	if a.syncDeclared(ctx) { // declared checks are in the list the hub hands out, so ask again
+	// Started from the cache, the hub is not answering, so declaring would only fail; the next config poll does it.
+	if !fromCache && a.syncDeclared(ctx) { // declared checks are in the list the hub hands out, so ask again
 		if next, err := a.fetchConfig(ctx); err == nil {
 			cfg = next
 		}
@@ -177,22 +182,30 @@ func (a *Agent) fetchConfig(ctx context.Context) (*hubapi.AgentConfig, error) {
 	if skew := time.Since(time.UnixMilli(cfg.HubTime)); skew > 30*time.Second || skew < -30*time.Second {
 		a.log.Printf("warning: clock differs from the hub by %s; fix time sync", skew.Round(time.Second))
 	}
+	a.saveCache(&cfg)
 	return &cfg, nil
 }
 
 // fetchConfigRetry keeps trying with backoff so an agent started before the hub is reachable still comes up.
-func (a *Agent) fetchConfigRetry(ctx context.Context) (*hubapi.AgentConfig, error) {
+// When the hub does not answer and the agent has the list the hub last gave it, it starts on that list at once
+// (the bool) instead of waiting; the config poll swaps in the hub's list as soon as the hub is back.
+func (a *Agent) fetchConfigRetry(ctx context.Context) (*hubapi.AgentConfig, bool, error) {
 	delay := 2 * time.Second
 	for {
 		cfg, err := a.fetchConfig(ctx)
 		if err == nil {
 			a.log.Printf("config received: %d check(s) assigned", len(cfg.Checks))
-			return cfg, nil
+			return cfg, false, nil
+		}
+		if cached := a.cachedInstead(err); cached != nil {
+			a.log.Printf("cannot fetch config from hub: %v; running the %d check(s) it last assigned until it answers",
+				err, len(cached.Checks))
+			return cached, true, nil
 		}
 		a.log.Printf("cannot fetch config from hub: %v (retrying in %s)", err, delay)
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, false, ctx.Err()
 		case <-time.After(delay):
 		}
 		if delay < time.Minute {

@@ -22,7 +22,7 @@ import (
 
 func (e *env) agentCmd(args []string) int {
 	if len(args) == 0 {
-		return e.fail(errors.New("usage: svcmon agent token|enroll|install|uninstall|run|services|containers|declare"))
+		return e.fail(errors.New("usage: svcmon agent token|enroll|install|uninstall|run|services|containers|check|declare"))
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -40,6 +40,8 @@ func (e *env) agentCmd(args []string) int {
 		return e.agentServices(rest)
 	case "containers":
 		return e.agentContainers(rest)
+	case "check":
+		return e.agentCheck(rest)
 	case "declare":
 		return e.agentDeclare(rest)
 	default:
@@ -224,8 +226,7 @@ func (e *env) agentRun(args []string) int {
 		if closer != nil {
 			defer closer.Close()
 		}
-		a := agent.New(cfg, logger, Version)
-		a.SetChecksFile(agent.ChecksPath(*cfgPath))
+		a := newAgent(cfg, logger, *cfgPath)
 		if err := osservice.RunService(osservice.Name, a.Run); err != nil {
 			logger.Printf("service stopped with error: %v", err)
 			return exitUnknown
@@ -236,8 +237,7 @@ func (e *env) agentRun(args []string) int {
 	logger := log.New(e.err, "", log.LstdFlags)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	a := agent.New(cfg, logger, Version)
-	a.SetChecksFile(agent.ChecksPath(*cfgPath))
+	a := newAgent(cfg, logger, *cfgPath)
 	if *once {
 		results, err := a.RunOnce(ctx)
 		for _, r := range results {
@@ -255,6 +255,14 @@ func (e *env) agentRun(args []string) int {
 		return e.fail(err)
 	}
 	return exitOK
+}
+
+// newAgent is an agent that declares the checks file and keeps the hub's check list, both beside its config.
+func newAgent(cfg *agent.FileConfig, logger *log.Logger, cfgPath string) *agent.Agent {
+	a := agent.New(cfg, logger, Version)
+	a.SetChecksFile(agent.ChecksPath(cfgPath))
+	a.SetCacheFile(agent.CachePath(cfgPath))
+	return a
 }
 
 // serviceLogger sends the agent's log to agent.log next to its config, since a service has no console.
@@ -291,16 +299,26 @@ func (e *env) agentDeclare(args []string) int {
 		fmt.Fprintf(e.out, "%s is valid: %d check(s)\n", path, len(list))
 		return exitOK
 	}
-	cfg, err := agent.LoadConfig(*cfgPath)
+	resp, err := declareNow(*cfgPath, list)
 	if err != nil {
 		return e.fail(err)
+	}
+	return e.printDeclared(list, resp)
+}
+
+// declareNow sends the list to the hub the agent in this config belongs to.
+func declareNow(cfgPath string, list []hubapi.DeclaredCheck) (*hubapi.DeclareResponse, error) {
+	cfg, err := agent.LoadConfig(cfgPath)
+	if err != nil {
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	resp, err := agent.New(cfg, log.New(io.Discard, "", 0), Version).Declare(ctx, list)
-	if err != nil {
-		return e.fail(err)
-	}
+	return agent.New(cfg, log.New(io.Discard, "", 0), Version).Declare(ctx, list)
+}
+
+// printDeclared shows what the hub did with each entry. It exits with a warning when one was rejected.
+func (e *env) printDeclared(list []hubapi.DeclaredCheck, resp *hubapi.DeclareResponse) int {
 	tw := tabwriter.NewWriter(e.out, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "RESULT\tTYPE\tTARGET\tCHECK\tPROBLEM")
 	rejected := 0

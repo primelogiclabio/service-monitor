@@ -227,6 +227,8 @@ A "service" is a program the operating system starts at boot and restarts if it 
 2. The agent sends it to the hub at start-up and whenever the file changes (looked at once a minute).
 3. The hub creates, updates or switches off checks to match, and the agent runs them from its normal list.
 4. If the file and the hub disagree about a check, the file wins. This is off unless the hub sets `svcmon.agent-declared-checks: true`.
+5. On the server, `svcmon agent check add|rm|list` edits that file for you and sends it at once, so no login to the hub is needed.
+6. The agent also keeps the check list the hub last gave it in `assigned.json`, so an agent restarted while the hub is down keeps checking and buffers the results.
 
 ### The hub restarts
 
