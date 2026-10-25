@@ -188,6 +188,7 @@ func (e *env) agentInstall(args []string) int {
 		return e.fail(err)
 	}
 	fmt.Fprintf(e.out, "Service %q installed and started, running %s. Do not move or delete that file.\n", opts.Name, exe)
+	fmt.Fprintf(e.out, "Its config is %s.\n", cfgAbs)
 	return exitOK
 }
 
