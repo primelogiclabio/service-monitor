@@ -18,6 +18,9 @@ const (
 	Unknown = "UNKNOWN"
 )
 
+// Types are the check types Run understands.
+var Types = []string{"HTTP", "TCP", "PING", "SERVICE", "CONTAINER", "CPU", "MEMORY", "DISK"}
+
 // Check is one thing to measure.
 type Check struct {
 	ID      string

@@ -42,6 +42,10 @@ type Agent struct {
 	down bool              // last report failed; used to log only on transitions
 	last map[string]string // last status seen per check, to report changes promptly
 	kick chan struct{}     // signalled when a result is worth sending before the next heartbeat
+
+	checksPath  string // the checks file to declare to the hub, if any
+	declaredSum string // checksum of the file the hub last took
+	declareErr  string // the last problem logged about it, so a repeating one is logged once
 }
 
 // New prepares an agent. It does not contact the hub until Run or RunOnce.
@@ -73,6 +77,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err != nil {
 		return nil // cancelled before the hub ever answered
 	}
+	if a.syncDeclared(ctx) { // declared checks are in the list the hub hands out, so ask again
+		if next, err := a.fetchConfig(ctx); err == nil {
+			cfg = next
+		}
+	}
 	r := &runner{agent: a, ctx: ctx, cancels: map[string]context.CancelFunc{}}
 	r.apply(cfg)
 
@@ -102,6 +111,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			}
 			a.report(ctx)
 		case <-configTick.C:
+			a.syncDeclared(ctx)
 			next, err := a.fetchConfig(ctx)
 			if err != nil {
 				a.log.Printf("could not refresh config: %v", err)
@@ -118,6 +128,7 @@ func (a *Agent) Run(ctx context.Context) error {
 
 // RunOnce fetches the config, runs every check one time, reports, and returns the results.
 func (a *Agent) RunOnce(ctx context.Context) ([]checks.Result, error) {
+	a.syncDeclared(ctx)
 	cfg, err := a.fetchConfig(ctx)
 	if err != nil {
 		return nil, err

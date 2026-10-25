@@ -10,6 +10,7 @@ import io.primelogiclab.svcmon.hub.checks.PingChecker;
 import io.primelogiclab.svcmon.hub.checks.TcpChecker;
 import io.primelogiclab.svcmon.hub.model.CheckDef;
 import io.primelogiclab.svcmon.hub.model.CheckResult;
+import io.primelogiclab.svcmon.hub.model.CheckSource;
 import io.primelogiclab.svcmon.hub.model.CheckType;
 import io.primelogiclab.svcmon.hub.model.RunFrom;
 import io.primelogiclab.svcmon.hub.store.CheckRepo;
@@ -55,13 +56,34 @@ public class CheckService {
 
     public CheckDef replace(String id, CheckRequest req) {
         CheckDef existing = get(id);
-        CheckDef def = build(id, req, existing.createdAt());
+        CheckDef def = build(id, req, existing.createdAt()).withSource(existing.source(), existing.removedFromFile());
+        guardDeclared(existing, def);
         checks.update(def);
         scheduler.schedule(def);
         return def;
     }
 
+    /** A check an agent declared is changed in the agent's file, so only its on/off switch can be set here. */
+    private static void guardDeclared(CheckDef existing, CheckDef def) {
+        if (existing.source() != CheckSource.AGENT) {
+            return;
+        }
+        if (!existing.sameDefinition(def)) {
+            throw ApiException.conflict("This check is declared by the agent's checks file; change it there"
+                    + " (the next sync would undo an edit here). Only the on/off switch can be set in the hub");
+        }
+        if (existing.removedFromFile() && def.enabled()) {
+            throw ApiException.conflict("This check was removed from the agent's checks file; it stays off until"
+                    + " the agent declares it again");
+        }
+    }
+
     public void delete(String id) {
+        CheckDef existing = checks.find(id).orElse(null);
+        if (existing != null && existing.source() == CheckSource.AGENT && !existing.removedFromFile()) {
+            throw ApiException.conflict("This check is declared by the agent's checks file; remove it there"
+                    + " and it can then be deleted here");
+        }
         scheduler.unschedule(id);
         if (!checks.delete(id)) {
             throw ApiException.notFound("Check");
@@ -83,7 +105,7 @@ public class CheckService {
         return results.recent(id, since == null ? 0 : since, capped);
     }
 
-    private CheckDef build(String id, CheckRequest r, long createdAt) {
+    CheckDef build(String id, CheckRequest r, long createdAt) {
         if (r.name() == null || r.name().isBlank() || r.name().length() > 200) {
             throw ApiException.badRequest("name is required (max 200 characters)");
         }

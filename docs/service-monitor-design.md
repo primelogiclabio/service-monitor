@@ -68,19 +68,19 @@ Rules that keep it simple:
 
 The agent buffers a few minutes of results in memory and replays them when the connection returns, so a restart leaves no gap and raises no false alert. Once the hub is ready again it logs a start-up summary (listening address, database, enabled alert channels, and the checks and servers it watches, by name and type only) so the service log shows what came back without calling the API.
 
-### Proposal: checks declared by the agent (not built)
+### Checks declared by the agent
 
-Today checks are created in the hub only. This adds a second source and keeps the first: a server can declare its own checks in a file, checks made in the hub work as before, and the agent still polls one merged list. Only "the agent wins" is decided; the rest is a proposal to review.
+Checks are made in the hub, which stays the default, or declared by the agent in a file. Both work at once and the agent still polls one merged list. When they disagree, the agent wins. Built, and off unless the admin turns it on.
 
 - **The file.** `checks.json` beside `agent.json`, validated as strictly as the admin API (unknown settings are rejected). It lists that server's checks and nothing else. The agent sends the whole list to the hub when it starts and whenever the file changes (looked at on the existing config poll), with its own agent token.
 - **Identity.** A declared check stays the same check while its server, type and target (or an `id` the file gives it, for two checks of one type and target) stay the same, so history survives edits to intervals and thresholds. A different target is a new check.
-- **The agent wins.** For every setting the file gives, the declared value replaces the hub's at each sync. A check made in the hub with the same identity is taken over, keeps its history, and is marked as declared by the agent from then on. The dashboard and API show that source and refuse edits to a declared check, with a message pointing at the file, because the next sync would undo them. The one thing proposed to stay with the hub is muting (a flag kept apart from the definition), so a noisy check can be silenced during maintenance without editing a file on the server.
-- **Removal.** A check removed from the file is disabled in the hub and marked as removed from the agent's file, not deleted, so its history stays until an admin deletes it.
+- **The agent wins.** For every setting the file gives, the declared value replaces the hub's at each sync. A check made in the hub with the same identity is taken over, keeps its history, and is marked as declared by the agent from then on. The dashboard and API show that source and refuse edits to a declared check, with a message pointing at the file, because the next sync would undo them. The on/off switch stays with the hub (there is no separate mute flag), so a noisy check can be silenced during maintenance without editing a file on the server.
+- **Removal.** A check removed from the file is disabled in the hub and marked as removed from the agent's file, not deleted, so its history stays until an admin deletes it. A missing file declares nothing, so deleting the file switches nothing off; an empty list does.
 - **A bad file.** The hub refuses an invalid entry and says why in its answer; the agent logs it and keeps running the last good list. A hub that is down changes nothing: the agent keeps the last list it was given.
-- **Trust.** A hub setting, `svcmon.agent-declared-checks`, is off by default, so the rule that the admin lists what is monitored holds until the admin turns it on. When it is on, an agent may declare checks only for its own server, only checks that run on the agent (never one the hub runs, so a server cannot make the hub call addresses of its choosing), up to a limit per server. It cannot create alert channels or touch another server's checks. Declared checks use the same alert channels and rules as any other.
+- **Trust.** A hub setting, `svcmon.agent-declared-checks`, is off by default, so the rule that the admin lists what is monitored holds until the admin turns it on. When it is on, an agent may declare checks only for its own server, only checks that run on the agent (never one the hub runs, so a server cannot make the hub call addresses of its choosing), up to `svcmon.agent-declared-checks-limit` (200) per server. It cannot create alert channels or touch another server's checks. Declared checks use the same alert channels and rules as any other.
 - **Containers.** This suits container monitoring: the containers to watch are listed in the file that ships with the compose project. Nothing is discovered automatically.
 
-Still open: JSON (no new dependency) or YAML (friendlier in Ansible) for the file, the limit per server, whether the setting can also be switched per server, and whether muting stays with the hub as proposed.
+Settled while building it: the file is JSON (no new dependency; a byte order mark from Windows editors is accepted), the limit is a hub setting that defaults to 200 per server, the switch is hub-wide rather than per server, and muting is the existing on/off switch. Not done yet: the dashboard does not show a check's source or lock its form (the API already answers an edit of a declared check with 409), and it has not run on an installed service.
 
 ## 4. What gets monitored
 
@@ -206,7 +206,7 @@ Keeping it safe:
 ## 10. Open questions and limits
 
 - **Untested on real targets:** the agent was run end to end on Windows 11 (service installed from an elevated prompt) and on Ubuntu 26.04 (systemd unit installed as root; HTTP, CPU, memory, disk and service checks ran). The macOS (launchd) service installer and service checks compile and pass `go vet` but have not been run on that system.
-- **Agent-declared checks:** designed (section 3), not built.
+- **Agent-declared checks:** built (section 3). Run against a throwaway hub and Docker Desktop on Windows, not yet on an installed service; the dashboard does not show where a check comes from.
 - **Container checks:** tested against a stand-in for the runtime's API; run by hand against Docker Desktop on Windows (the lister), but not yet as an installed service, on Linux or against Podman. Not built: per-container CPU and memory.
 - **Hub service installers:** CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server; its last install runs from the Windows hub package. There is no macOS installer.
 - **Java version:** the machine has Java 21, so v1 targets 21. This doc assumes 25 is a long-term-support release but that could not be confirmed from Oracle's roadmap page (it returned HTTP 403).

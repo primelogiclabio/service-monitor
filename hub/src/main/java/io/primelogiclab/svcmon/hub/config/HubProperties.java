@@ -24,6 +24,10 @@ public record HubProperties(
         @DefaultValue("50") int liveMaxSessions,
         /** The address people open the dashboard at (https://monitor.example.com); gives alert emails an "Open in dashboard" link. */
         String publicUrl,
+        /** Lets agents declare their own checks in a file beside their config. Off unless the admin turns it on. */
+        @DefaultValue("false") boolean agentDeclaredChecks,
+        /** Most checks one server may declare. */
+        @DefaultValue("200") int agentDeclaredChecksLimit,
         /** Optional sign-in with OpenID Connect access tokens (Keycloak and others); off unless an issuer is set. */
         @DefaultValue Jwt jwt,
         /** The hub's own administrator account, for when no other sign-in works; on unless turned off. */

@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import io.primelogiclab.svcmon.hub.model.CheckDef;
+import io.primelogiclab.svcmon.hub.model.CheckSource;
 import io.primelogiclab.svcmon.hub.model.CheckType;
 import io.primelogiclab.svcmon.hub.model.RunFrom;
 import org.springframework.jdbc.core.RowMapper;
@@ -38,14 +39,16 @@ public class CheckRepo {
                 RunFrom.valueOf(rs.getString("run_from")),
                 rs.getString("server_id"),
                 rs.getInt("enabled") != 0,
-                rs.getLong("created_at"));
+                rs.getLong("created_at"),
+                CheckSource.valueOf(rs.getString("source")),
+                rs.getInt("removed_from_file") != 0);
     }
 
     public void insert(CheckDef c) {
         jdbc.sql("INSERT INTO checks (id, name, type, target, config, interval_seconds, timeout_ms, "
-                        + "failures_before_down, run_from, server_id, enabled, created_at) "
+                        + "failures_before_down, run_from, server_id, enabled, created_at, source, removed_from_file) "
                         + "VALUES (:id, :name, :type, :target, :config, :interval, :timeout, :failures, "
-                        + ":runFrom, :serverId, :enabled, :createdAt)")
+                        + ":runFrom, :serverId, :enabled, :createdAt, :source, :removed)")
                 .params(bind(c))
                 .update();
     }
@@ -53,7 +56,8 @@ public class CheckRepo {
     public void update(CheckDef c) {
         jdbc.sql("UPDATE checks SET name = :name, type = :type, target = :target, config = :config, "
                         + "interval_seconds = :interval, timeout_ms = :timeout, failures_before_down = :failures, "
-                        + "run_from = :runFrom, server_id = :serverId, enabled = :enabled WHERE id = :id")
+                        + "run_from = :runFrom, server_id = :serverId, enabled = :enabled, source = :source, "
+                        + "removed_from_file = :removed WHERE id = :id")
                 .params(bind(c))
                 .update();
     }
@@ -72,6 +76,8 @@ public class CheckRepo {
         p.put("serverId", c.serverId());
         p.put("enabled", c.enabled() ? 1 : 0);
         p.put("createdAt", c.createdAt());
+        p.put("source", c.source().name());
+        p.put("removed", c.removedFromFile() ? 1 : 0);
         return p;
     }
 
@@ -99,6 +105,21 @@ public class CheckRepo {
                 .param("s", serverId)
                 .query(mapper)
                 .list();
+    }
+
+    /** A check an agent declared, with the key that tells it apart from the others on its server. */
+    public record Declared(CheckDef def, String key) {
+    }
+
+    public List<Declared> findDeclared(String serverId) {
+        return jdbc.sql("SELECT * FROM checks WHERE server_id = :s AND declared_key IS NOT NULL")
+                .param("s", serverId)
+                .query((rs, i) -> new Declared(mapper.mapRow(rs, i), rs.getString("declared_key")))
+                .list();
+    }
+
+    public void setDeclaredKey(String id, String key) {
+        jdbc.sql("UPDATE checks SET declared_key = :key WHERE id = :id").param("key", key).param("id", id).update();
     }
 
     public boolean delete(String id) {

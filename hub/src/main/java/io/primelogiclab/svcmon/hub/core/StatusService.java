@@ -120,7 +120,8 @@ public class StatusService {
                 s == null ? null : s.lastValue(),
                 s == null ? null : s.lastMessage(),
                 s == null ? null : s.lastResultAt(),
-                s == null ? null : s.lastChange());
+                s == null ? null : s.lastChange(),
+                c.source(), c.removedFromFile());
     }
 
     private static Counts counts(List<Status> list) {

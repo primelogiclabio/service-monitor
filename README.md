@@ -11,6 +11,7 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 | Hub: scheduler, SQLite, REST API, tokens, HTTP/TCP/ping checks, roll-up status, alerts | Built and tested; logs a start-up summary with its address and what it watches |
 | Agent (`svcmon agent run`): service, container, CPU, memory, disk, plus HTTP/TCP/ping from the server's side | Built; unit tests and a run against a real hub on Windows 11. The container check has been run by hand against Docker Desktop on Windows (the lister) and in tests against a stand-in for the runtime's API; not yet as an installed service, on Linux or against Podman |
 | CLI (`svcmon status`, `check`, `token`, ...) | Built, same binary as the agent |
+| Checks declared by the agent (`checks.json` beside `agent.json`) | Built, off by default. Hub and agent tests, and a run of `svcmon agent declare` and `run --once` against a throwaway hub and Docker Desktop on Windows; not yet on an installed service. The dashboard does not show where a check comes from yet |
 | Agent service install (`svcmon agent install`: Windows service, systemd unit, macOS launchd plist) | Built. The Windows service install and the Linux systemd install (Ubuntu 26.04) have run for real; the macOS launchd one is only compiled |
 | Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners; another builds a Windows package with the jar and WinSW so the install needs no download (not published as a release yet). No macOS installer |
 | Alert channels | Webhook (optionally signed), Slack, Discord and email (HTML with a plain-text part, or plain text only), plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
@@ -177,6 +178,27 @@ svcmon status --cluster prod --watch
 
 **An agent that is already enrolled** (its `agent.json` exists and the server is still on the hub) needs no token: `svcmon agent install` just installs the service from that file. To enroll it again, for example after the server was deleted on the hub or the hub was rebuilt, pass a new enrollment token: `svcmon agent install --token svm_e_...` replaces the old enrollment (`--hub` defaults to the hub in the old file, and the old file is kept if the hub refuses the token). A hub refuses a name that is already registered, so delete the old server entry first (or pass `--name`).
 
+### Checks declared by the agent
+
+Checks are normally made in the hub (the dashboard, `svcmon check add`, the API) and the agent runs what the hub assigns. A server can also declare its own: put a `checks.json` beside `agent.json` and the agent sends it to the hub when it starts and whenever the file has changed (it looks on each config poll, once a minute). The hub creates, updates and switches off checks to match, and the agent runs them from its ordinary list. This suits a file that ships with the server's own deployment, for example next to a compose project.
+
+```json
+{
+  "checks": [
+    { "type": "container", "target": "web", "intervalSeconds": 30, "failuresBeforeDown": 2 },
+    { "type": "service", "target": "nginx.service", "name": "Nginx" },
+    { "type": "disk", "target": "/", "config": { "warn": 80, "crit": 90 } }
+  ]
+}
+```
+
+- **Off unless the hub allows it:** set `svcmon.agent-declared-checks: true`. Until then the hub refuses a declaration and the agent logs that once. An agent can declare checks only for its own server and only ones that run on the agent (a declared `http` check runs from the agent, never from the hub), up to `svcmon.agent-declared-checks-limit` (200).
+- **Settings:** `type` (required), `target`, `name` (made up from the type and target when missing), `config`, `intervalSeconds`, `timeoutMs`, `failuresBeforeDown` and `id`. Unknown settings are errors. A check is told apart by its type and target, or by its `id` when you give one, which you need for two checks of the same type and target. Editing the interval or thresholds keeps the check and its history; a different target is a new check.
+- **The agent wins.** A declared check replaces the hub's settings for that check on every sync, and a check made in the hub with the same type and target is taken over, with its history. A check shows where it comes from (`source` is `HUB` or `AGENT` in the API). The hub refuses to edit or delete a declared check, since the next sync would undo it, except its on/off switch, so a noisy one can be muted without touching the server.
+- **Taking a check out of the file** switches it off and marks it `removedFromFile`; it is not deleted, so its history stays, and it can be deleted in the hub. It comes back on when the file lists it again. A missing file declares nothing, so deleting the file switches nothing off; an empty list (`{"checks":[]}`) does.
+- **Mistakes:** the hub refuses a bad entry and says why, and the others still apply. A broken file is logged by the agent and the hub keeps the last list it was given.
+- `svcmon agent declare [--config FILE]` sends the file now and shows what the hub did with each entry; `--dry-run` only checks the file. `svcmon agent run --once` declares first. A UTF-8 byte order mark from Notepad or PowerShell is fine.
+
 ### More commands
 
 ```bash
@@ -188,6 +210,7 @@ svcmon token create --name ci --scope read
 svcmon token list                # also: token revoke <id>
 svcmon join-key create --name "app servers" --cluster prod   # reusable; also: join-key list, join-key revoke <id>
 svcmon agent enroll --hub http://hub:8080 --token svm_e_...   # enroll without installing the service
+svcmon agent declare             # send checks.json to the hub now; --dry-run only checks the file
 svcmon agent uninstall           # stop and remove the OS service
 ```
 
@@ -243,7 +266,7 @@ Safety:
 | `GET/POST /join-keys`, `DELETE /join-keys/{id}` | admin | Reusable join keys: register any number of agents until revoked or expired; optional cluster |
 | `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked |
 | `POST /alert-channels/{id}/test` | admin | Send one test alert now |
-| `POST /agent/register`, `GET /agent/config`, `POST /agent/report` | enroll or join key / agent | Agent protocol (agents only call out) |
+| `POST /agent/register`, `GET /agent/config`, `POST /agent/report`, `PUT /agent/checks` | enroll or join key / agent | Agent protocol (agents only call out). `PUT /agent/checks` declares the agent's own checks and is refused unless `svcmon.agent-declared-checks` is on |
 
 ### Live view (WebSocket)
 
@@ -270,6 +293,8 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 | `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
 | `svcmon.live-max-sessions` | 50 | Most dashboards that may hold the live WebSocket open at once; more are refused (close code 1013) and keep polling |
 | `svcmon.public-url` | unset | The address people open the dashboard at (`https://monitor.example.com`, a path is fine, no query or fragment). Alert emails then get an "Open in dashboard" button; unset means no button. A wrong value stops the start-up |
+| `svcmon.agent-declared-checks` | false | Lets agents declare their own checks from a `checks.json` beside their config (see "Checks declared by the agent"). Off, the hub refuses declarations, so only the admin lists what is monitored |
+| `svcmon.agent-declared-checks-limit` | 200 | Most checks one server may declare (1 to 1000); more is refused. A value outside the range stops the start-up |
 | `svcmon.jwt.issuer` | unset | Issuer address of an OpenID Connect provider (https; http only for localhost). Setting it turns on sign-in with JWT access tokens; see above |
 | `svcmon.jwt.audience` | unset | The audience (`aud`) a token must contain; required with the issuer |
 | `svcmon.jwt.admin-role` | unset | The role that makes a user an administrator of the hub, who is the only kind let in; required with the issuer |

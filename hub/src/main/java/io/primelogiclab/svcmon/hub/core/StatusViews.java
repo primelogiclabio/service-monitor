@@ -2,6 +2,7 @@ package io.primelogiclab.svcmon.hub.core;
 
 import java.util.List;
 
+import io.primelogiclab.svcmon.hub.model.CheckSource;
 import io.primelogiclab.svcmon.hub.model.CheckType;
 import io.primelogiclab.svcmon.hub.model.RunFrom;
 import io.primelogiclab.svcmon.hub.model.Status;
@@ -24,7 +25,9 @@ public final class StatusViews {
             Double value,
             String message,
             Long lastResultAt,
-            Long lastChange) {
+            Long lastChange,
+            CheckSource source,
+            boolean removedFromFile) {
     }
 
     public record ServerView(

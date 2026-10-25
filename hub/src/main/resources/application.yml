@@ -63,6 +63,10 @@ svcmon:
   # Optional: the address people open the dashboard at (a path is fine; no query or fragment). Alert emails then
   # get an "Open in dashboard" button linking to the affected server. Unset means no button.
   # public-url: https://monitor.example.com
+  # Optional: let agents declare their own checks in a checks.json file beside their config. Off by default, so only
+  # the admin lists what is monitored. A declared check replaces the hub's settings for that check; the limit is per server.
+  # agent-declared-checks: false
+  # agent-declared-checks-limit: 200
   # Optional: let Slack and Discord alert URLs use http instead of https. For tests and local receivers only.
   # allow-insecure-alert-urls: false
   # Optional: most dashboards that may hold the live WebSocket (/api/v1/live) open at once.

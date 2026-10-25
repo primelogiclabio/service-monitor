@@ -178,6 +178,16 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void agentsMayNotDeclareChecksUnlessTheAdminTurnsItOn() throws Exception {
+        Resp enroll = call("POST", "/api/v1/enrollment-tokens", ADMIN, "{\"ttlMinutes\":5}");
+        Resp reg = call("POST", "/api/v1/agent/register", (String) enroll.map().get("token"), "{\"name\":\"declare-off\"}");
+        Resp declared = call("PUT", "/api/v1/agent/checks", (String) reg.map().get("token"),
+                "{\"checks\":[{\"type\":\"CPU\"}]}");
+        assertEquals(403, declared.status());
+        assertTrue(String.valueOf(declared.map().get("message")).contains("turned off"));
+    }
+
+    @Test
     void containerChecksAreValidatedAndHandedToTheAgent() throws Exception {
         Resp enroll = call("POST", "/api/v1/enrollment-tokens", ADMIN, "{\"ttlMinutes\":5}");
         Resp reg = call("POST", "/api/v1/agent/register", (String) enroll.map().get("token"),

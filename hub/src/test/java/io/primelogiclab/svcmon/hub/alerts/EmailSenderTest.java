@@ -45,7 +45,7 @@ class EmailSenderTest {
 
     private static EmailSender sender(String publicUrl) {
         return new EmailSender(new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), false, 50,
-                publicUrl, HubProperties.Jwt.DISABLED, HubProperties.LocalAdmin.DEFAULT));
+                publicUrl, false, 200, HubProperties.Jwt.DISABLED, HubProperties.LocalAdmin.DEFAULT));
     }
 
     private AlertChannel channel(String format) {

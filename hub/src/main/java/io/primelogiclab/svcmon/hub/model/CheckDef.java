@@ -1,6 +1,7 @@
 package io.primelogiclab.svcmon.hub.model;
 
 import java.util.Map;
+import java.util.Objects;
 
 public record CheckDef(
         String id,
@@ -14,10 +15,39 @@ public record CheckDef(
         RunFrom runFrom,
         String serverId,
         boolean enabled,
-        long createdAt) {
+        long createdAt,
+        CheckSource source,
+        boolean removedFromFile) {
+
+    /** A check made in the hub. */
+    public CheckDef(String id, String name, CheckType type, String target, Map<String, Object> config,
+                    int intervalSeconds, int timeoutMs, int failuresBeforeDown, RunFrom runFrom, String serverId,
+                    boolean enabled, long createdAt) {
+        this(id, name, type, target, config, intervalSeconds, timeoutMs, failuresBeforeDown, runFrom, serverId,
+                enabled, createdAt, CheckSource.HUB, false);
+    }
 
     public CheckDef {
         config = config == null ? Map.of() : config;
+        source = source == null ? CheckSource.HUB : source;
+    }
+
+    public CheckDef withEnabled(boolean value) {
+        return new CheckDef(id, name, type, target, config, intervalSeconds, timeoutMs, failuresBeforeDown, runFrom,
+                serverId, value, createdAt, source, removedFromFile);
+    }
+
+    public CheckDef withSource(CheckSource newSource, boolean removed) {
+        return new CheckDef(id, name, type, target, config, intervalSeconds, timeoutMs, failuresBeforeDown, runFrom,
+                serverId, enabled, createdAt, newSource, removed);
+    }
+
+    /** Whether everything that defines the check is the same, leaving out its on/off switch and bookkeeping. */
+    public boolean sameDefinition(CheckDef o) {
+        return name.equals(o.name) && type == o.type && Objects.equals(target, o.target) && config.equals(o.config)
+                && intervalSeconds == o.intervalSeconds && timeoutMs == o.timeoutMs
+                && failuresBeforeDown == o.failuresBeforeDown && runFrom == o.runFrom
+                && Objects.equals(serverId, o.serverId);
     }
 
     public String configString(String key, String fallback) {

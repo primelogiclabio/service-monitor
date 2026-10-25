@@ -142,6 +142,9 @@ Agent commands (run on a monitored server):
   agent containers [--filter TEXT] [--socket PATH]
                                   List Docker/Podman containers on this machine (nothing is monitored
                                   automatically); --socket if the runtime is not in the usual place
+  agent declare [--config FILE] [--dry-run]
+                                  Send the checks file beside agent.json to the hub now (the agent also does
+                                  this itself at start-up and when the file changes); --dry-run only checks it
 
 Other: version, help
 `)
