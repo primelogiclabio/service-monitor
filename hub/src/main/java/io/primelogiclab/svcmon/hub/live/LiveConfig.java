@@ -13,17 +13,21 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
 public class LiveConfig implements WebSocketConfigurer {
 
     private final LiveHandler handler;
+    private final LiveHandshake handshake;
 
-    public LiveConfig(LiveHandler handler) {
+    public LiveConfig(LiveHandler handler, LiveHandshake handshake) {
         this.handler = handler;
+        this.handshake = handshake;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         // Any origin may open the socket: it carries no cookies or other ambient credentials, and sends nothing
         // until the first frame holds a valid token, which a foreign page cannot obtain. Checking the Origin
-        // would only break dashboards served from another address behind a load balancer.
-        registry.addHandler(handler, LiveHandler.PATH).setAllowedOriginPatterns("*");
+        // would only break dashboards served from another address behind a load balancer. The one exception is a
+        // JWT that a proxy adds to the upgrade request from the user's session: LiveHandshake makes that come
+        // from this site's own pages.
+        registry.addHandler(handler, LiveHandler.PATH).addInterceptors(handshake).setAllowedOriginPatterns("*");
     }
 
     /** Frames are tiny (a token or a ping); refuse anything bigger instead of buffering it. */

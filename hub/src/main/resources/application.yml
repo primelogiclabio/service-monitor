@@ -42,6 +42,16 @@ svcmon:
   # bootstrap-admin-token:
   # Set true to print an additional new admin token at startup (token recovery).
   new-admin-token: false
+  # Optional: accept OpenID Connect access tokens (JWTs) from Keycloak or another provider as Authorization:
+  # Bearer values, checked here: signature (keys found through the issuer's discovery document), issuer, audience
+  # and expiry. A token holding admin-role in roles-claim gets the access of an ADMIN token; the hub's own API
+  # tokens keep working either way. Setting issuer turns it on; audience and admin-role are then required.
+  # jwt:
+  #   issuer: https://auth.example.com/realms/main
+  #   audience: https://monitor.example.com/api
+  #   admin-role: platform-admin
+  #   roles-claim: realm_access.roles
+  #   jwks-uri: https://auth.example.com/realms/main/protocol/openid-connect/certs
   # Optional: let Slack and Discord alert URLs use http instead of https. For tests and local receivers only.
   # allow-insecure-alert-urls: false
   # Optional: most dashboards that may hold the live WebSocket (/api/v1/live) open at once.
