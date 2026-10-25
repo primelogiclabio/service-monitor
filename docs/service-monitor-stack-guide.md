@@ -43,6 +43,21 @@ Three programs live in two repositories:
 - **The agent and the CLI** (`agent/`) are one Go program called `svcmon`. Run as `svcmon agent run` it is the agent on a monitored server; run as `svcmon status` or `svcmon check add` it is the command-line client for the hub.
 - **The dashboard** (the separate repository `service-monitor-ui`) is a web page built with Svelte. The hub can serve its files, or any web server can.
 
+### What it looks like
+
+These pictures come from a throwaway demo hub filled with made-up servers (the dashboard repository's `scripts/seed-demo.mjs` plus a small container seeder in `docs/tools/screenshots/`), so nothing in them is a real system. Click a picture to open it full size.
+
+![The dashboard: the overall status at the top, then one card per server grouped by cluster (light theme)](assets/dashboard-light.png)
+![The same page in the dark theme, which follows the system setting unless you choose one](assets/dashboard-dark.png)
+
+![Monitors: every check on one page, with filters for cluster, type and state](assets/monitors.png)
+
+![A check's history: CPU on a server with the warning and critical lines](assets/check-chart.png)
+![A container check that is down: the strip shows recent results, green for up and red for down](assets/check-container.png)
+
+![Adding a container check from the dashboard; the runtime socket is optional](assets/add-container-check.png)
+![The dashboard on a phone](assets/dashboard-mobile.png "narrow")
+
 ## 3. Why three languages
 
 | Piece | Language and size | Why this choice | Closest Java idea |

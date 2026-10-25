@@ -78,6 +78,18 @@ for (let i = 0; i < lines.length; ) {
     push(lang === 'sketch' ? diagram : `<pre><code>${esc(body.join('\n'))}</code></pre>`);
     continue;
   }
+  if (line.startsWith('![')) {
+    // Pictures on consecutive lines sit side by side; a title of "narrow" keeps a tall phone picture small.
+    const figs = [];
+    while (i < lines.length && lines[i].startsWith('![')) {
+      const m = lines[i++].match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)\s*$/);
+      if (m) {
+        figs.push(`<figure${m[3] === 'narrow' ? ' class="narrow"' : ''}><a href="${esc(m[2])}"><img src="${esc(m[2])}" alt="${esc(m[1])}" loading="lazy"></a><figcaption>${inline(m[1])}</figcaption></figure>`);
+      }
+    }
+    push(`<div class="shots">${figs.join('')}</div>`);
+    continue;
+  }
   if (line.startsWith('|')) {
     const rows = [];
     while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
@@ -102,7 +114,7 @@ for (let i = 0; i < lines.length; ) {
   }
   if (line.trim() === '') { i++; continue; }
   const para = [];
-  while (i < lines.length && lines[i].trim() !== '' && !/^(#|\||```|- |\d+\. )/.test(lines[i])) para.push(lines[i++]);
+  while (i < lines.length && lines[i].trim() !== '' && !/^(#|\||```|- |\d+\. |!\[)/.test(lines[i])) para.push(lines[i++]);
   const text = para.join(' ');
   if (!cur && !lead) lead = text;
   else push(`<p>${inline(text)}</p>`);
@@ -165,6 +177,11 @@ tr:last-child td { border-bottom: 0; }
 .dg-out { background: var(--out); }
 .dg-arrow { color: var(--muted); font-size: 0.9rem; text-align: center; }
 .dg-side { font-size: 1.4rem; }
+.shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; margin: 14px 0 20px; align-items: start; }
+.shots figure { margin: 0; }
+.shots img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.shots figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+.shots .narrow img { max-width: 260px; }
 .dg-note { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 4px; }
 @media (max-width: 560px) { .dg-side { transform: rotate(90deg); } .dg-main { flex-direction: column; } .dg-main .dg-box { flex: 0 0 auto; width: 100%; max-width: 340px; } }
 #theme { position: fixed; top: 12px; right: 12px; z-index: 20; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 0.85rem; }

@@ -18,6 +18,22 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub can serve it (`svcmon.ui-dir`) or allow it from another address (`svcmon.cors-allowed-origins`) |
 | Multi-hub console | Not started |
 
+## What it looks like
+
+Pictures of the dashboard from a demo hub with made-up servers (nothing here is a real system). The stack guide in `docs/` has more of them and the story behind each.
+
+| Light theme | Dark theme |
+|---|---|
+| ![The dashboard in the light theme: overall status, then a card per server grouped by cluster](docs/assets/dashboard-light.png) | ![The dashboard in the dark theme](docs/assets/dashboard-dark.png) |
+
+| A check's history | A container check that is down |
+|---|---|
+| ![CPU history with the warning and critical lines](docs/assets/check-chart.png) | ![The server page with a container check that is down and its recent results](docs/assets/check-container.png) |
+
+| Every check on one page | Adding a container check |
+|---|---|
+| ![The Monitors page with filters](docs/assets/monitors.png) | ![The Add check form for a container](docs/assets/add-container-check.png) |
+
 ## Deployment model
 
 TLS is terminated at your load balancer; only the hub is exposed. The hub speaks plain HTTP on port 8080. Agents, the CLI inside the network, and any future console talk to it over the internal network. Firewall the hub port to the load balancer and the internal ranges, have the load balancer overwrite any client-supplied `X-Forwarded-For`, and optionally block `/api/v1/agent/*` from outside. The hub trusts `X-Forwarded-*` from private-range proxies (`server.forward-headers-strategy: native`; set `server.tomcat.remoteip.internal-proxies` if yours is elsewhere), so rejected requests are logged with the real client address. Use `GET /api/v1/health` for load balancer health checks.
