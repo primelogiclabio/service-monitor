@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	label     = "dev.svcmon.agent"
-	plistPath = "/Library/LaunchDaemons/dev.svcmon.agent.plist"
+	label     = "io.primelogiclab.svcmon.agent"
+	plistPath = "/Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist"
 )
 
 // IsService is always false: launchd runs the agent as an ordinary foreground process.

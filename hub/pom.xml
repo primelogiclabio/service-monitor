@@ -11,7 +11,7 @@
     <relativePath/>
   </parent>
 
-  <groupId>dev.svcmon</groupId>
+  <groupId>io.primelogiclab</groupId>
   <artifactId>svcmon-hub</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <name>svcmon-hub</name>
