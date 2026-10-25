@@ -12,7 +12,7 @@ A free, cross-platform monitor for Windows services, web/HTTP servers, TCP ports
 | Storage | Embedded SQLite. No database server. |
 | Topology | Agents connect out to a hub. A console registers hubs and aggregates them (admin server and managed servers). |
 | UI | Optional. The hub is headless and API-first; a CLI and an optional web UI are both clients of the same API. |
-| What is monitored | Only what the admin lists. Nothing is auto-discovered into monitoring. |
+| What is monitored | Only what someone lists: an admin in the hub, or the person setting up the server in its `checks.json`. Nothing is auto-discovered into monitoring. |
 | JRE | Planned: a bundled runtime by default, with admins able to supply their own Java instead. Today the hub is a plain jar that needs a Java 21 or newer on the machine. |
 | Cost | Everything is open source. No paid component, cloud service or SaaS dependency. |
 
@@ -61,7 +61,7 @@ Rules that keep it simple:
 1. The admin runs `svcmon agent token` on the hub side and gets an enrollment token and an install command. For many servers, a reusable join key (`svcmon join-key create`) gives one install command that works on all of them until it is revoked; it can pin the cluster its servers land in.
 2. On the server, an admin runs `svcmon agent install --hub http://hub:8080 --token ...` (the hub's internal address). This registers a Windows service (Linux: a systemd unit).
 3. The agent presents the one-time token (or the join key), receives its own credential and appears in the dashboard.
-4. The admin assigns it to a cluster and lists the checks to run. Until the admin lists checks, nothing is monitored beyond the heartbeat.
+4. The admin assigns it to a cluster. The checks to run are listed on the server (`svcmon agent check add`, which fills `checks.json`) or by the admin in the hub. Until someone lists checks, nothing is monitored beyond the heartbeat.
 5. The agent fetches the list, starts reporting, and the hub rolls its status up into the cluster.
 
 ### Scenario: the hub restarts
@@ -70,14 +70,14 @@ The agent buffers a few minutes of results in memory and replays them when the c
 
 ### Checks declared by the agent
 
-Checks are made in the hub, which stays the default, or declared by the agent in a file. Both work at once and the agent still polls one merged list. When they disagree, the agent wins. Built, and off unless the admin turns it on.
+Checks are made in the hub, which stays the default, or declared by the agent in a file. Both work at once and the agent still polls one merged list. When they disagree, the agent wins. Built, and on unless the admin turns it off.
 
 - **The file.** `checks.json` beside `agent.json`, validated as strictly as the admin API (unknown settings are rejected). It lists that server's checks and nothing else. The agent sends the whole list to the hub when it starts and whenever the file changes (looked at on the existing config poll), with its own agent token.
 - **Identity.** A declared check stays the same check while its server, type and target (or an `id` the file gives it, for two checks of one type and target) stay the same, so history survives edits to intervals and thresholds. A different target is a new check.
 - **The agent wins.** For every setting the file gives, the declared value replaces the hub's at each sync. A check made in the hub with the same identity is taken over, keeps its history, and is marked as declared by the agent from then on. The dashboard and API show that source and refuse edits to a declared check, with a message pointing at the file, because the next sync would undo them. The on/off switch stays with the hub (there is no separate mute flag), so a noisy check can be silenced during maintenance without editing a file on the server.
 - **Removal.** A check removed from the file is disabled in the hub and marked as removed from the agent's file, not deleted, so its history stays until an admin deletes it. A missing file declares nothing, so deleting the file switches nothing off; an empty list does.
 - **A bad file.** The hub refuses an invalid entry and says why in its answer; the agent logs it and keeps running the last good list. A hub that is down changes nothing: the agent keeps the last list it was given.
-- **Trust.** A hub setting, `svcmon.agent-declared-checks`, is off by default, so the rule that the admin lists what is monitored holds until the admin turns it on. When it is on, an agent may declare checks only for its own server, only checks that run on the agent (never one the hub runs, so a server cannot make the hub call addresses of its choosing), up to `svcmon.agent-declared-checks-limit` (200) per server. It cannot create alert channels or touch another server's checks. Declared checks use the same alert channels and rules as any other.
+- **Trust.** A hub setting, `svcmon.agent-declared-checks`, is on by default: whoever sets up a server knows what it should run, which beats installing the agent and then going to the hub to say so. An admin who wants only the hub to list checks sets it to false and the hub refuses declarations. While it is on, an agent may declare checks only for its own server, only checks that run on the agent (never one the hub runs, so a server cannot make the hub call addresses of its choosing), up to `svcmon.agent-declared-checks-limit` (200) per server. It cannot create alert channels or touch another server's checks. Declared checks use the same alert channels and rules as any other.
 - **On the server.** `svcmon agent check add|rm|list` edits the file (written in one step, refused if the file cannot be read, a repeat of the same type and target refused) and sends it to the hub at once, so a server's checks are managed from that server with its agent token and no admin login. The file is saved even when the hub cannot be reached or has the switch off; the running agent sends it later.
 - **A hub that is down.** The agent keeps the list the hub last gave it (ids included, which a file alone cannot supply) in `assigned.json` beside `agent.json`. Started while the hub does not answer, or fails on its side, it runs that list at once and buffers results as it already does; the next config poll swaps in the hub's list. A hub that answers 4xx (token revoked, server deleted) is not worked around. Alerts stay on the hub, so a hub that is down alerts nobody; a check never declared to the hub has no id and is not in the cache.
 - **Containers.** This suits container monitoring: the containers to watch are listed in the file that ships with the compose project. Nothing is discovered automatically.
@@ -97,9 +97,9 @@ Settled while building it: the file is JSON (no new dependency; a byte order mar
 
 Every check has an interval, a timeout, and "N failures before marking down" so a single dropped packet does not page anyone.
 
-### The admin chooses what is monitored
+### What is monitored is listed, not discovered
 
-Nothing is monitored by default. For services, disks and ports the admin lists exactly what to watch; the agent ignores everything else and does not report it. This keeps noise and data exposure down.
+Nothing is monitored by default. For services, disks and ports someone (an admin in the hub, or the person setting up the server in its `checks.json`) lists exactly what to watch; the agent ignores everything else and does not report it. This keeps noise and data exposure down.
 
 A read-only helper, `svcmon agent services` (and `svcmon agent containers` for Docker or Podman), shows what exists on a server so the admin can pick. It adds nothing by itself.
 

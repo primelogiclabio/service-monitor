@@ -210,7 +210,7 @@ A "service" is a program the operating system starts at boot and restarts if it 
 1. An admin creates an enrollment token (or one reusable join key for many servers).
 2. On the server, `svcmon agent install --hub http://hub:8080 --token ...` registers it and installs the service.
 3. The hub answers with the server's own agent token, saved in `agent.json` next to the program.
-4. Nothing is monitored yet. The admin lists the checks for that server (dashboard or `svcmon check add`).
+4. Nothing is monitored yet. Someone lists the checks for that server: on the server itself (`svcmon agent check add`), or an admin in the dashboard or with `svcmon check add`.
 
 ### One check from creation to alert (a container example)
 
@@ -226,7 +226,7 @@ A "service" is a program the operating system starts at boot and restarts if it 
 1. Instead of clicking in the dashboard, you put a `checks.json` beside `agent.json` on the server.
 2. The agent sends it to the hub at start-up and whenever the file changes (looked at once a minute).
 3. The hub creates, updates or switches off checks to match, and the agent runs them from its normal list.
-4. If the file and the hub disagree about a check, the file wins. This is off unless the hub sets `svcmon.agent-declared-checks: true`.
+4. If the file and the hub disagree about a check, the file wins. This is on by default; a hub that sets `svcmon.agent-declared-checks: false` refuses it.
 5. On the server, `svcmon agent check add|rm|list` edits that file for you and sends it at once, so no login to the hub is needed.
 6. The agent also keeps the check list the hub last gave it in `assigned.json`, so an agent restarted while the hub is down keeps checking and buffers the results.
 
@@ -261,7 +261,7 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 ## 8. The rules that shape every decision
 
 1. **Agents only connect out.** A monitored server opens no inbound port for the monitor.
-2. **The admin lists what is monitored.** Nothing is discovered and monitored on its own; the helper commands only list what exists.
+2. **Someone lists what is monitored.** An admin in the hub, or the person setting up the server in its `checks.json`. Nothing is discovered and monitored on its own; the helper commands only list what exists.
 3. **TLS ends at the load balancer.** The hub speaks plain HTTP inside the network and must work behind `X-Forwarded-*` headers.
 4. **Secrets stay hidden.** Tokens (only fingerprints are stored), webhook addresses, header values, signing secrets and the SMTP password never leave the hub unmasked and never appear in logs or errors.
 5. **Be strict.** Unknown settings are rejected, so a typo fails loudly. Names and messages from agents are treated as untrusted (Slack markup is escaped, Discord mentions are off, mail headers cannot be injected).

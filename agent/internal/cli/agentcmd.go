@@ -91,7 +91,7 @@ func (e *env) agentEnroll(args []string) int {
 		return e.fail(err)
 	}
 	fmt.Fprintf(e.out, "Registered as %q (server %s). Config saved to %s\n", cfg.Name, shortID(cfg.ServerID), *cfgPath)
-	fmt.Fprintln(e.out, "Next: ask an admin to list the checks for this server, then run 'svcmon agent install' or 'svcmon agent run'.")
+	fmt.Fprintln(e.out, "Next: list the checks for this server with 'svcmon agent check add <type> [target]' (or ask an admin), then run 'svcmon agent install' or 'svcmon agent run'.")
 	return exitOK
 }
 

@@ -74,12 +74,13 @@ The copyleft-style licences above (Logback, Jakarta Mail) apply to those librari
 | Operating system description (for example "Microsoft Windows 11 Home 26H2 (amd64)") and the agent version | Registering and with each report | Shown on the server's page |
 | Each check's result: status, response time or percentage, a short message (at most 500 characters), a time stamp | Every time a check runs | Messages are short facts such as `HTTP 200`, `running, up 29m, 0 restart(s)` or `C:\ 61.3% used` |
 | A heartbeat | About every 30 seconds | An empty report |
+| The checks this server declares: type, target, settings, interval (and any HTTP headers) | Only if a `checks.json` sits beside `agent.json`: at start-up and when the file changes | Not sent when the hub has `svcmon.agent-declared-checks: false`; the hub then refuses it |
 
 The hub also sees the network address a request came from. It does not store that with servers or results; it appears in the log lines for rejected requests and sign-ins.
 
 ### What an agent reads on the server
 
-Only what a check the admin listed needs, and nothing is discovered on its own. The commands that list what exists (`svcmon agent services`, `svcmon agent containers`) print to the terminal and send nothing.
+Only what a check someone listed needs (an admin in the hub, or the person setting up the server in its `checks.json`), and nothing is discovered on its own. The commands that list what exists (`svcmon agent services`, `svcmon agent containers`) print to the terminal and send nothing.
 
 | Check | What is read |
 |---|---|
@@ -170,7 +171,7 @@ Things to know and handle yourself:
 - **Agent to hub traffic is plain HTTP inside your network** by design (TLS ends at your load balancer). Anyone who can read that network can see the bearer tokens. Firewall the hub's port to the load balancer and the internal networks.
 - **A new hub prints one random admin password in its log at first start** (unless you set one). Read it once and keep the log folder restricted.
 - **The agent is powerful by nature.** It runs with high privileges to read service states and the container socket. A container socket is as powerful as root, so the agent only sends read requests to it.
-- **A stolen agent token** can report results for that one server and, only if you turn on `svcmon.agent-declared-checks`, declare checks for that server. Revoke the token to stop it.
+- **A stolen agent token** can report results for that one server and, unless you set `svcmon.agent-declared-checks: false`, declare checks for that server (only its own, only ones that run on the agent, at most 200). Revoke the token to stop it.
 
 ## 8. Limits of this statement
 

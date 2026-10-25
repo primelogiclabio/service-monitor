@@ -36,6 +36,7 @@ class ApiIntegrationTest {
         registry.add("svcmon.data-dir", dir::toString);
         registry.add("svcmon.bootstrap-admin-token", () -> ADMIN);
         registry.add("svcmon.agent-stale-seconds", () -> "3");
+        registry.add("svcmon.agent-declared-checks", () -> "false");
     }
 
     @Value("${local.server.port}")
@@ -178,7 +179,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    void agentsMayNotDeclareChecksUnlessTheAdminTurnsItOn() throws Exception {
+    void agentsMayNotDeclareChecksWhenTheAdminTurnsItOff() throws Exception {
         Resp enroll = call("POST", "/api/v1/enrollment-tokens", ADMIN, "{\"ttlMinutes\":5}");
         Resp reg = call("POST", "/api/v1/agent/register", (String) enroll.map().get("token"), "{\"name\":\"declare-off\"}");
         Resp declared = call("PUT", "/api/v1/agent/checks", (String) reg.map().get("token"),
