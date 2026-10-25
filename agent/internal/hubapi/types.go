@@ -35,6 +35,32 @@ type AgentConfig struct {
 	Checks           []AgentCheck `json:"checks"`
 }
 
+// DeclaredCheck is one entry of the checks file an agent declares to its hub. The agent's definition wins
+// over the hub's for a check it declares.
+type DeclaredCheck struct {
+	ID                 string         `json:"id,omitempty"`
+	Name               string         `json:"name,omitempty"`
+	Type               string         `json:"type"`
+	Target             string         `json:"target,omitempty"`
+	Config             map[string]any `json:"config,omitempty"`
+	IntervalSeconds    int            `json:"intervalSeconds,omitempty"`
+	TimeoutMs          int            `json:"timeoutMs,omitempty"`
+	FailuresBeforeDown int            `json:"failuresBeforeDown,omitempty"`
+}
+
+// DeclareResult is what the hub did with one entry: created, updated, unchanged, taken over or rejected.
+type DeclareResult struct {
+	Index   int    `json:"index"`
+	CheckID string `json:"checkId"`
+	Result  string `json:"result"`
+	Error   string `json:"error"`
+}
+
+type DeclareResponse struct {
+	Results []DeclareResult `json:"results"`
+	Removed []string        `json:"removed"`
+}
+
 type ReportRequest struct {
 	OS           string          `json:"os,omitempty"`
 	AgentVersion string          `json:"agentVersion,omitempty"`

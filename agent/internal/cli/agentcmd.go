@@ -22,7 +22,7 @@ import (
 
 func (e *env) agentCmd(args []string) int {
 	if len(args) == 0 {
-		return e.fail(errors.New("usage: svcmon agent token|enroll|install|uninstall|run|services|containers"))
+		return e.fail(errors.New("usage: svcmon agent token|enroll|install|uninstall|run|services|containers|declare"))
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -40,6 +40,8 @@ func (e *env) agentCmd(args []string) int {
 		return e.agentServices(rest)
 	case "containers":
 		return e.agentContainers(rest)
+	case "declare":
+		return e.agentDeclare(rest)
 	default:
 		return e.fail(fmt.Errorf("unknown agent command %q", sub))
 	}
@@ -223,6 +225,7 @@ func (e *env) agentRun(args []string) int {
 			defer closer.Close()
 		}
 		a := agent.New(cfg, logger, Version)
+		a.SetChecksFile(agent.ChecksPath(*cfgPath))
 		if err := osservice.RunService(osservice.Name, a.Run); err != nil {
 			logger.Printf("service stopped with error: %v", err)
 			return exitUnknown
@@ -234,6 +237,7 @@ func (e *env) agentRun(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	a := agent.New(cfg, logger, Version)
+	a.SetChecksFile(agent.ChecksPath(*cfgPath))
 	if *once {
 		results, err := a.RunOnce(ctx)
 		for _, r := range results {
@@ -264,6 +268,60 @@ func serviceLogger(cfgPath string) (*log.Logger, io.Closer) {
 		return log.New(io.Discard, "", 0), nil
 	}
 	return log.New(f, "", log.LstdFlags), f
+}
+
+// agentDeclare sends the checks file beside agent.json to the hub now, instead of at the agent's next config poll,
+// and says what the hub did with each entry. With --dry-run it only reads and checks the file.
+func (e *env) agentDeclare(args []string) int {
+	fs := e.flags("agent declare")
+	cfgPath := fs.String("config", agent.DefaultConfigPath(), "agent config file; the checks file sits beside it")
+	dry := fs.Bool("dry-run", false, "only read and check the file, send nothing")
+	if _, code, ok := e.parse(fs, args); !ok {
+		return code
+	}
+	path := agent.ChecksPath(*cfgPath)
+	list, sum, err := agent.LoadChecks(path)
+	if err != nil {
+		return e.fail(err)
+	}
+	if sum == "" {
+		return e.fail(fmt.Errorf("no checks file at %s", path))
+	}
+	if *dry {
+		fmt.Fprintf(e.out, "%s is valid: %d check(s)\n", path, len(list))
+		return exitOK
+	}
+	cfg, err := agent.LoadConfig(*cfgPath)
+	if err != nil {
+		return e.fail(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	resp, err := agent.New(cfg, log.New(io.Discard, "", 0), Version).Declare(ctx, list)
+	if err != nil {
+		return e.fail(err)
+	}
+	tw := tabwriter.NewWriter(e.out, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "RESULT\tTYPE\tTARGET\tCHECK\tPROBLEM")
+	rejected := 0
+	for _, r := range resp.Results {
+		typ, target := "", ""
+		if r.Index >= 0 && r.Index < len(list) {
+			typ, target = strings.ToUpper(strings.TrimSpace(list[r.Index].Type)), list[r.Index].Target
+		}
+		if r.Result == "rejected" {
+			rejected++
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.Result, typ, target, shortID(r.CheckID), r.Error)
+	}
+	tw.Flush()
+	for _, name := range resp.Removed {
+		fmt.Fprintf(e.out, "switched off, no longer in the file: %s\n", name)
+	}
+	if rejected > 0 {
+		return exitWarn
+	}
+	return exitOK
 }
 
 // agentContainers is the same discovery helper for Docker or Podman containers, running or not.

@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 class AlertChannelServiceTest {
 
     private static HubProperties props(boolean insecureUrls) {
-        return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), insecureUrls, 50, null,
+        return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), insecureUrls, 50, null, false, 200,
                 HubProperties.Jwt.DISABLED, HubProperties.LocalAdmin.DEFAULT);
     }
 

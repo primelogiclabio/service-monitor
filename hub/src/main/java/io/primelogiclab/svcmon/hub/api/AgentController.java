@@ -6,11 +6,15 @@ import io.primelogiclab.svcmon.hub.core.AgentService.RegisterRequest;
 import io.primelogiclab.svcmon.hub.core.AgentService.RegisterResponse;
 import io.primelogiclab.svcmon.hub.core.AgentService.ReportRequest;
 import io.primelogiclab.svcmon.hub.core.AgentService.ReportResponse;
+import io.primelogiclab.svcmon.hub.core.DeclaredChecksService;
+import io.primelogiclab.svcmon.hub.core.DeclaredChecksService.DeclareRequest;
+import io.primelogiclab.svcmon.hub.core.DeclaredChecksService.DeclareResponse;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.security.TokenAuthFilter;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,8 +28,18 @@ public class AgentController {
 
     private final AgentService agents;
 
-    public AgentController(AgentService agents) {
+    private final DeclaredChecksService declared;
+
+    public AgentController(AgentService agents, DeclaredChecksService declared) {
         this.agents = agents;
+        this.declared = declared;
+    }
+
+    /** The agent's whole list of declared checks, from the checks file beside its config. Off unless enabled. */
+    @PutMapping("/checks")
+    public DeclareResponse declare(@RequestAttribute(TokenAuthFilter.ATTR) TokenRecord token,
+                                   @RequestBody DeclareRequest request) {
+        return declared.declare(token, request);
     }
 
     /** Authenticated with a one-time enrollment token; returns the agent's own credential. */
