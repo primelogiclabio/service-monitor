@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 class AlertChannelServiceTest {
 
     private static HubProperties props(boolean insecureUrls) {
-        return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), insecureUrls, 50,
+        return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), insecureUrls, 50, null,
                 HubProperties.Jwt.DISABLED, HubProperties.LocalAdmin.DEFAULT);
     }
 
@@ -107,8 +107,29 @@ class AlertChannelServiceTest {
         Map<String, Object> n = strict.normalize(AlertType.EMAIL, email());
         assertEquals(587, n.get("smtpPort"));
         assertEquals("STARTTLS", n.get("security"));
+        assertEquals("HTML", n.get("format"));
         assertEquals(List.of("ops@example.test"), n.get("to"));
         assertFalse(n.containsKey("username"));
+    }
+
+    @Test
+    void emailFormatIsHtmlOrTextInAnyCase() {
+        for (String[] pair : new String[][] {{"html", "HTML"}, {"Text", "TEXT"}, {"TEXT", "TEXT"}, {" html ", "HTML"}}) {
+            Map<String, Object> c = email();
+            c.put("format", pair[0]);
+            assertEquals(pair[1], strict.normalize(AlertType.EMAIL, c).get("format"), pair[0]);
+        }
+        for (String bad : new String[] {"pdf", "rich", "html5"}) {
+            Map<String, Object> c = email();
+            c.put("format", bad);
+            String message = rejected(strict, AlertType.EMAIL, c);
+            assertTrue(message.contains("format must be HTML or TEXT"), message);
+        }
+        Map<String, Object> injected = email();
+        injected.put("format", "TEXT\r\nBcc: x@y.test");
+        assertThrows(ApiException.class, () -> strict.normalize(AlertType.EMAIL, injected));
+        Map<String, Object> slack = new LinkedHashMap<>(Map.of("url", "https://h.example/a", "format", "text"));
+        assertTrue(rejected(strict, AlertType.SLACK, slack).contains("Unknown setting 'format'"), "only email has a format");
     }
 
     @Test

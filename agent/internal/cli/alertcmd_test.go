@@ -188,6 +188,33 @@ func TestAlertAddEmail(t *testing.T) {
 	}
 }
 
+func TestAlertEmailFormatFlag(t *testing.T) {
+	hub, run := newFakeHub(t)
+	code, _, errOut := run("alert", "add", "email", "--name", "pager", "--smtp-host", "smtp.example.test",
+		"--from", "svcmon@example.test", "--to", "5551234@sms.example.test", "--format", "text")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if got := hub.last().Body["config"].(map[string]any)["format"]; got != "text" {
+		t.Fatalf("format = %v, want text", got)
+	}
+
+	// Without the flag nothing is sent, so the hub applies its default (HTML).
+	if code, _, errOut := run("alert", "add", "email", "--name", "mail", "--smtp-host", "smtp.example.test",
+		"--from", "svcmon@example.test", "--to", "ops@example.test"); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if _, has := hub.last().Body["config"].(map[string]any)["format"]; has {
+		t.Fatalf("format should not be sent when the flag is not given: %v", hub.last().Body["config"])
+	}
+
+	// The flag belongs to email channels only.
+	code, _, errOut = run("alert", "add", "slack", "--name", "x", "--url", "https://x.example/a", "--format", "text")
+	if code != exitUnknown || !strings.Contains(errOut, "--format does not apply to slack channels") {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+}
+
 func TestAlertAddRejectsMistakesBeforeContactingTheHub(t *testing.T) {
 	cases := []struct {
 		args []string

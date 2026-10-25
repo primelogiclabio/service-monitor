@@ -20,9 +20,9 @@ var (
 		"webhook": {"url", "header", "signing-secret"},
 		"slack":   {"url"},
 		"discord": {"url"},
-		"email":   {"smtp-host", "smtp-port", "security", "smtp-user", "smtp-password", "from", "to"},
+		"email":   {"smtp-host", "smtp-port", "security", "format", "smtp-user", "smtp-password", "from", "to"},
 	}
-	typeSpecific = []string{"url", "header", "signing-secret", "smtp-host", "smtp-port", "security", "smtp-user", "smtp-password", "from", "to"}
+	typeSpecific = []string{"url", "header", "signing-secret", "smtp-host", "smtp-port", "security", "format", "smtp-user", "smtp-password", "from", "to"}
 )
 
 // listFlag collects a repeatable flag.
@@ -37,7 +37,7 @@ func (l *listFlag) Set(s string) error {
 type channelFlags struct {
 	name, on, url, signingSecret           *string
 	smtpHost, security, smtpUser, smtpPass *string
-	from                                   *string
+	from, format                           *string
 	smtpPort                               *int
 	headers, to                            *listFlag
 	disabled                               *bool
@@ -53,6 +53,7 @@ func addChannelFlags(fs *flag.FlagSet, forAdd bool) *channelFlags {
 	f.smtpHost = fs.String("smtp-host", "", "email: SMTP server")
 	f.smtpPort = fs.Int("smtp-port", 0, "email: SMTP port (default 587)")
 	f.security = fs.String("security", "", "email: starttls (default), ssl or none")
+	f.format = fs.String("format", "", "email: html (default, plain text plus HTML) or text (plain text only, for pagers and SMS gateways)")
 	f.smtpUser = fs.String("smtp-user", "", "email: SMTP login")
 	f.smtpPass = fs.String("smtp-password", "", "email: SMTP password (or set SVCMON_SMTP_PASSWORD; a flag shows in process lists)")
 	f.from = fs.String("from", "", "email: sender address")
@@ -160,6 +161,7 @@ func buildConfig(typ string, f *channelFlags, seen map[string]bool, base map[str
 			cfg["smtpPort"] = *f.smtpPort
 		}
 		text("security", "security", *f.security, "")
+		text("format", "format", *f.format, "")
 		text("smtp-user", "username", *f.smtpUser, "")
 		text("smtp-password", "password", *f.smtpPass, "SVCMON_SMTP_PASSWORD")
 		text("from", "from", *f.from, "")

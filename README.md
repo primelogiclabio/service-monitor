@@ -13,7 +13,7 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 | CLI (`svcmon status`, `check`, `token`, ...) | Built, same binary as the agent |
 | Agent service install (`svcmon agent install`: Windows service, systemd unit, macOS launchd plist) | Built. The Windows service install and the Linux systemd install (Ubuntu 26.04) have run for real; the macOS launchd one is only compiled |
 | Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners; another builds a Windows package with the jar and WinSW so the install needs no download (not published as a release yet). No macOS installer |
-| Alert channels | Webhook (optionally signed), Slack, Discord and email, plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
+| Alert channels | Webhook (optionally signed), Slack, Discord and email (HTML with a plain-text part, or plain text only), plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub can serve it (`svcmon.ui-dir`) or allow it from another address (`svcmon.cors-allowed-origins`) |
 | Multi-hub console | Not started |
 
@@ -200,6 +200,7 @@ svcmon alert add slack --name ops --url https://hooks.slack.com/services/T000/B0
 svcmon alert add discord --name chat --url https://discord.com/api/webhooks/1/xxxx --on down,up
 svcmon alert add webhook --name pager --url https://alerts.internal/hook --header "Authorization: Bearer abc" --signing-secret s3cret
 svcmon alert add email --name mail --smtp-host smtp.example.com --smtp-user svcmon --from svcmon@example.com --to ops@example.com --to oncall@example.com
+svcmon alert add email --name sms --smtp-host smtp.example.com --from svcmon@example.com --to 5551234@sms.example.com --format text   # plain text only
 svcmon alert test ops            # sends one test message and says whether it arrived
 svcmon alert list                # state, last success and last error for every channel
 svcmon alert set ops --on down   # changes only what you give; stored secrets are kept
@@ -215,6 +216,7 @@ A failing delivery is retried (after 0, 2 and 5 seconds by default) when the pro
 Safety:
 - Webhook URLs, header values, signing secrets and the SMTP password are secrets. The API and CLI show them masked, error messages never repeat a URL, and an update that sends a masked value back keeps the stored one. They are stored in the hub's database, so protect the data folder. On the command line prefer the environment variables `SVCMON_ALERT_URL`, `SVCMON_SMTP_PASSWORD` and `SVCMON_ALERT_SIGNING_SECRET`, which stay out of shell history and process lists.
 - Slack and Discord URLs must be https. Email defaults to STARTTLS and refuses to fall back to clear text; `--security none` is for a trusted internal relay.
+- An email carries a plain-text part and an HTML part, so every client shows something readable: a coloured status band with the status written out, what happened, the check's message, a details table and, when `svcmon.public-url` is set, an "Open in dashboard" button to the server's page. The HTML has no images, scripts, web fonts or tracking; every name, target and message an agent supplies is escaped, and text-direction tricks are removed. A channel's `format` (`--format`) is `html` by default; `text` sends the plain text alone, for pagers and email-to-SMS gateways. Channels made before this setting existed get HTML.
 - With a signing secret, webhook bodies are signed: the hub sends `X-Svcmon-Signature: sha256=<HMAC-SHA256 of the body>`. The JSON has `event`, `kind` (`check`, `server` or `test`), `hub`, `time`, `subject`, `from`, `to` and `message`.
 - Names and messages can come from agents, so Slack markup is escaped, Discord mentions are switched off, and mail headers cannot be injected.
 
@@ -263,6 +265,7 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CP
 | `svcmon.ui-dir` | unset | Folder with the built web UI, served at `/`. A missing folder only logs a warning |
 | `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
 | `svcmon.live-max-sessions` | 50 | Most dashboards that may hold the live WebSocket open at once; more are refused (close code 1013) and keep polling |
+| `svcmon.public-url` | unset | The address people open the dashboard at (`https://monitor.example.com`, a path is fine, no query or fragment). Alert emails then get an "Open in dashboard" button; unset means no button. A wrong value stops the start-up |
 | `svcmon.jwt.issuer` | unset | Issuer address of an OpenID Connect provider (https; http only for localhost). Setting it turns on sign-in with JWT access tokens; see above |
 | `svcmon.jwt.audience` | unset | The audience (`aud`) a token must contain; required with the issuer |
 | `svcmon.jwt.admin-role` | unset | The role that makes a user an administrator of the hub, who is the only kind let in; required with the issuer |

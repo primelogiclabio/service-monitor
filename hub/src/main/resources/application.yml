@@ -60,6 +60,9 @@ svcmon:
   #   password: choose-12-to-128-characters   # only used to create the account
   #   new-password: false                     # true prints a new password at start-up (recovery)
   #   session-hours: 12
+  # Optional: the address people open the dashboard at (a path is fine; no query or fragment). Alert emails then
+  # get an "Open in dashboard" button linking to the affected server. Unset means no button.
+  # public-url: https://monitor.example.com
   # Optional: let Slack and Discord alert URLs use http instead of https. For tests and local receivers only.
   # allow-insecure-alert-urls: false
   # Optional: most dashboards that may hold the live WebSocket (/api/v1/live) open at once.
