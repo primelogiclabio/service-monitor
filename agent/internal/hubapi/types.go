@@ -132,6 +132,7 @@ type IssuedToken struct {
 	Scope     string `json:"scope"`
 	Token     string `json:"token"`
 	ExpiresAt *int64 `json:"expiresAt,omitempty"`
+	Cluster   string `json:"cluster,omitempty"`
 }
 
 // AlertChannel is an alert destination as the hub returns it: secrets in Config are masked.
@@ -161,4 +162,6 @@ type TokenView struct {
 	CreatedAt int64  `json:"createdAt"`
 	ExpiresAt *int64 `json:"expiresAt,omitempty"`
 	UsedAt    *int64 `json:"usedAt,omitempty"`
+	Cluster   string `json:"cluster,omitempty"`
+	UseCount  int    `json:"useCount,omitempty"` // join keys: servers registered with it
 }

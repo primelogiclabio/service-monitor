@@ -79,11 +79,24 @@ public class AgentService {
         if (servers.findByName(name).isPresent()) {
             throw ApiException.conflict("A server named '" + name + "' is already registered");
         }
-        if (!tokenRepo.markUsed(enroll.id(), System.currentTimeMillis())) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "This enrollment token has already been used");
+        String cluster = req.cluster() == null || req.cluster().isBlank() ? null : req.cluster().trim();
+        if (cluster != null && cluster.length() > 100) {
+            throw ApiException.badRequest("cluster must be at most 100 characters");
         }
         long now = System.currentTimeMillis();
-        String cluster = req.cluster() == null || req.cluster().isBlank() ? null : req.cluster().trim();
+        if (enroll.scope() == Scope.JOIN) {
+            // A join key that names a cluster decides where its servers go; asking for another one is a mistake.
+            if (enroll.cluster() != null) {
+                if (cluster != null && !cluster.equals(enroll.cluster())) {
+                    throw new ApiException(HttpStatus.FORBIDDEN,
+                            "This join key only registers servers in cluster '" + enroll.cluster() + "'");
+                }
+                cluster = enroll.cluster();
+            }
+            tokenRepo.recordJoin(enroll.id(), now);
+        } else if (!tokenRepo.markUsed(enroll.id(), now)) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "This enrollment token has already been used");
+        }
         ServerInfo server = new ServerInfo(UUID.randomUUID().toString(), name, cluster,
                 trim(req.os(), 100), trim(req.agentVersion(), 50), now, now);
         servers.insert(server);

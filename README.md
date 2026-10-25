@@ -111,6 +111,8 @@ svcmon status --cluster prod --watch
 
 **Enrollment tokens are single use and short lived** (60 minutes by default, up to 24 hours: `svcmon agent token --ttl 1440`, or the "Valid for" choice on the dashboard's Add server page). A token lets a machine join the hub, so it should not sit around unused; it is shown once and only its hash is kept, so a lost or used one is replaced by creating another (revoke unused ones on the Tokens page). Once an agent has enrolled it holds its own permanent agent token in `agent.json`, and the enrollment token is no longer needed.
 
+**Join keys register many servers with one command.** Instead of a token per server, create a reusable join key (`svcmon join-key create --name "app servers"`, or Add server in the dashboard) and run the same `svcmon agent install --hub http://hub:8080 --token svm_j_...` on every server; each one registers itself. A join key works until you revoke it (`svcmon join-key revoke <id>`), unless you give it `--expires-days`. With `--cluster prod` every server it registers lands in that cluster, and a server that asks for another cluster is refused. `svcmon join-key list` shows how many servers each key has registered and when it was last used, never the key itself. Anyone holding a join key can add servers, so keep it like a password and revoke it if it leaks; servers it already registered keep their own credentials and are not affected. A name that is already registered is still refused.
+
 **An agent that is already enrolled** (its `agent.json` exists and the server is still on the hub) needs no token: `svcmon agent install` just installs the service from that file. To enroll it again, for example after the server was deleted on the hub or the hub was rebuilt, pass a new enrollment token: `svcmon agent install --token svm_e_...` replaces the old enrollment (`--hub` defaults to the hub in the old file, and the old file is kept if the hub refuses the token). A hub refuses a name that is already registered, so delete the old server entry first (or pass `--name`).
 
 ### More commands
@@ -122,6 +124,7 @@ svcmon check list                # also: show, run, rm <check>
 svcmon check history <check> --since 2h
 svcmon token create --name ci --scope read
 svcmon token list                # also: token revoke <id>
+svcmon join-key create --name "app servers" --cluster prod   # reusable; also: join-key list, join-key revoke <id>
 svcmon agent enroll --hub http://hub:8080 --token svm_e_...   # enroll without installing the service
 svcmon agent uninstall           # stop and remove the OS service
 ```
@@ -170,9 +173,10 @@ Safety:
 | `GET /servers`, `GET /servers/{id}`, `PATCH /servers/{id}`, `DELETE /servers/{id}` | read / admin | Servers and clusters |
 | `GET/POST /tokens`, `DELETE /tokens/{id}` | admin | API tokens (ADMIN or READ) |
 | `POST /enrollment-tokens` | admin | One-time token to register an agent |
+| `GET/POST /join-keys`, `DELETE /join-keys/{id}` | admin | Reusable join keys: register any number of agents until revoked or expired; optional cluster |
 | `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked |
 | `POST /alert-channels/{id}/test` | admin | Send one test alert now |
-| `POST /agent/register`, `GET /agent/config`, `POST /agent/report` | enroll / agent | Agent protocol (agents only call out) |
+| `POST /agent/register`, `GET /agent/config`, `POST /agent/report` | enroll or join key / agent | Agent protocol (agents only call out) |
 
 ### Live view (WebSocket)
 

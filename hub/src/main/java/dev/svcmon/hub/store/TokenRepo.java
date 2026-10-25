@@ -20,7 +20,9 @@ public class TokenRepo {
             rs.getString("token_hash"),
             rs.getLong("created_at"),
             Rows.lng(rs, "expires_at"),
-            Rows.lng(rs, "used_at"));
+            Rows.lng(rs, "used_at"),
+            rs.getString("cluster"),
+            rs.getInt("use_count"));
 
     private final JdbcClient jdbc;
 
@@ -29,8 +31,8 @@ public class TokenRepo {
     }
 
     public void insert(TokenRecord t) {
-        jdbc.sql("INSERT INTO tokens (id, name, scope, server_id, token_hash, created_at, expires_at, used_at) "
-                        + "VALUES (:id, :name, :scope, :serverId, :hash, :createdAt, :expiresAt, :usedAt)")
+        jdbc.sql("INSERT INTO tokens (id, name, scope, server_id, token_hash, created_at, expires_at, used_at, cluster) "
+                        + "VALUES (:id, :name, :scope, :serverId, :hash, :createdAt, :expiresAt, :usedAt, :cluster)")
                 .param("id", t.id())
                 .param("name", t.name())
                 .param("scope", t.scope().name())
@@ -39,6 +41,7 @@ public class TokenRepo {
                 .param("createdAt", t.createdAt())
                 .param("expiresAt", t.expiresAt())
                 .param("usedAt", t.usedAt())
+                .param("cluster", t.cluster())
                 .update();
     }
 
@@ -63,6 +66,14 @@ public class TokenRepo {
                 .param("id", id)
                 .param("now", now)
                 .update() > 0;
+    }
+
+    /** Counts one more server registered with a join key and remembers when. */
+    public void recordJoin(String id, long now) {
+        jdbc.sql("UPDATE tokens SET use_count = use_count + 1, used_at = :now WHERE id = :id")
+                .param("id", id)
+                .param("now", now)
+                .update();
     }
 
     public boolean delete(String id) {

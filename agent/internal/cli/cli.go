@@ -76,6 +76,8 @@ func Run(args []string, out, errw io.Writer) int {
 		return e.check(cargs)
 	case "token":
 		return e.tokenCmd(cargs)
+	case "join-key", "join-keys":
+		return e.joinKeyCmd(cargs)
 	case "alert", "alerts":
 		return e.alertCmd(cargs)
 	case "agent":
@@ -111,6 +113,10 @@ Hub commands (need a hub URL and token: 'svcmon login', or SVCMON_HUB / SVCMON_T
   check history <check> [--limit N] [--since 1h|30m|2d]
   token create --name N --scope read|admin
   token list | token revoke <id>
+  join-key create --name N [--cluster C] [--expires-days D]
+                                  A reusable key that registers any number of servers (no expiry
+                                  unless --expires-days); with --cluster they all go in that cluster
+  join-key list | join-key revoke <id>
   alert list                      Alert channels (where status changes are sent)
   alert add <webhook|slack|discord|email> --name N [flags]
                                   webhook/slack/discord: --url (or SVCMON_ALERT_URL); webhook also --header
@@ -124,9 +130,10 @@ Hub commands (need a hub URL and token: 'svcmon login', or SVCMON_HUB / SVCMON_T
 
 Agent commands (run on a monitored server):
   agent token [--name N] [--ttl MIN]   Create a one-time enrollment token (hub side)
-  agent enroll --hub URL --token ENROLL [--name N] [--cluster C] [--config FILE]
-  agent install --hub URL --token ENROLL [--name N] [--cluster C]
-                                  Enroll if needed, then install and start the OS service (admin/root)
+  agent enroll --hub URL --token TOKEN [--name N] [--cluster C] [--config FILE]
+  agent install --hub URL --token TOKEN [--name N] [--cluster C]
+                                  Enroll if needed, then install and start the OS service (admin/root).
+                                  TOKEN is a one-time enrollment token or a join key
   agent uninstall                 Stop and remove the OS service
   agent run [--config FILE] [--once]
                                   Run in the foreground (what the service runs)

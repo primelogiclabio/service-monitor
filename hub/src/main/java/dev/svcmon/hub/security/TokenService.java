@@ -33,17 +33,22 @@ public class TokenService {
     }
 
     public Issued issue(String name, Scope scope, String serverId, Long expiresAt) {
-        return store(name, scope, serverId, expiresAt, generate(scope));
+        return store(name, scope, serverId, expiresAt, generate(scope), null);
+    }
+
+    /** A join key: registers any number of agents, optionally only into one cluster, until revoked or expired. */
+    public Issued issueJoinKey(String name, String cluster, Long expiresAt) {
+        return store(name, Scope.JOIN, null, expiresAt, generate(Scope.JOIN), cluster);
     }
 
     /** Stores a caller-supplied token value (used for the optional bootstrap admin token). */
     public Issued issueWithValue(String name, Scope scope, String raw) {
-        return store(name, scope, null, null, raw);
+        return store(name, scope, null, null, raw, null);
     }
 
-    private Issued store(String name, Scope scope, String serverId, Long expiresAt, String raw) {
+    private Issued store(String name, Scope scope, String serverId, Long expiresAt, String raw, String cluster) {
         TokenRecord rec = new TokenRecord(UUID.randomUUID().toString(), name, scope, serverId, hash(raw),
-                System.currentTimeMillis(), expiresAt, null);
+                System.currentTimeMillis(), expiresAt, null, cluster, 0);
         tokens.insert(rec);
         return new Issued(rec, raw);
     }
