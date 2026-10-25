@@ -171,6 +171,23 @@ class TokenAuthFilterTest {
     }
 
     @Test
+    void thePasswordSignInIsTheOnlyApiCallThatNeedsNoToken() throws Exception {
+        var filter = jwtFilter();
+        var post = new MockHttpServletRequest("POST", "/api/v1/login");
+        var chain = new MockFilterChain();
+        assertEquals(200, run(filter, post, chain).getStatus());
+        assertSame(post, chain.getRequest());
+
+        for (String[] other : new String[][] {{"GET", "/api/v1/login"}, {"PUT", "/api/v1/login"},
+                {"POST", "/api/v1/login/x"}, {"POST", "/api/v1/logins"}, {"PUT", "/api/v1/local-admin/password"}}) {
+            var blocked = new MockFilterChain();
+            assertEquals(401, run(filter, new MockHttpServletRequest(other[0], other[1]), blocked).getStatus(),
+                    other[0] + " " + other[1]);
+            assertNull(blocked.getRequest());
+        }
+    }
+
+    @Test
     void scopesAreUnchanged() {
         assertEquals(EnumSet.of(Scope.READ, Scope.ADMIN), TokenAuthFilter.required("GET", "/api/v1/status"));
         assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("POST", "/api/v1/checks"));

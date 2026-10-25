@@ -52,6 +52,14 @@ svcmon:
   #   admin-role: platform-admin
   #   roles-claim: realm_access.roles
   #   jwks-uri: https://auth.example.com/realms/main/protocol/openid-connect/certs
+  # Optional: the hub's own administrator, for when nothing else works. On by default: the first start prints
+  # a random password once. Only a salted hash is stored. Signing in at POST /api/v1/login returns an ADMIN token.
+  # local-admin:
+  #   enabled: true
+  #   username: admin
+  #   password: choose-12-to-128-characters   # only used to create the account
+  #   new-password: false                     # true prints a new password at start-up (recovery)
+  #   session-hours: 12
   # Optional: let Slack and Discord alert URLs use http instead of https. For tests and local receivers only.
   # allow-insecure-alert-urls: false
   # Optional: most dashboards that may hold the live WebSocket (/api/v1/live) open at once.

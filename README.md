@@ -120,6 +120,17 @@ How this is kept safe:
 
 The live connection ends with close code 1001 when its JWT expires; the dashboard reconnects and the proxy adds a fresh token to the new request.
 
+## Local admin account
+
+The hub keeps one administrator of its own, for when nothing else works: the provider behind the proxy is down, or none is set up. It is on unless `svcmon.local-admin.enabled` is `false`, and its user name is `admin` unless `svcmon.local-admin.username` says otherwise.
+
+- **First start:** the password is `svcmon.local-admin.password` (12 to 128 characters) if you set it, otherwise a random one that is printed once next to the first admin token. Only a salted PBKDF2-HMAC-SHA256 hash (600,000 rounds) is stored, in the hub's database; it is never logged or returned. The setting is used only to create the account.
+- **Signing in:** `POST /api/v1/login` with `{"username": "...", "password": "..."}` answers with `{"token", "expiresAt", "scope": "ADMIN", "name": "local-login"}`. The token is an ordinary ADMIN token that lasts `svcmon.local-admin.session-hours` (12 by default, at most 168), so the dashboard, the live view and revoking work as for any token; it appears in the token list as `local-login`. The dashboard's sign-in page has a user name and password form for it.
+- **Changing it:** `PUT /api/v1/local-admin/password` with `{"newPassword": "..."}` and an ADMIN token (or sign-in). Every `local-login` token is ended, so a stolen session does not survive it.
+- **Recovery:** start the hub once with `--svcmon.local-admin.new-password=true` to print a new password (this also ends the sign-ins made with the old one), then start it normally again.
+- **Guessing:** each client address may get the password wrong 5 times in 15 minutes, and all addresses together 20 times. After that every attempt, even with the right password, is refused with 429 and a `Retry-After` until the oldest failure ages out. A wrong user name and a wrong password get the same answer and take the same time. Behind a load balancer the client address is the one it forwards (see the note on `X-Forwarded-For` in the design document).
+- **Where to reach it:** treat the password as the way in on the hub's internal address, next to the API tokens, and keep it off the public site. With nginx in front, `location = /api/v1/login { return 404; }` does that, so only the proxy's sign-in is public.
+
 ## Build the agent and CLI
 
 Needs Go 1.27 or newer (https://go.dev/dl/). One command builds every platform, with no C toolchain:
@@ -213,6 +224,8 @@ Safety:
 |---|---|---|
 | `GET /health` | none | Liveness probe |
 | `GET /hub` | read | Hub ID, version, Java runtime age and warning |
+| `POST /login` | none | Password sign-in for the local admin: answers with an ADMIN token that ends after a few hours; wrong attempts are throttled |
+| `PUT /local-admin/password` | admin | Change the local admin password; ends the sign-ins made with the old one |
 | `GET /me` | read | Who is calling: `method` (`token` or `jwt`), `name` and `scope`; lets a dashboard that holds no token show who is signed in |
 | `GET /status` | read | Roll-up: summary, clusters, servers, checks |
 | `GET /live` (WebSocket) | read, sent in the first frame | Pushes the same roll-up whenever it changes, for the dashboard's Live switch; see below |
@@ -255,6 +268,11 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CP
 | `svcmon.jwt.admin-role` | unset | The role that makes a user an administrator of the hub, who is the only kind let in; required with the issuer |
 | `svcmon.jwt.roles-claim` | `realm_access.roles` | Where the roles are in the token; dots walk into nested objects |
 | `svcmon.jwt.jwks-uri` | from discovery | Where the provider's signing keys are, if not the address in its discovery document |
+| `svcmon.local-admin.enabled` | true | The hub's own administrator account with a password; see above |
+| `svcmon.local-admin.username` | `admin` | Its user name |
+| `svcmon.local-admin.password` | unset | Password to create the account with, 12 to 128 characters; unset means a random one is printed once at first start |
+| `svcmon.local-admin.new-password` | false | Print a new random password at start-up and end earlier sign-ins (recovery) |
+| `svcmon.local-admin.session-hours` | 12 | How long a password sign-in lasts, 1 to 168 |
 | `svcmon.alert-retry-delays-ms` | `0,2000,5000` | Waits between delivery attempts for a failing alert channel, in milliseconds |
 | `svcmon.allow-insecure-alert-urls` | false | Lets Slack and Discord URLs use http; for tests and local receivers only |
 | `svcmon.bootstrap-admin-token` | unset | Use this value (32+ characters) as the first admin token on a fresh database instead of generating one; ignored once an admin token exists |
