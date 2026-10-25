@@ -178,6 +178,49 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void containerChecksAreValidatedAndHandedToTheAgent() throws Exception {
+        Resp enroll = call("POST", "/api/v1/enrollment-tokens", ADMIN, "{\"ttlMinutes\":5}");
+        Resp reg = call("POST", "/api/v1/agent/register", (String) enroll.map().get("token"),
+                "{\"name\":\"docker01\",\"cluster\":\"prod\"}");
+        assertEquals(201, reg.status());
+        String agentToken = (String) reg.map().get("token");
+        String on = "\"serverId\":\"" + reg.map().get("serverId") + "\"";
+        String head = "{\"name\":\"c\",\"type\":\"CONTAINER\"," + on + ",";
+
+        // Each of these has a server, so only the target or the config can be what is refused.
+        for (String bad : List.of(
+                "\"config\":{}",
+                "\"target\":\"../etc\"",
+                "\"target\":\"two words\"",
+                "\"target\":\"-lead\"",
+                "\"target\":\"web\",\"runFrom\":\"HUB\"",
+                "\"target\":\"web\",\"config\":{\"socket\":\"relative.sock\"}",
+                "\"target\":\"web\",\"config\":{\"socket\":\"/\"}",
+                "\"target\":\"web\",\"config\":{\"socket\":5}",
+                "\"target\":\"web\",\"config\":{\"sokcet\":\"/var/run/docker.sock\"}")) {
+            assertEquals(400, call("POST", "/api/v1/checks", ADMIN, head + bad + "}").status(), bad);
+        }
+        Resp typo = call("POST", "/api/v1/checks", ADMIN, head + "\"target\":\"web\",\"config\":{\"sokcet\":\"/x\"}}");
+        assertTrue(String.valueOf(typo.map().get("message")).contains("sokcet"), "a typo should be named");
+
+        Resp web = call("POST", "/api/v1/checks", ADMIN, head + "\"target\":\"web\"}");
+        assertEquals(201, web.status());
+        assertEquals("AGENT", web.map().get("runFrom"));
+        assertEquals(201, call("POST", "/api/v1/checks", ADMIN, head
+                + "\"target\":\"db-1.prod\",\"config\":{\"socket\":\"/run/podman/podman.sock\"}}").status());
+        assertEquals(201, call("POST", "/api/v1/checks", ADMIN, head
+                + "\"target\":\"cache\",\"config\":{\"socket\":\"unix:///var/run/docker.sock\"}}").status());
+
+        Resp cfg = call("GET", "/api/v1/agent/config", agentToken, null);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> assigned = (List<Map<String, Object>>) (List<?>) cfg.map().get("checks");
+        assertEquals(3, assigned.size());
+        assertTrue(assigned.stream().allMatch(c -> "CONTAINER".equals(c.get("type"))));
+        assertEquals(List.of("cache", "db-1.prod", "web"),
+                assigned.stream().map(c -> (String) c.get("target")).sorted().toList());
+    }
+
+    @Test
     void scheduledChecksRunOnTheirOwn() throws Exception {
         try (ServerSocket listening = new ServerSocket(0)) {
             Resp created = call("POST", "/api/v1/checks", ADMIN, "{\"name\":\"auto\",\"type\":\"TCP\","

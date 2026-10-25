@@ -76,6 +76,7 @@ The agent buffers a few minutes of results in memory and replays them when the c
 | TCP | Hub or agent | Connect with timeout; connect time recorded. |
 | Ping (ICMP) | Hub or agent | See section 7 for the portability notes. |
 | Service running | Agent | Windows Service Control Manager; systemd on Linux; launchd on macOS. |
+| Container | Agent | Docker or Podman, asked over the local socket with read-only requests; state and health, not resource use. Linux and macOS. |
 | CPU, memory, disk | Agent | Disk checks are per volume. |
 
 Every check has an interval, a timeout, and "N failures before marking down" so a single dropped packet does not page anyone.
@@ -84,7 +85,7 @@ Every check has an interval, a timeout, and "N failures before marking down" so 
 
 Nothing is monitored by default. For services, disks and ports the admin lists exactly what to watch; the agent ignores everything else and does not report it. This keeps noise and data exposure down.
 
-A read-only helper, `svcmon agent services`, shows what exists on a server so the admin can pick. It adds nothing by itself.
+A read-only helper, `svcmon agent services` (and `svcmon agent containers` for Docker or Podman), shows what exists on a server so the admin can pick. It adds nothing by itself.
 
 The sketch below shows what a server's check list amounts to. It is not a config file the product reads: checks are created with `svcmon check add` or the API.
 
@@ -164,6 +165,7 @@ Keeping it safe:
   - The agent installer sets `CAP_NET_RAW` on Linux.
 - **Load average** is not available on Windows in `gopsutil`, so it is not a cross-platform check.
 - **Service names differ per OS:** a Windows service name, a systemd unit, or a launchd label. The check is one type with an OS-specific backend.
+- **Container runtimes are reached through a socket, and the socket is root.** Docker and Podman answer the same API on a unix socket, so one client covers both (Go standard library, no Docker SDK). Whoever can write to that socket can run anything as root, so the agent has only a GET code path for it and monitors state and health, nothing more. Reading it needs root or the runtime's group; an agent installed as root has that, and a future `--run-as` would need the group. Docker Desktop on Windows listens on a named pipe, which needs a library (go-winio) and is left out of the first version.
 - **Cross-compiling:** Go builds all target binaries from one machine with `GOOS`/`GOARCH`. A `jlink` runtime image must be built for each target platform, so CI uses a matrix (the `jlink` manual does not describe cross-platform image builds).
 
 ## 8. Security and alerts
@@ -190,6 +192,7 @@ Keeping it safe:
 ## 10. Open questions and limits
 
 - **Untested on real targets:** the agent was run end to end on Windows 11 (service installed from an elevated prompt) and on Ubuntu 26.04 (systemd unit installed as root; HTTP, CPU, memory, disk and service checks ran). The macOS (launchd) service installer and service checks compile and pass `go vet` but have not been run on that system.
+- **Container checks:** tested against a stand-in for the runtime's API, not yet against a real Docker or Podman. Not built: Docker Desktop on Windows (named pipe), per-container CPU and memory, and the dashboard's check form does not offer the type yet.
 - **Hub service installers:** CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server; its last install runs from the Windows hub package. There is no macOS installer.
 - **Java version:** the machine has Java 21, so v1 targets 21. This doc assumes 25 is a long-term-support release but that could not be confirmed from Oracle's roadmap page (it returned HTTP 403).
 - **macOS ping:** unprivileged ICMP on macOS is not confirmed by the sources used.

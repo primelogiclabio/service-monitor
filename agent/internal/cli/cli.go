@@ -104,10 +104,11 @@ Hub commands (need a hub URL and token: 'svcmon login', or SVCMON_HUB / SVCMON_T
   check list                      All checks
   check show <check>              One check as JSON
   check add <type> [target] [flags]
-                                  Types: http tcp ping (hub or agent), service cpu memory disk (agent)
+                                  Types: http tcp ping (hub or agent), service container cpu memory disk (agent)
                                   Flags: --name --server --run-from hub|agent --interval S --timeout MS
                                          --failures N --warn P --crit P --keyword TEXT --expect-status 200-299
-                                         --ignore-tls --no-redirects --cert-warn-days N --set key=value --disabled
+                                         --ignore-tls --no-redirects --cert-warn-days N --socket PATH
+                                         --set key=value --disabled
   check rm <check>                Delete a check
   check run <check>               Run a hub-side check now
   check history <check> [--limit N] [--since 1h|30m|2d]
@@ -138,6 +139,9 @@ Agent commands (run on a monitored server):
   agent run [--config FILE] [--once]
                                   Run in the foreground (what the service runs)
   agent services [--filter TEXT]  List services on this machine (nothing is monitored automatically)
+  agent containers [--filter TEXT] [--socket PATH]
+                                  List Docker/Podman containers on this machine (nothing is monitored
+                                  automatically); --socket if the runtime is not in the usual place
 
 Other: version, help
 `)

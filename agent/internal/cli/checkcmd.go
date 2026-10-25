@@ -263,6 +263,7 @@ func (e *env) checkAdd(args []string) int {
 	ignoreTLS := fs.Bool("ignore-tls", false, "http: accept any TLS certificate")
 	noRedirects := fs.Bool("no-redirects", false, "http: do not follow redirects")
 	certDays := fs.Int("cert-warn-days", 0, "http: warn this many days before the certificate expires")
+	socket := fs.String("socket", "", "container: runtime socket, if it is not in the usual place")
 	disabled := fs.Bool("disabled", false, "create the check disabled")
 	extra := kvFlag{}
 	fs.Var(extra, "set", "extra config as key=value (repeatable)")
@@ -312,6 +313,9 @@ func (e *env) checkAdd(args []string) int {
 	}
 	if *certDays > 0 {
 		cfg["certWarnDays"] = *certDays
+	}
+	if *socket != "" {
+		cfg["socket"] = *socket
 	}
 	if len(cfg) > 0 {
 		body["config"] = cfg

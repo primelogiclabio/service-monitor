@@ -22,7 +22,7 @@ import (
 
 func (e *env) agentCmd(args []string) int {
 	if len(args) == 0 {
-		return e.fail(errors.New("usage: svcmon agent token|enroll|install|uninstall|run|services"))
+		return e.fail(errors.New("usage: svcmon agent token|enroll|install|uninstall|run|services|containers"))
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -38,6 +38,8 @@ func (e *env) agentCmd(args []string) int {
 		return e.agentRun(rest)
 	case "services":
 		return e.agentServices(rest)
+	case "containers":
+		return e.agentContainers(rest)
 	default:
 		return e.fail(fmt.Errorf("unknown agent command %q", sub))
 	}
@@ -262,6 +264,34 @@ func serviceLogger(cfgPath string) (*log.Logger, io.Closer) {
 		return log.New(io.Discard, "", 0), nil
 	}
 	return log.New(f, "", log.LstdFlags), f
+}
+
+// agentContainers is the same discovery helper for Docker or Podman containers, running or not.
+func (e *env) agentContainers(args []string) int {
+	fs := e.flags("agent containers")
+	filter := fs.String("filter", "", "only names or images containing this text")
+	socket := fs.String("socket", "", "container runtime socket, if it is not in the usual place")
+	if _, code, ok := e.parse(fs, args); !ok {
+		return code
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	list, err := checks.ListContainers(ctx, *socket)
+	if err != nil {
+		return e.fail(err)
+	}
+	needle := strings.ToLower(*filter)
+	tw := tabwriter.NewWriter(e.out, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tSTATE\tIMAGE\tSTATUS")
+	for _, c := range list {
+		if needle != "" && !strings.Contains(strings.ToLower(c.Name+" "+c.Image), needle) {
+			continue
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", c.Name, c.State, c.Image, c.Status)
+	}
+	tw.Flush()
+	fmt.Fprintln(e.err, "\nNothing here is monitored. Add a check with: svcmon check add container <name> --server <server>")
+	return exitOK
 }
 
 // agentServices is the discovery helper: it lists what exists so an admin can choose, and monitors nothing.

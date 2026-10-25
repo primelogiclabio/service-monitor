@@ -9,7 +9,7 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 | Piece | State |
 |---|---|
 | Hub: scheduler, SQLite, REST API, tokens, HTTP/TCP/ping checks, roll-up status, alerts | Built and tested; logs a start-up summary with its address and what it watches |
-| Agent (`svcmon agent run`): service, CPU, memory, disk, plus HTTP/TCP/ping from the server's side | Built; unit tests and a run against a real hub on Windows 11 |
+| Agent (`svcmon agent run`): service, container, CPU, memory, disk, plus HTTP/TCP/ping from the server's side | Built; unit tests and a run against a real hub on Windows 11. The container check has only run against a stand-in for Docker's API so far, not a real Docker or Podman |
 | CLI (`svcmon status`, `check`, `token`, ...) | Built, same binary as the agent |
 | Agent service install (`svcmon agent install`: Windows service, systemd unit, macOS launchd plist) | Built. The Windows service install and the Linux systemd install (Ubuntu 26.04) have run for real; the macOS launchd one is only compiled |
 | Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners; another builds a Windows package with the jar and WinSW so the install needs no download (not published as a release yet). No macOS installer |
@@ -158,6 +158,8 @@ svcmon agent install --hub http://hub:8080 --token svm_e_... --cluster prod
 # see what services exist on web01, then choose
 svcmon agent services --filter iis
 svcmon check add service W3SVC --server web01
+svcmon agent containers --filter web     # Docker or Podman containers, running or not
+svcmon check add container web --server web01
 svcmon check add cpu --server web01 --warn 85 --crit 95
 svcmon check add disk C: --server web01 --warn 80 --crit 90
 svcmon check add http https://web01/health --server web01 --run-from agent
@@ -251,7 +253,9 @@ A browser cannot set an `Authorization` header on a WebSocket, and a token in th
 
 Behind a load balancer it must pass WebSocket upgrades (`Upgrade` and `Connection` headers) to the hub and allow idle connections for at least 30 seconds. If it does not, the Live switch tells the user it is unavailable and the dashboard keeps polling.
 
-Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CPU`, `MEMORY`, `DISK` run on an agent and need a server.
+Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CONTAINER`, `CPU`, `MEMORY`, `DISK` run on an agent and need a server.
+
+**Container checks** (`CONTAINER`, target = the container's name) ask Docker or Podman about one container through its local socket. The agent does this on the server, so the hub still opens no connection to it, and it only sends read requests (list and inspect): it cannot start, stop or change a container. A running container is UP, and when it has a health check it must report healthy; a health check that is still starting or a container in a restart loop is WARN; unhealthy, paused, exited, dead, created or missing is DOWN. A runtime that cannot be reached (no socket, no permission) is UNKNOWN, not DOWN. The message shows the image, uptime and restart count, never the container's environment. The agent finds the socket itself (`DOCKER_HOST` when it is a `unix://` address, `/var/run/docker.sock`, Podman's system and per-user sockets, Docker Desktop's on macOS); `--socket PATH` on `check add` (config key `socket`, the only key the hub accepts for this type) names one. Reading the socket needs root or membership of the runtime's group, which an agent running as root has, and the socket is as powerful as root, which is why the agent never writes to it. Nothing is discovered automatically: `svcmon agent containers` only lists. Docker Desktop on Windows (a named pipe, not a socket) is not supported yet.
 
 ## Configuration (`hub/src/main/resources/application.yml`, or `--svcmon.*` flags)
 
