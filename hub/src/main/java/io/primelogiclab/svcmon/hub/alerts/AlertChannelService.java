@@ -53,7 +53,7 @@ public class AlertChannelService {
             AlertType.WEBHOOK, Set.of("url", "headers", "signingSecret"),
             AlertType.SLACK, Set.of("url"),
             AlertType.DISCORD, Set.of("url"),
-            AlertType.EMAIL, Set.of("smtpHost", "smtpPort", "security", "username", "password", "from", "to"));
+            AlertType.EMAIL, Set.of("smtpHost", "smtpPort", "security", "username", "password", "from", "to", "format"));
 
     private final AlertChannelRepo repo;
     private final AlertDispatcher dispatcher;
@@ -258,6 +258,14 @@ public class AlertChannelService {
             throw ApiException.badRequest("security must be NONE, STARTTLS or SSL");
         }
         out.put("security", security);
+
+        // HTML sends a plain-text and an HTML part; TEXT only the plain text, for pagers and email-to-SMS gateways.
+        String format = optional(config, "format", 20);
+        format = format == null ? "HTML" : format.toUpperCase(Locale.ROOT);
+        if (!Set.of("HTML", "TEXT").contains(format)) {
+            throw ApiException.badRequest("format must be HTML or TEXT");
+        }
+        out.put("format", format);
 
         String username = optional(config, "username", 200);
         String password = optional(config, "password", 200);

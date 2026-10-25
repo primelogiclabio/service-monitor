@@ -22,6 +22,8 @@ public record HubProperties(
         @DefaultValue("false") boolean allowInsecureAlertUrls,
         /** Most dashboards that may hold the live WebSocket open at once; more are told to try again later. */
         @DefaultValue("50") int liveMaxSessions,
+        /** The address people open the dashboard at (https://monitor.example.com); gives alert emails an "Open in dashboard" link. */
+        String publicUrl,
         /** Optional sign-in with OpenID Connect access tokens (Keycloak and others); off unless an issuer is set. */
         @DefaultValue Jwt jwt,
         /** The hub's own administrator account, for when no other sign-in works; on unless turned off. */

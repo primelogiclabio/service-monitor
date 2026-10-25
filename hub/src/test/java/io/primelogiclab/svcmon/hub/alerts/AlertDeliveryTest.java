@@ -378,6 +378,32 @@ class AlertDeliveryTest {
     }
 
     @Test
+    void realEmailsAreMultipartWithBothPartsAndTextChannelsStayPlain() throws Exception {
+        String id = uid();
+        String htmlTo = "html-" + id + "@example.test";
+        String textTo = "text-" + id + "@example.test";
+        String htmlId = channel("EMAIL", "html-" + id, Map.of("smtpHost", "127.0.0.1", "smtpPort", smtp.port(),
+                "security", "NONE", "from", "svcmon@example.test", "to", htmlTo), null, null);
+        String textId = channel("EMAIL", "text-" + id, Map.of("smtpHost", "127.0.0.1", "smtpPort", smtp.port(),
+                "security", "NONE", "from", "svcmon@example.test", "to", textTo, "format", "text"), null, null);
+        assertEquals("HTML", obj(channelView(htmlId).get("config")).get("format"), "the default is shown, not hidden");
+        assertEquals("TEXT", obj(channelView(textId).get("config")).get("format"));
+
+        assertEquals(true, call("POST", "/api/v1/alert-channels/" + htmlId + "/test", ADMIN, null).map().get("ok"));
+        assertEquals(true, call("POST", "/api/v1/alert-channels/" + textId + "/test", ADMIN, null).map().get("ok"));
+
+        String html = awaitMail("To: " + htmlTo, 1).data();
+        assertTrue(html.contains("Content-Type: multipart/alternative"), html);
+        assertTrue(html.indexOf("Content-Type: text/plain") < html.indexOf("Content-Type: text/html"), "plain first, HTML last");
+        assertTrue(html.contains("Auto-Submitted: auto-generated"), html);
+        assertTrue(html.contains("Subject: [TEST] svcmon alert channel"), html);
+
+        String text = awaitMail("To: " + textTo, 1).data();
+        assertTrue(text.contains("Content-Type: text/plain"), text);
+        assertFalse(text.contains("multipart") || text.contains("text/html"), text);
+    }
+
+    @Test
     void permissionsAndValidationAreEnforced() throws Exception {
         String id = uid();
         Resp viewer = call("POST", "/api/v1/tokens", ADMIN, Map.of("name", "viewer-" + id, "scope", "READ"));
