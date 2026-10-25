@@ -235,6 +235,37 @@ svcmon agent uninstall           # stop and remove the OS service
 
 `svcmon help` lists every command and flag.
 
+## Upgrading
+
+An upgrade keeps everything that identifies the installation: the hub's database, settings and tokens, and each agent's `agent.json` (its token), `checks.json` and `assigned.json`. Nothing is enrolled again. Do the hub first, then the dashboard, then the agents, and check each with `svcmon hub` or `svcmon version` afterwards.
+
+**The hub.** Build or unpack the new jar and run the installer again, with `--dry-run` / `-DryRun` first: the plan says "upgrade" and lists what is kept (see [hub/service](hub/service/README.md); on Windows run `install.ps1` from the new [package](hub/service/README.md#windows-package-no-download) or pass `-JarPath`). It stops the service, replaces the jar and starts it again; the database is migrated when the hub starts. Copy the data folder first if you want a way back. Without the installer, stop the hub and start it with the new jar. One change to know about: a hub built after the agent-declared checks work accepts them by default, so set `svcmon.agent-declared-checks: false` if only the admin should list checks.
+
+**The dashboard.** Replace `index.html` and the `assets/` folder in the folder the hub serves (`svcmon.ui-dir`) with the new build's, and keep your `config.json`. No restart is needed: `index.html` is never cached and the other files carry a hash in their names, so a normal reload shows the new one.
+
+**The agent.** The service runs the program file where `svcmon agent install` put it, so an upgrade replaces that file while the service is stopped. Do not run `agent install` again: on Windows it says the service is already installed. A stop of a few seconds is far below the 90 seconds (`svcmon.agent-stale-seconds`) before the hub shows a server offline.
+
+```powershell
+# Windows, elevated PowerShell (run on the Windows machine used for the first install)
+Stop-Service svcmon-agent
+Copy-Item .\svcmon.exe C:\path\to\the\installed\svcmon.exe -Force
+Start-Service svcmon-agent
+```
+
+```bash
+# Linux (not tried on a real system), as root: same idea with systemd
+systemctl stop svcmon-agent
+cp svcmon /path/to/the/installed/svcmon
+systemctl start svcmon-agent
+
+# macOS (not tried on a real system), as root
+launchctl unload /Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist
+cp svcmon /path/to/the/installed/svcmon
+launchctl load -w /Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist
+```
+
+The Windows steps are the ones that have been run for real (hub and agent upgraded in place on the development machine); the Linux and macOS commands follow from how the installer registers the service.
+
 ## Alerts
 
 An alert channel is a place the hub sends a message when something changes status. There are four types: **webhook** (JSON, optionally signed), **Slack**, **Discord** and **email** (SMTP). Channels are managed through the API (admin only) or the CLI. Each says which new statuses it wants; the default is DOWN, WARN and UP, so you also hear about recoveries.
