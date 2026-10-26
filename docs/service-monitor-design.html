@@ -157,7 +157,7 @@ footer { max-width: 980px; margin: 0 auto; padding: 8px 20px 90px; color: var(--
   <ol>
     <li><b>Agents connect out.</b> Monitored servers open no inbound ports. A server counts as down when its heartbeats stop.</li>
     <li><b>The hub owns the config.</b> The agent fetches its check list on connect, so changes are made once, in one place.</li>
-    <li><b>The hub is headless.</b> Everything, including the UI, goes through the REST API (polling <code>GET /status</code> is the default; an optional WebSocket at <code>/api/v1/live</code> pushes the same roll-up when it changes, see the README).</li>
+    <li><b>The hub is headless.</b> Everything, including the UI, goes through the REST API (polling <code>GET /status</code> is the default; an optional WebSocket at <code>/api/v1/live</code> pushes the same roll-up when it changes, see the reference).</li>
     <li><b>Each hub is autonomous.</b> It keeps monitoring and alerting if the console or the link to it goes down. The console shows a hub that stops answering as "hub unreachable".</li>
     <li><b>The console stays light.</b> It holds current status and fetches history on demand from the hub that owns it.</li>
   </ol>

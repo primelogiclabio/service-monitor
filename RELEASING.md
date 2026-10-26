@@ -17,7 +17,7 @@ The version comes only from the tag: the workflow sets the hub's version with Ma
 
 ## Steps
 
-1. `main` is green in both repositories and the docs match the code (README, design document, trust policy).
+1. `main` is green in both repositories and the docs match the code (README, reference, design document, trust policy).
 2. **Rehearse** (optional but cheap): Actions, **Release**, **Run workflow**, version `X.Y.Z-test`, dashboard ref `main`. It builds everything the same way, publishes nothing and keeps the files as a workflow artifact for 7 days.
 3. **Tag the dashboard repository first**, since its build goes inside the hub jar:
 

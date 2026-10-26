@@ -39,7 +39,7 @@ svcmon:
   # ui-dir: ./ui
   # Optional: false makes the hub serve no dashboard at all, only the API.
   # ui-enabled: true
-  # Optional: sign-in through a reverse proxy for the dashboard inside the jar (see the README, "Host the web UI").
+  # Optional: sign-in through a reverse proxy for the dashboard inside the jar (see docs/service-monitor-reference.md, "Host the web UI").
   # ui:
   #   proxy:
   #     enabled: false
