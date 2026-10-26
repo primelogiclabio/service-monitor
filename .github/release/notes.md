@@ -1,6 +1,6 @@
 ## Service Monitor @VERSION@
 
-The hub is one jar; the agent is one file. Nothing is signed: check the downloads against `SHA256SUMS`.
+The hub is one jar; the agent is one file. There is no code-signing certificate, so Windows and macOS may warn about an unknown publisher. Check a download against `SHA256SUMS`, and to see that this project's release workflow built it, run `gh attestation verify <file> --repo primelogiclabio/service-monitor`.
 
 | File | What it is |
 |---|---|
