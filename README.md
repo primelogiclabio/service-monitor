@@ -15,7 +15,7 @@ Design and rationale: [docs/service-monitor-design.md](docs/service-monitor-desi
 | Agent service install (`svcmon agent install`: Windows service, systemd unit, macOS launchd plist) | Built. The Windows service install and the Linux systemd install (Ubuntu 26.04) have run for real; the macOS launchd one is only compiled |
 | Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners; another builds a Windows package with the jar and WinSW so the install needs no download (not published as a release yet). No macOS installer |
 | Alert channels | Webhook (optionally signed), Slack, Discord and email (HTML with a plain-text part, or plain text only), plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
-| Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub can serve it (`svcmon.ui-dir`) or allow it from another address (`svcmon.cors-allowed-origins`) |
+| Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub serves it from inside its jar when built with it, or from a folder (`svcmon.ui-dir`), or it is allowed from another address (`svcmon.cors-allowed-origins`) |
 | Multi-hub console | Not started |
 
 ## What it looks like
@@ -40,13 +40,16 @@ TLS is terminated at your load balancer; only the hub is exposed. The hub speaks
 
 ## Run the hub
 
-Needs Java 21 or newer and Maven to build.
+The hub is one jar and needs Java 21 or newer. Run it and it starts: no installer, no other file.
 
 ```bash
-cd hub
-mvn package
-java -jar target/svcmon-hub-0.1.0-SNAPSHOT.jar
+java -jar svcmon-hub-<version>.jar init    # optional: writes application.yml with every setting at its default, commented out
+java -jar svcmon-hub-<version>.jar         # starts the hub; it reads application.yml from this folder
 ```
+
+`init` takes a folder (`init /etc/svcmon`), refuses to replace an existing file unless you add `--force`, and `--stdout` prints the template instead. Everything the hub can be set to is in that one file, including how the dashboard signs people in (no file inside the jar is ever edited). A wrong or unknown value stops the hub at start-up with a message that names it. Any setting can also be passed as `--svcmon.<name>=<value>`.
+
+To build the jar from source: `cd hub; mvn package`, then `java -jar target/svcmon-hub-0.1.0-SNAPSHOT.jar`. That jar has no dashboard inside unless you add one (see "Host the web UI").
 
 On first start the hub creates `./data/svcmon.db` and prints an admin token once; only its hash is stored. To get a new one later start with `--svcmon.new-admin-token=true`; to choose your own set `svcmon.bootstrap-admin-token` (32+ characters) on a fresh database.
 
@@ -56,7 +59,7 @@ When it is ready the hub logs one summary: the address it listens on, the databa
 Service Monitor hub 0.1.0 is ready
   URL:       http://localhost:8080, http://hub01:8080 (plain HTTP; TLS belongs on the load balancer)
   Database:  /var/lib/svcmon-hub/svcmon.db
-  Dashboard: not served (set svcmon.ui-dir to serve the web UI)
+  Dashboard: served from inside the hub jar (svcmon.ui-dir would use a folder instead)
   CORS:      off
   Alerts:    1 enabled of 1: ops-slack (SLACK)
   Watching:  4 check(s) (HTTP 1, TCP 1, SERVICE 1, CPU 1): 2 run by the hub, 2 by agents on 1 enrolled server(s)
@@ -81,10 +84,27 @@ powershell -ExecutionPolicy Bypass -File hub\service\windows\install.ps1
 
 ## Host the web UI
 
-The dashboard lives in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui). Build it there (`npm run build`), then choose one of:
+The dashboard lives in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui). Choose one of:
 
-1. **Let the hub serve it**, so everything is at one address: start the hub with `--svcmon.ui-dir=/path/to/service-monitor-ui/dist`, open the hub's address in a browser and sign in with an API token. The files are public; the API still needs a token.
-2. **Host it elsewhere**, for example a static file server: list its address in `svcmon.cors-allowed-origins` (exact origins such as `https://dashboard.example.com`; `*`, paths and trailing slashes are refused and stop the hub from starting), then enter the hub's address under "Hub address" when signing in. If you also open the dashboard through the hub's own address behind a load balancer, list that address too.
+1. **Inside the hub jar.** A jar built with the dashboard serves it at the hub's address with no setting at all: open the address in a browser and sign in with an API token or the local admin account. Nothing in it needs editing; what the page needs to know is set in `application.yml` (below). To build such a jar yourself: build the dashboard (`npm run build` in its repository), copy its `dist` folder to `hub/src/main/resources/ui`, then `cd hub; mvn package` (that folder is ignored by git). `svcmon.ui-enabled: false` makes the hub serve no dashboard, only the API.
+2. **From a folder.** Start the hub with `--svcmon.ui-dir=/path/to/service-monitor-ui/dist` to serve that build instead of, or without, the one inside the jar. The folder then has its own `config.json`. The files are public; the API still needs a token.
+3. **Host it elsewhere**, for example a static file server: list its address in `svcmon.cors-allowed-origins` (exact origins such as `https://dashboard.example.com`; `*`, paths and trailing slashes are refused and stop the hub from starting), then enter the hub's address under "Hub address" when signing in. If you also open the dashboard through the hub's own address behind a load balancer, list that address too.
+
+**Sign-in through a reverse proxy.** Where nginx and a gateway sign people in and the hub accepts the token the proxy adds (see the Keycloak section below), the dashboard inside the jar is switched to that mode in `application.yml`; the hub builds the page's `config.json` from it:
+
+```yaml
+svcmon:
+  ui:
+    proxy:
+      enabled: true
+      api-base: /web-api            # the proxy's path to the hub's /api
+      headers:
+        X-Web-Client: "1"           # sent on every call; the proxy must require it before it turns the session into a token
+      sign-in-url: /oauth2/start
+      sign-out-url: /oauth2/sign_out
+```
+
+Only `enabled` is needed; the other values shown are the defaults. `api-base` must be a path on the same site, the sign-in and sign-out addresses a path or an http(s) address, and `headers` cannot set `Authorization`; anything else stops the hub at start-up. With `ui-dir` the folder's own `config.json` is used instead (see the dashboard's README).
 
 CORS is off unless origins are listed. When on, only those origins may call `/api/` from a browser, with the `Authorization`, `Content-Type` and `Accept` headers, never with cookies; requests without an `Origin` header (the CLI, agents, scripts) are unaffected. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`.
 
@@ -214,6 +234,7 @@ Checks are normally made in the hub (the dashboard, `svcmon check add`, the API)
 - **Taking a check out of the file** switches it off and marks it `removedFromFile`; it is not deleted, so its history stays, and it can be deleted in the hub. It comes back on when the file lists it again. A missing file declares nothing, so deleting the file switches nothing off; an empty list (`{"checks":[]}`) does.
 - **Mistakes:** the hub refuses a bad entry and says why, and the others still apply. A broken file is logged by the agent and the hub keeps the last list it was given.
 - **Manage it from the server:** `svcmon agent check add <type> [target] [flags]`, `svcmon agent check rm <name|id|type [target]>` and `svcmon agent check list [--json]` edit the file and send it to the hub at once, with the agent's own token, so no CLI or dashboard login is needed. `add` takes the flags of `svcmon check add` (`--name --interval --timeout --failures --warn --crit --keyword --expect-status --ignore-tls --no-redirects --cert-warn-days --socket --set k=v`) plus `--id`, `--config FILE` and `--no-declare` (only change the file). The same type and target twice is refused unless you give `--id`; to change a check, `rm` and `add` it again (it keeps its history). The file is saved even if the hub cannot be reached or has the switch off, and the command then exits with a warning; the running agent sends it later.
+- **Start from a template:** `svcmon agent check init` writes `checks.example.json` beside `agent.json` with one example of every kind of check (service, container, CPU, memory, disk, HTTP, TCP, ping). Edit it down to what the server needs and save it as `checks.json`, or skip the file and add checks one at a time with `svcmon agent check add`. The agent never reads the example, so writing it declares nothing. It refuses to replace an existing example unless you add `--force`; `--stdout` prints it, for example `svcmon agent check init --stdout > checks.json`.
 - **If the hub is down:** the agent keeps the check list the hub last gave it in `assigned.json` beside `agent.json` (private to the owner, safe to delete). An agent started while the hub does not answer runs that list at once, buffers results and sends them when the hub is back; the next config poll swaps in the hub's list. A hub that answers with a refusal (token revoked, server deleted) is not worked around. Alerts are still sent by the hub, so a hub that is down alerts nobody. A check the hub never saw has no id and is not in the cache.
 - `svcmon agent declare [--config FILE]` sends the file now and shows what the hub did with each entry; `--dry-run` only checks the file. `svcmon agent run --once` declares first. A UTF-8 byte order mark from Notepad or PowerShell is fine.
 
@@ -228,7 +249,7 @@ svcmon token create --name ci --scope read
 svcmon token list                # also: token revoke <id>
 svcmon join-key create --name "app servers" --cluster prod   # reusable; also: join-key list, join-key revoke <id>
 svcmon agent enroll --hub http://hub:8080 --token svm_e_...   # enroll without installing the service
-svcmon agent check add cpu --warn 80 --crit 90   # on the server: edit checks.json and send it; also: check rm, check list
+svcmon agent check add cpu --warn 80 --crit 90   # on the server: edit checks.json and send it; also: check rm, check list, check init
 svcmon agent declare             # send checks.json to the hub now; --dry-run only checks the file
 svcmon agent uninstall           # stop and remove the OS service
 ```
@@ -339,7 +360,10 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 | `svcmon.retention-days` | 30 | Raw results older than this are deleted |
 | `svcmon.agent-heartbeat-seconds` | 30 | How often agents are told to report |
 | `svcmon.agent-stale-seconds` | 90 | Silence after which a server shows as offline |
-| `svcmon.ui-dir` | unset | Folder with the built web UI, served at `/`. A missing folder only logs a warning |
+| `svcmon.ui-enabled` | true | Serve the dashboard (from `ui-dir`, else from inside the jar if it has one). false makes the hub headless |
+| `svcmon.ui-dir` | unset | Folder with the built web UI, served at `/` instead of the one inside the jar. A missing folder only logs a warning and serves none |
+| `svcmon.ui.proxy.*` | off | Sign-in through a reverse proxy for the dashboard inside the jar: `enabled`, `api-base`, `headers`, `sign-in-url`, `sign-out-url` (see "Host the web UI") |
+| `svcmon.embedded-ui` | `classpath:/ui/` | Where inside the jar the dashboard sits. Only tests change it |
 | `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
 | `svcmon.live-max-sessions` | 50 | Most dashboards that may hold the live WebSocket open at once; more are refused (close code 1013) and keep polling |
 | `svcmon.public-url` | unset | The address people open the dashboard at (`https://monitor.example.com`, a path is fine, no query or fragment). Alert emails then get an "Open in dashboard" button; unset means no button. A wrong value stops the start-up |

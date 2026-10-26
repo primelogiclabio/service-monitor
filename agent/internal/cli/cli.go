@@ -144,6 +144,9 @@ Agent commands (run on a monitored server):
                                   automatically); --socket if the runtime is not in the usual place
   agent check list [--json] [--config FILE]
                                   The checks this server declares (the checks file beside agent.json)
+  agent check init [--config FILE] [--force] [--stdout]
+                                  Write checks.example.json beside agent.json: one example of every kind of
+                                  check, to edit down and save as checks.json (the agent never reads the example)
   agent check add <type> [target] [flags]
                                   Add one to the checks file and tell the hub; no admin login needed. Flags as
                                   for 'check add' (--name --interval --timeout --failures --warn --crit

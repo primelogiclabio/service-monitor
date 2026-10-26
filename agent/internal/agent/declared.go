@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	_ "embed" // ChecksExample
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,20 @@ import (
 
 // ChecksFileName is the file an administrator may put beside agent.json to declare this server's checks.
 const ChecksFileName = "checks.json"
+
+// ChecksExampleFileName is the template "svcmon agent check init" writes. The agent never reads it: it is a list of
+// examples to edit down to the checks a server wants and save as checks.json.
+const ChecksExampleFileName = "checks.example.json"
+
+// ChecksExample is that template: one example of every kind of check, in the form LoadChecks accepts.
+//
+//go:embed checks.example.json
+var ChecksExample []byte
+
+// ChecksExamplePath is where the template is written for an agent config at cfgPath.
+func ChecksExamplePath(cfgPath string) string {
+	return filepath.Join(filepath.Dir(cfgPath), ChecksExampleFileName)
+}
 
 // ChecksPath is where the checks file sits for an agent config at cfgPath.
 func ChecksPath(cfgPath string) string {

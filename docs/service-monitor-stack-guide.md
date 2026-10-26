@@ -125,7 +125,7 @@ Everything else (HTTP, JSON, TCP, files, hashing) is Go's standard library. The 
 | uPlot 1.6.32 | A very small, very fast chart library | The history charts on a check's page |
 | Vitest 3.2.7 | A test runner | The JUnit of this side, run with `npm test` |
 
-The output is just files. The hub serves them from the folder set in `svcmon.ui-dir`, or the files can go on any web server if the hub allows that address with `svcmon.cors-allowed-origins`.
+The output is just files. They can be copied into the hub jar, which then serves them from inside itself; the hub can also serve them from the folder set in `svcmon.ui-dir`, or the files can go on any web server if the hub allows that address with `svcmon.cors-allowed-origins`.
 
 So at run time the hub is the one server a person talks to: the page it serves calls the hub's REST API (`/api/v1`) for data and opens the live WebSocket for updates. Svelte, Vite and uPlot exist only inside the files the build produced; nothing from Node runs next to the hub.
 

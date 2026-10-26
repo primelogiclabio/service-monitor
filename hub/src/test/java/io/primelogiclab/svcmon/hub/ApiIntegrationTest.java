@@ -37,6 +37,8 @@ class ApiIntegrationTest {
         registry.add("svcmon.bootstrap-admin-token", () -> ADMIN);
         registry.add("svcmon.agent-stale-seconds", () -> "3");
         registry.add("svcmon.agent-declared-checks", () -> "false");
+        // Nothing inside the jar either, whatever a local build left in target/classes.
+        registry.add("svcmon.embedded-ui", () -> "classpath:/no-dashboard-here/");
     }
 
     @Value("${local.server.port}")
@@ -99,7 +101,7 @@ class ApiIntegrationTest {
 
     @Test
     void uiAndCorsAreOffByDefault() throws Exception {
-        // No svcmon.ui-dir: nothing is served at the root.
+        // No svcmon.ui-dir and no dashboard inside the jar: nothing is served at the root.
         assertEquals(404, raw("GET", "/", Map.of()).statusCode());
 
         // No svcmon.cors-allowed-origins: no CORS headers, even when an Origin is sent.

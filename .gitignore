@@ -31,3 +31,6 @@ Thumbs.db
 
 # Claude Code local state
 .claude/settings.local.json
+
+# The dashboard, copied into the hub jar by the release build (see the README)
+/hub/src/main/resources/ui/
