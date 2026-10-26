@@ -9,7 +9,7 @@ What it builds, for version `X.Y.Z`:
 | `svcmon-hub-X.Y.Z.jar` | the hub, built with the dashboard inside (`hub/src/main/resources/ui`), tested, and started once by `.github/release/smoke-hub-jar.sh` |
 | `svcmon-hub-X.Y.Z-windows-x64.zip` | `hub/service/windows/build-package.ps1` (jar, WinSW, installer) |
 | `svcmon-hub-X.Y.Z-linux.tar.gz` | the jar and `hub/service/linux/` |
-| `svcmon-X.Y.Z-<os>-<cpu>[.exe]` | the agent and CLI for windows amd64/arm64, linux amd64/arm64, darwin amd64/arm64, freebsd amd64 |
+| `svcmon-agent-X.Y.Z-<os>-<cpu>[.exe]` | the agent and CLI for windows amd64/arm64, linux amd64/arm64, darwin amd64/arm64, freebsd amd64 |
 | `service-monitor-ui-X.Y.Z-dist.zip` | the dashboard alone |
 | `SHA256SUMS` | a checksum of each file above |
 

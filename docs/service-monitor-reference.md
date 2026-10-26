@@ -251,21 +251,23 @@ An upgrade keeps everything that identifies the installation: the hub's database
 ```powershell
 # Windows, elevated PowerShell (run on the Windows machine used for the first install)
 Stop-Service svcmon-agent
-Copy-Item .\svcmon.exe C:\path\to\the\installed\svcmon.exe -Force
+Copy-Item .\svcmon-agent-<version>-windows-amd64.exe C:\path\to\the\installed\svcmon.exe -Force
 Start-Service svcmon-agent
 ```
 
 ```bash
 # Linux (not tried on a real system), as root: same idea with systemd
 systemctl stop svcmon-agent
-cp svcmon /path/to/the/installed/svcmon
+cp svcmon-agent-<version>-linux-amd64 /path/to/the/installed/svcmon
 systemctl start svcmon-agent
 
 # macOS (not tried on a real system), as root
 launchctl unload /Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist
-cp svcmon /path/to/the/installed/svcmon
+cp svcmon-agent-<version>-darwin-arm64 /path/to/the/installed/svcmon
 launchctl load -w /Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist
 ```
+
+The service is shown as "Service Monitor agent" (the hub's is "Service Monitor hub"). An agent installed by an earlier build is listed as "svcmon monitoring agent" and keeps that name through an upgrade; on Windows rename it from an elevated prompt with `sc.exe config svcmon-agent DisplayName= "Service Monitor agent"`.
 
 The Windows steps are the ones that have been run for real (hub and agent upgraded in place on the development machine); the Linux and macOS commands follow from how the installer registers the service.
 

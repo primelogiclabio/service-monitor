@@ -17,8 +17,8 @@ type Options struct {
 func DefaultOptions(exe string, args []string) Options {
 	return Options{
 		Name:        Name,
-		Display:     "svcmon monitoring agent",
-		Description: "Reports service, CPU, memory, disk and network checks to the svcmon hub.",
+		Display:     "Service Monitor agent", // the hub's service is "Service Monitor hub"
+		Description: "Service Monitor agent: runs this server's checks (services, containers, CPU, memory, disk, network) and reports them to the hub.",
 		Exe:         exe,
 		Args:        args,
 	}
