@@ -52,7 +52,7 @@ Rules that keep it simple:
 
 1. **Agents connect out.** Monitored servers open no inbound ports. A server counts as down when its heartbeats stop.
 2. **The hub owns the config.** The agent fetches its check list on connect, so changes are made once, in one place.
-3. **The hub is headless.** Everything, including the UI, goes through the REST API (polling `GET /status` is the default; an optional WebSocket at `/api/v1/live` pushes the same roll-up when it changes, see the README).
+3. **The hub is headless.** Everything, including the UI, goes through the REST API (polling `GET /status` is the default; an optional WebSocket at `/api/v1/live` pushes the same roll-up when it changes, see the reference).
 4. **Each hub is autonomous.** It keeps monitoring and alerting if the console or the link to it goes down. The console shows a hub that stops answering as "hub unreachable".
 5. **The console stays light.** It holds current status and fetches history on demand from the hub that owns it.
 

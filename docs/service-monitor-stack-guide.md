@@ -326,4 +326,4 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 
 **In this repository**
 
-- `README.md` (how to use it), `docs/service-monitor-design.md` (why it is built this way) and `CLAUDE.md` (the working agreement)
+- `README.md` (stack and quick start), `docs/service-monitor-reference.md` (how to use it), `docs/service-monitor-design.md` (why it is built this way) and `CLAUDE.md` (the working agreement)

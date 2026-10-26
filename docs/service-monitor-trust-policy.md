@@ -200,7 +200,7 @@ Things to know and handle yourself:
 
 **Project**
 
-- Main repository: https://github.com/primelogiclabio/service-monitor (licence in `LICENSE`, third-party notice in `NOTICE`, user guide in `README.md`, design in `docs/service-monitor-design.md`)
+- Main repository: https://github.com/primelogiclabio/service-monitor (licence in `LICENSE`, third-party notice in `NOTICE`, front page in `README.md`, user guide in `docs/service-monitor-reference.md`, design in `docs/service-monitor-design.md`)
 - Dashboard repository: https://github.com/primelogiclabio/service-monitor-ui
 - The companion explainer: `docs/service-monitor-stack-guide.md`
 
