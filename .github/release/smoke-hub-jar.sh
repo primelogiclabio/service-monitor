@@ -9,6 +9,8 @@ set -euo pipefail
 jar=${1:?usage: smoke-hub-jar.sh JAR VERSION [PORT]}
 version=${2:?usage: smoke-hub-jar.sh JAR VERSION [PORT]}
 port=${3:-18099}
+# The hub is started from another folder, so the jar needs an absolute path.
+jar=$(cd "$(dirname "$jar")" && pwd)/$(basename "$jar")
 token="smoke-admin-token-0123456789abcdef0123456789abcdef"
 base="http://127.0.0.1:$port"
 
