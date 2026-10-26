@@ -30,7 +30,7 @@ java -jar svcmon-hub-<version>.jar init   # optional: write application.yml, eve
 java -jar svcmon-hub-<version>.jar        # run it; to start at boot see hub/service/README.md
 ```
 
-**2. Add a server.** The dashboard's *Add server* page gives the exact command. On the server, as Administrator or root:
+**2. Add a server.** The dashboard's *Add server* page gives the exact command. On the server, rename the downloaded `svcmon-agent-<version>-<os>-<cpu>` to `svcmon` (`svcmon.exe` on Windows) and keep it where it will stay, since the service runs it from there; then, as Administrator or root:
 
 ```bash
 svcmon agent install --hub http://hub:8080 --token svm_e_...

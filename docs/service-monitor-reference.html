@@ -211,16 +211,16 @@ svcmon agent uninstall           # stop and remove the OS service</code></pre>
 <p><strong>The agent.</strong> The service runs the program file where <code>svcmon agent install</code> put it, so an upgrade replaces that file while the service is stopped. Do not run <code>agent install</code> again: on Windows it says the service is already installed. A stop of a few seconds is far below the 90 seconds (<code>svcmon.agent-stale-seconds</code>) before the hub shows a server offline.</p>
 <pre><code># Windows, elevated PowerShell (run on the Windows machine used for the first install)
 Stop-Service svcmon-agent
-Copy-Item .\svcmon.exe C:\path\to\the\installed\svcmon.exe -Force
+Copy-Item .\svcmon-agent-&lt;version&gt;-windows-amd64.exe C:\path\to\the\installed\svcmon.exe -Force
 Start-Service svcmon-agent</code></pre>
 <pre><code># Linux (not tried on a real system), as root: same idea with systemd
 systemctl stop svcmon-agent
-cp svcmon /path/to/the/installed/svcmon
+cp svcmon-agent-&lt;version&gt;-linux-amd64 /path/to/the/installed/svcmon
 systemctl start svcmon-agent
 
 # macOS (not tried on a real system), as root
 launchctl unload /Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist
-cp svcmon /path/to/the/installed/svcmon
+cp svcmon-agent-&lt;version&gt;-darwin-arm64 /path/to/the/installed/svcmon
 launchctl load -w /Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist</code></pre>
 <p>The service is shown as &quot;Service Monitor agent&quot; (the hub's is &quot;Service Monitor hub&quot;). An agent installed by an earlier build is listed as &quot;svcmon monitoring agent&quot; and keeps that name through an upgrade; on Windows rename it from an elevated prompt with <code>sc.exe config svcmon-agent DisplayName= &quot;Service Monitor agent&quot;</code>.</p>
 <p>The Windows steps are the ones that have been run for real (hub and agent upgraded in place on the development machine); the Linux and macOS commands follow from how the installer registers the service.</p></section>
