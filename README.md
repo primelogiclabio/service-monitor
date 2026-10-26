@@ -21,7 +21,7 @@ Pictures are from a demo hub with made-up servers. More of them, with the story 
 
 ## Quick start
 
-You need Java 21 or newer for the hub. The files come from a release (see [RELEASING.md](RELEASING.md); none is published yet), or build them as shown under *Build from source*.
+You need Java 21 or newer for the hub. The files come from the [latest release](https://github.com/primelogiclabio/service-monitor/releases/latest), whose page has the install and upgrade steps (the Windows zip and Linux tarball install the hub as a service), or build them as shown under *Build from source*. To upgrade, see [Upgrading](docs/service-monitor-reference.md#upgrading).
 
 **1. Start the hub.** It prints an admin token (and the password of its local admin account) once; open <http://localhost:8080> and sign in.
 
