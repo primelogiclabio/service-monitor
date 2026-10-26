@@ -58,7 +58,7 @@ public class StartupSummary {
     private final CheckRepo checks;
     private final AlertChannelRepo channels;
 
-    public StartupSummary(HubProperties props, Environment env, @Value("${svcmon.version:0.1.0}") String version,
+    public StartupSummary(HubProperties props, Environment env, @Value("${svcmon.version:dev}") String version,
                           ServerRepo servers, CheckRepo checks, AlertChannelRepo channels, UiHostingConfig uiHosting) {
         this.props = props;
         this.uiHosting = uiHosting;

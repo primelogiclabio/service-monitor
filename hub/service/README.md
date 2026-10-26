@@ -1,6 +1,6 @@
 # Run the hub as a service
 
-Scripts that install the hub so it starts at boot, restarts if it crashes, and can be removed again. Both do the same job; run the one for your operating system from an elevated prompt (a dry run needs none). The hub needs Java 21 or newer, and a built jar (`cd hub; mvn -DskipTests package`) or one passed with `--jar` / `-JarPath`. On Windows you can instead use the [package](#windows-package-no-download) that has the jar and the service wrapper in it.
+Scripts that install the hub so it starts at boot, restarts if it crashes, and can be removed again. Both do the same job; run the one for your operating system from an elevated prompt (a dry run needs none). The hub needs Java 21 or newer, and a jar: the one beside the script (as in the release downloads), a built one (`cd hub; mvn -DskipTests package`), or one passed with `--jar` / `-JarPath`. On Windows you can instead use the [package](#windows-package-no-download) that has the jar and the service wrapper in it.
 
 | | Linux (systemd) | Windows (WinSW) |
 |---|---|---|
@@ -49,7 +49,7 @@ The wrapper is [WinSW](https://github.com/winsw/winsw) v2.12.0 (`WinSW-x64.exe`,
 
 ## Windows package (no download)
 
-The "Windows hub package" workflow builds `svcmon-hub-<version>-windows-x64.zip` and keeps it as a workflow artifact for 14 days, next to a `.sha256` file. It runs only when someone starts it from the Actions tab and publishes nothing; there is no release yet. Unzip it anywhere, open an elevated PowerShell in the folder and run `.\install.ps1` (add `-DryRun` first). The folder holds the hub jar, `install.ps1`, `uninstall.ps1`, `svcmon-hub.xml`, `WinSW-x64.exe`, this README, `LICENSE`, `NOTICE` and WinSW's license text (`WinSW-LICENSE.txt`). The installer finds the jar and WinSW beside itself, so the install needs no internet access; only Java 21 is still yours to provide. All options of the table above work the same.
+Every release (see [RELEASING.md](../../RELEASING.md)) includes `svcmon-hub-<version>-windows-x64.zip`, and a `svcmon-hub-<version>-linux.tar.gz` holding the jar, `install.sh`, `uninstall.sh` and the unit template (unpack it and run `sudo ./install.sh`, with `--dry-run` first). The "Windows hub package" workflow builds the same zip on demand and keeps it as a workflow artifact for 14 days, next to a `.sha256` file; it publishes nothing. Unzip it anywhere, open an elevated PowerShell in the folder and run `.\install.ps1` (add `-DryRun` first). The folder holds the hub jar, `install.ps1`, `uninstall.ps1`, `svcmon-hub.xml`, `WinSW-x64.exe`, this README, `LICENSE`, `NOTICE` and WinSW's license text (`WinSW-LICENSE.txt`). The installer finds the jar and WinSW beside itself, so the install needs no internet access; only Java 21 is still yours to provide. All options of the table above work the same.
 
 WinSW is not stored in the git repository. The workflow downloads it, checks the SHA-256 pinned in `install.ps1` and stops if it does not match. To build the same package on your own machine run `hub\service\windows\build-package.ps1` after `cd hub; mvn -DskipTests package` (the zip lands in `dist`; `-WinSWPath` uses a copy you already have instead of downloading it). The package is not signed.
 

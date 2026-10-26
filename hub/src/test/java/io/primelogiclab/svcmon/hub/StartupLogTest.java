@@ -33,11 +33,16 @@ class StartupLogTest {
     @Value("${local.server.port}")
     int port;
 
+    /** Filled in from the pom by Maven, so the hub reports the version it was built as. */
+    @Value("${svcmon.version}")
+    String version;
+
     @Test
     void logsAddressAndWatchedThingsOnceReady(CapturedOutput output) {
         String log = output.getAll();
 
-        assertTrue(log.contains("Service Monitor hub 0.1.0 is ready"), log);
+        assertFalse(version.contains("@"), "the pom version was not filled in: " + version);
+        assertTrue(log.contains("Service Monitor hub " + version + " is ready"), log);
         assertTrue(log.contains("http://localhost:" + port), log);
         assertTrue(log.contains("nothing yet"), log);
         assertFalse(log.contains(ADMIN), "the admin token must never be logged");
