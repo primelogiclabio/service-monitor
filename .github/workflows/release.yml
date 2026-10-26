@@ -8,7 +8,8 @@ name: Release
 # artifact instead, creating no release, so a release can be rehearsed with any version number.
 #
 # Files: the hub jar (dashboard inside), a Windows service zip, a Linux service tarball, the agent and CLI for seven
-# platforms, the dashboard alone, and SHA256SUMS. Nothing is signed.
+# platforms, the dashboard alone, and SHA256SUMS. There is no code-signing certificate; each file of a real release
+# gets a build provenance attestation instead (a rehearsal makes none, since those records are public).
 on:
   push:
     tags: ['v*']
@@ -277,6 +278,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write      # the attestation is signed with this run's identity
+      attestations: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -296,6 +299,11 @@ jobs:
           sha256sum -- * > ../SHA256SUMS
           mv ../SHA256SUMS SHA256SUMS
           cat SHA256SUMS
+      - name: Attest where the files came from
+        if: needs.version.outputs.publish == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: files/*
       - name: Create the draft release
         if: needs.version.outputs.publish == 'true'
         run: |

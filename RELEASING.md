@@ -34,4 +34,4 @@ The version comes only from the tag: the workflow sets the hub's version with Ma
 ## Mistakes
 
 - A tag whose release is wrong: delete the draft release and the tag (`git push origin :refs/tags/vX.Y.Z`), fix, tag again. Do not move a tag that was published.
-- Nothing is signed. If that changes, the trust policy (section 6) changes with it.
+- There is no code-signing certificate (Windows and macOS warn about an unknown publisher). Each file of a real release instead has a build provenance attestation, made by the workflow on a tag run only, never on a rehearsal; check one with `gh attestation verify <file> --repo primelogiclabio/service-monitor`. If code signing is added, the trust policy (section 6) changes with it.
