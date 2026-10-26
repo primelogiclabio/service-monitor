@@ -147,7 +147,7 @@ jobs:
           unzip -l "$jar" | grep -q 'BOOT-INF/classes/ui/index.html'
           mkdir -p out
           cp "$jar" "out/svcmon-hub-$VERSION.jar"
-          .github/release/smoke-hub-jar.sh "out/svcmon-hub-$VERSION.jar" "$VERSION"
+          bash .github/release/smoke-hub-jar.sh "out/svcmon-hub-$VERSION.jar" "$VERSION"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-hub-jar
