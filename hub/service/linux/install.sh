@@ -21,7 +21,8 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./install.sh [--jar PATH] [--java PATH] [--port N] [--dry-run]
 
-  --jar PATH    hub jar to install (default: hub/target/svcmon-hub-*.jar next to this script's repo)
+  --jar PATH    hub jar to install (default: svcmon-hub-*.jar beside this script, as in the release tarball,
+                otherwise hub/target/svcmon-hub-*.jar of this repository)
   --java PATH   java 21+ to run it with (default: java from PATH)
   --port N      HTTP port (default 8080 for a new install). On an existing install it changes server.port in
                 application.yml; without --port the port already in that file is kept.
@@ -66,11 +67,17 @@ command -v curl >/dev/null || problem "curl is needed to check that the hub star
 if [ -n "$PORT" ] && ! valid_port "$PORT"; then problem "--port must be a number from 1 to 65535"; fi
 
 if [ -z "$JAR" ]; then
-  matches=("$SCRIPT_DIR"/../../target/svcmon-hub-*.jar)
+  # A release tarball keeps the jar beside this script; a source checkout has it in hub/target.
+  matches=("$SCRIPT_DIR"/svcmon-hub-*.jar)
+  where="beside this script"
   if [ ! -f "${matches[0]}" ]; then
-    problem "no jar found; build it (cd hub && mvn -DskipTests package) or pass --jar"
+    matches=("$SCRIPT_DIR"/../../target/svcmon-hub-*.jar)
+    where="in hub/target"
+  fi
+  if [ ! -f "${matches[0]}" ]; then
+    problem "no jar found beside this script or in hub/target; build it (cd hub && mvn -DskipTests package) or pass --jar"
   elif [ "${#matches[@]}" -gt 1 ]; then
-    problem "more than one jar in hub/target; pick one with --jar"
+    problem "more than one jar $where; pick one with --jar"
   else
     JAR=${matches[0]}
   fi

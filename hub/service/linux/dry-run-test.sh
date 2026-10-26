@@ -89,6 +89,22 @@ if [ "$(id -u)" -eq 0 ] && command -v script >/dev/null && [ -d /run/systemd/sys
   check "n cancels" has "Cancelled; nothing was changed."
 fi
 
+echo "== the release tarball layout: the jar sits beside install.sh"
+TARBALL=$(mktemp -d)
+trap '[ -z "$LISTENER" ] || kill "$LISTENER" 2>/dev/null || true; rm -rf "$TARBALL"' EXIT
+cp "$DIR/install.sh" "$DIR/uninstall.sh" "$DIR/$NAME.service" "$TARBALL/"
+: >"$TARBALL/$NAME-9.9.9.jar"
+OUT=$("$TARBALL/install.sh" --dry-run 2>&1) && CODE=0 || CODE=$?
+check "a jar beside the script is found without --jar" test "$CODE" -eq 0
+check "the plan installs that jar" has "$NAME-9.9.9.jar -> /opt/$NAME/$NAME.jar"
+: >"$TARBALL/$NAME-9.9.8.jar"
+OUT=$("$TARBALL/install.sh" --dry-run 2>&1) && CODE=0 || CODE=$?
+check "two jars beside the script are refused" test "$CODE" -eq 1
+check "and the message says where" has "more than one jar beside this script"
+OUT=$("$TARBALL/install.sh" --dry-run --jar "$TARBALL/$NAME-9.9.8.jar" 2>&1) && CODE=0 || CODE=$?
+check "--jar still picks one of them" test "$CODE" -eq 0
+check "and it is the one named" has "$NAME-9.9.8.jar -> /opt/$NAME/$NAME.jar"
+
 echo "== nothing was changed"
 after=$(state)
 [ "$before" = "$after" ] || { diff <(echo "$before") <(echo "$after") || true; fail "the dry runs changed the machine"; }

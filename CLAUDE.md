@@ -33,6 +33,7 @@ Run these from the folder shown. Windows is the main development machine, in Pow
 - UI (separate repo): `npm test`, `npm run build`; set `npm_config_cache=F:\software\npm-cache`.
 - CI (`.github/workflows/ci.yml`) runs hub tests on Ubuntu and Windows, agent tests on Ubuntu, Windows and macOS, a gofmt check, a cross-compile of every platform, and an installer dry run (`hub/service/*/dry-run-test.*`) on Ubuntu and Windows. The aggregate check **CI passed** is required on `main`. A change that only touches Markdown, `docs/`, `LICENSE` or `NOTICE` skips those jobs (a "changed files" job decides); **CI passed** still runs and then requires them all to be skipped.
 - A test that proves a fix should fail on the old code; check that when you fix a bug.
+- Releases: a `v*` tag builds every file and a draft GitHub release (`.github/workflows/release.yml`, steps in `RELEASING.md`); the hub jar carries the dashboard (`hub/src/main/resources/ui`, git-ignored, filled by the release build) and its version comes from the tag. Rehearse with the workflow's manual run; `.github/release/smoke-hub-jar.sh` can be run by hand against any jar.
 
 ## Git and pull requests
 

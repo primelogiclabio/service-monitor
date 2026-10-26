@@ -23,7 +23,7 @@ public class HubController {
     private final long startedAt = System.currentTimeMillis();
 
     public HubController(HubIdentity identity, @Value("${spring.application.name}") String name,
-                         @Value("${svcmon.version:0.1.0}") String version) {
+                         @Value("${svcmon.version:dev}") String version) {
         this.identity = identity;
         this.version = version;
     }
