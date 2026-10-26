@@ -267,6 +267,8 @@ cp svcmon /path/to/the/installed/svcmon
 launchctl load -w /Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist
 ```
 
+The service is shown as "Service Monitor agent" (the hub's is "Service Monitor hub"). An agent installed by an earlier build is listed as "svcmon monitoring agent" and keeps that name through an upgrade; on Windows rename it from an elevated prompt with `sc.exe config svcmon-agent DisplayName= "Service Monitor agent"`.
+
 The Windows steps are the ones that have been run for real (hub and agent upgraded in place on the development machine); the Linux and macOS commands follow from how the installer registers the service.
 
 ## Alerts
