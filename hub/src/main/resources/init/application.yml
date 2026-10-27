@@ -82,6 +82,11 @@
 #       - "fc00::/7"
 #     public-proxies:
 #       - 127.0.0.2
+##   The audit: who signed in (or was refused) and who changed what, with names and addresses but never a request
+##   body, a password or a token. Administrators read it in Settings > Activity. Days to keep each part, 1 to 3650.
+#   audit:
+#     sign-in-days: 30
+#     change-days: 365
 ##   API tokens are for the CLI and scripts. Use this value as the first admin token instead of a generated one (at
 ##   least 32 characters).
 #   bootstrap-admin-token: choose-a-long-random-value-of-at-least-32-characters

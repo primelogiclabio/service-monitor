@@ -6,6 +6,8 @@ import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService;
+import io.primelogiclab.svcmon.hub.audit.AuditService.Actor;
 import io.primelogiclab.svcmon.hub.live.LiveHandler;
 import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
@@ -40,6 +42,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * internal network an API token never works, a user only when svcmon.access.allow-outside is true and the request
  * came over HTTPS, a JWT only while allow-outside is true. The /agent/ calls are never refused for where they come
  * from: agents connect out to the hub from wherever their servers are.
+ * <p>
+ * Each change a person makes (a POST, PUT, PATCH or DELETE that got past the sign-in) goes to the audit once it has
+ * been answered, refused ones included; a refusal for where a request comes from goes there as a sign-in event (see
+ * {@link AuditService}).
  */
 @Component
 public class TokenAuthFilter extends OncePerRequestFilter {
@@ -63,12 +69,15 @@ public class TokenAuthFilter extends OncePerRequestFilter {
     private final JwtAuth jwt;
     private final SessionService sessions;
     private final NetworkPolicy network;
+    private final AuditService audit;
 
-    public TokenAuthFilter(TokenService tokens, JwtAuth jwt, SessionService sessions, NetworkPolicy network) {
+    public TokenAuthFilter(TokenService tokens, JwtAuth jwt, SessionService sessions, NetworkPolicy network,
+                           AuditService audit) {
         this.tokens = tokens;
         this.jwt = jwt;
         this.sessions = sessions;
         this.network = network;
+        this.audit = audit;
     }
 
     @Override
@@ -121,7 +130,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
                 refuse(req, resp, path, refusal);
                 return;
             }
-            viaJwt(req, resp, chain, path, jwt.verify(raw));
+            viaJwt(req, resp, chain, path, raw, jwt.verify(raw));
             return;
         }
         // A person's API token works from inside only; without any credential, say what would help from there.
@@ -139,11 +148,45 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         if (!required(req.getMethod(), path).contains(token.get().scope())) {
             log.warn("Rejected {} {} from {}: token '{}' has scope {}", req.getMethod(), path, req.getRemoteAddr(),
                     token.get().name(), token.get().scope());
-            reject(resp, 403, "forbidden", "This token's scope does not allow " + req.getMethod() + " " + path);
+            String message = "This token's scope does not allow " + req.getMethod() + " " + path;
+            if (isPerson(token.get())) {
+                rejectChange(req, resp, new Actor(token.get().name(), "token"), "forbidden", message);
+            } else {
+                reject(resp, 403, "forbidden", message);
+            }
             return;
         }
         req.setAttribute(ATTR, token.get());
-        chain.doFilter(req, resp);
+        if (isPerson(token.get())) {
+            proceed(req, resp, chain, new Actor(token.get().name(), "token"));
+        } else {
+            chain.doFilter(req, resp); // agents: only their registration is audited, by AgentController
+        }
+    }
+
+    /** A token of the CLI or a script, as opposed to an agent's or one that registers agents. */
+    private static boolean isPerson(TokenRecord token) {
+        return token.scope() == Scope.READ || token.scope() == Scope.ADMIN;
+    }
+
+    /** Lets a person's request through, then records it in the audit when it changed something. */
+    private void proceed(HttpServletRequest req, HttpServletResponse resp, FilterChain chain, Actor actor)
+            throws IOException, ServletException {
+        boolean answered = false;
+        try {
+            chain.doFilter(req, resp);
+            answered = true;
+        } finally {
+            audit.requestDone(req, answered ? resp.getStatus() : 500, actor);
+        }
+    }
+
+    /** Refuses a request from someone the hub knows, and records it when it was meant to change something. */
+    private void rejectChange(HttpServletRequest req, HttpServletResponse resp, Actor actor, String code,
+                              String message) throws IOException {
+        req.setAttribute(AuditService.ERROR_ATTR, code);
+        audit.requestDone(req, 403, actor);
+        reject(resp, 403, code, message);
     }
 
     /** GET, POST and DELETE of /api/v1/session: who is signed in, signing in and signing out. */
@@ -162,25 +205,26 @@ public class TokenAuthFilter extends OncePerRequestFilter {
             return;
         }
         String method = req.getMethod();
+        Actor actor = Actor.user(who.user().username());
         if (!isRead(method) && !fromThisSite(req)) {
             log.warn("Rejected {} {} from {} for user '{}': not sent by the hub's own page", method, path,
                     req.getRemoteAddr(), who.user().username());
-            reject(resp, 403, "cross_site", "This request must come from the hub's own page");
+            rejectChange(req, resp, actor, "cross_site", "This request must come from the hub's own page");
             return;
         }
         if (who.user().mustChangePassword() && !path.equals(PASSWORD) && !path.equals(ME)
                 && !path.startsWith(SESSION + "/")) {
-            reject(resp, 403, "password_change_required", "Choose a new password first");
+            rejectChange(req, resp, actor, "password_change_required", "Choose a new password first");
             return;
         }
         if (!required(method, path).contains(who.user().role().scope())) {
             log.warn("Rejected {} {} from {}: user '{}' has the role {}", method, path, req.getRemoteAddr(),
                     who.user().username(), who.user().role());
-            reject(resp, 403, "forbidden", "Your role does not allow " + method + " " + path);
+            rejectChange(req, resp, actor, "forbidden", "Your role does not allow " + method + " " + path);
             return;
         }
         req.setAttribute(USER_ATTR, who);
-        chain.doFilter(req, resp);
+        proceed(req, resp, chain, actor);
     }
 
     private static boolean isRead(String method) {
@@ -200,7 +244,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
     }
 
     /** A JWT: only an administrator's is accepted, and only where an ADMIN token would do. */
-    private void viaJwt(HttpServletRequest req, HttpServletResponse resp, FilterChain chain, String path,
+    private void viaJwt(HttpServletRequest req, HttpServletResponse resp, FilterChain chain, String path, String raw,
                         JwtAuth.Result who) throws IOException, ServletException {
         switch (who.kind()) {
             case INVALID -> {
@@ -219,6 +263,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
             case FORBIDDEN -> {
                 log.warn("Rejected {} {} from {}: user '{}' {}", req.getMethod(), path, req.getRemoteAddr(), who.user(),
                         who.reason());
+                audit.jwtUsed(raw, who.user(), "forbidden", req.getRemoteAddr());
                 reject(resp, 403, "forbidden", "Only administrators may use the hub");
                 return;
             }
@@ -226,11 +271,13 @@ public class TokenAuthFilter extends OncePerRequestFilter {
                 if (!required(req.getMethod(), path).contains(Scope.ADMIN)) {
                     log.warn("Rejected {} {} from {}: user '{}' is not an agent", req.getMethod(), path,
                             req.getRemoteAddr(), who.user());
-                    reject(resp, 403, "forbidden", "A signed-in user may not call " + req.getMethod() + " " + path);
+                    rejectChange(req, resp, new Actor(who.user(), "jwt"), "forbidden",
+                            "A signed-in user may not call " + req.getMethod() + " " + path);
                     return;
                 }
+                audit.jwtUsed(raw, who.user(), "ok", req.getRemoteAddr());
                 req.setAttribute(JWT_USER_ATTR, who.user());
-                chain.doFilter(req, resp);
+                proceed(req, resp, chain, new Actor(who.user(), "jwt"));
             }
         }
     }
@@ -259,7 +306,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         }
         if (path.startsWith("/api/v1/tokens") || path.startsWith("/api/v1/enrollment-tokens")
                 || path.startsWith("/api/v1/alert-channels") || path.startsWith("/api/v1/join-keys")
-                || path.equals("/api/v1/users") || path.startsWith("/api/v1/users/")) {
+                || path.equals("/api/v1/users") || path.startsWith("/api/v1/users/") || path.equals("/api/v1/audit")) {
             return EnumSet.of(Scope.ADMIN);
         }
         // Everyone's own: their password, their sessions (an administrator sees all), a ticket for the live view.
@@ -271,11 +318,12 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         return read ? EnumSet.of(Scope.READ, Scope.ADMIN) : EnumSet.of(Scope.ADMIN);
     }
 
-    private static void refuse(HttpServletRequest req, HttpServletResponse resp, String path,
-                               NetworkPolicy.Refusal refusal) throws IOException {
+    private void refuse(HttpServletRequest req, HttpServletResponse resp, String path, NetworkPolicy.Refusal refusal)
+            throws IOException {
         log.warn("Refused {} {} from {}: {}", req.getMethod(), path, req.getRemoteAddr(),
                 refusal == NetworkPolicy.Refusal.INSECURE_TRANSPORT ? "outside the internal network over plain HTTP"
                         : "outside the internal network");
+        audit.refused(refusal.code, req.getRemoteAddr(), req.getMethod() + " " + path);
         reject(resp, 403, refusal.code, refusal.message);
     }
 

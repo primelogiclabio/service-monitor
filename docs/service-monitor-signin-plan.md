@@ -25,9 +25,9 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 |---|---|---|
 | 0 | Strict settings: an unknown or removed `svcmon.*` setting stops the hub before it touches the database, naming the setting and where it came from | Done, https://github.com/primelogiclabio/service-monitor/pull/37 |
 | 1 | Users and cookie sessions, forced password change, Settings screen, `users reset` | Done, https://github.com/primelogiclabio/service-monitor/pull/38 and https://github.com/primelogiclabio/service-monitor-ui/pull/16 |
-| 2 | Internal-only access | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
-| 3 | Audit of sign-ins and changes | Next |
-| 4 | The gateway as a gate only | Planned; details settled when it starts |
+| 2 | Internal-only access | Done, https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
+| 3 | Audit of sign-ins and changes | Built, in review |
+| 4 | The gateway as a gate only | Next; details settled when it starts |
 
 Phases 0 to 3 should all be in the next release. Phase 1 alone is safe to run inside a network; with phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
@@ -75,6 +75,16 @@ As planned below, plus:
 - **Changes:** every change a person makes through the API, recorded after it runs: the method, the route, the id in the path, the result and who. Request bodies are never recorded, so no secrets. Of what agents do, only a new server's registration is recorded.
 - **API and screen:** `GET /api/v1/audit` for administrators, and an Activity section in Settings.
 - **Retention:** `svcmon.audit.sign-in-days` (30) and `svcmon.audit.change-days` (365).
+
+### Phase 3, as built
+
+As planned above, plus:
+
+- A failed sign-in's reason is one of `unknown_user`, `wrong_password`, `account_disabled` and `initial_password_inside_only`; the person still gets the same answer for all of them. A wrong current password when changing one's own is recorded too.
+- A refusal for where a request comes from is recorded for any request, not only signing in, once per address, refusal and 15 minutes.
+- Changes include refused ones (for example a read-only user's write, recorded as `forbidden`), and the user screens name the user (`dave`, with `role READ`) instead of an id. Signing in and out, password changes and resets, and ending a sign-in are sign-in events and are not written again as changes; the live ticket is neither.
+- `GET /api/v1/audit` pages by event id: `before` takes the `next` of the previous page.
+- Writing an event never fails a request: a database error is logged instead.
 
 ### Phase 4: the gateway as a gate only
 

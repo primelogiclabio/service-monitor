@@ -14,7 +14,7 @@ This document is for anyone deciding whether to run Service Monitor, or who has 
 | Does it download anything while it runs? | No. The hub and agent make only the connections listed in section 5 |
 | Does it download anything when you install it? | One case: the Windows hub installer fetches the service wrapper WinSW from GitHub only when you have not supplied a copy, and refuses it unless it matches a pinned SHA-256 (section 6). Nothing else |
 | What does it install on a server? | The agent registers itself as a service when an admin runs `svcmon agent install`; the hub installers register the hub the same way. No package manager is used and no other software is added |
-| What data does it keep? | Names and settings of what you chose to monitor, and the results of those checks for 30 days (section 4). No personal data about your users |
+| What data does it keep? | Names and settings of what you chose to monitor, and the results of those checks for 30 days (section 4). About the people who use it: their user name and role, and an audit of sign-ins (30 days) and changes (365 days) with user names and network addresses. Nothing more |
 | Who receives data from it? | Only the alert channels and sign-in provider you configure (section 5) |
 | Does a monitored server open a port for it? | No. Agents only connect out |
 | Has it been independently audited? | No |
@@ -106,11 +106,12 @@ In one SQLite file in its data folder:
 - API tokens, as SHA-256 fingerprints only, never the tokens themselves;
 - alert channels, including their secrets: webhook and Slack or Discord addresses, signing secrets and the SMTP password;
 - the users: name, role, password as a salted PBKDF2 hash, when they last signed in and changed their password;
-- while someone is signed in: a SHA-256 fingerprint of their cookie, the client address, the browser's own description of itself (user agent) and the times; deleted when the sign-in ends.
+- while someone is signed in: a SHA-256 fingerprint of their cookie, the client address, the browser's own description of itself (user agent) and the times; deleted when the sign-in ends;
+- the audit, which administrators read in Settings > Activity. Sign-ins are kept 30 days (`svcmon.audit.sign-in-days`): signing in and out, failed attempts with the reason, refusals for too many attempts or for coming from outside, and password changes and resets. Changes are kept 365 days (`svcmon.audit.change-days`): every other POST, PUT, PATCH or DELETE a person sends, and each agent that registers. An event holds the time, the user name or API token name (a name nobody has is written as "unknown", since it may be a mistyped password), the client address, inside or outside, what was called (such as `DELETE /api/v1/checks/{id}`), the id or user name it was about, and how it ended. It never holds a request body, a password, a token or a cookie.
 
 ### What it does not collect
 
-Files or their contents, documents, passwords or keys of your systems, environment variables, process lists, network traffic, screenshots, location, or anything about the people who use the dashboard beyond their user name and role, the sign-in details above and the names in the hub's log. There are no user profiles and no advertising or tracking identifiers.
+Files or their contents, documents, passwords or keys of your systems, environment variables, process lists, network traffic, screenshots, location, or anything about the people who use the dashboard beyond their user name and role, the sign-in details and the audit above, and the names in the hub's log. There are no user profiles and no advertising or tracking identifiers.
 
 ### In the browser
 

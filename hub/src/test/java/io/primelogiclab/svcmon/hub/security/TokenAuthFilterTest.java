@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 
 import java.util.EnumSet;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService;
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.model.Role;
 import io.primelogiclab.svcmon.hub.model.Scope;
@@ -50,7 +51,7 @@ class TokenAuthFilterTest {
     @Test
     void theLiveSocketChecksItsTokenInItsFirstFrameInsteadOfAHeader() throws Exception {
         var filter = new TokenAuthFilter(mock(TokenService.class), new JwtAuth(HubProperties.Jwt.DISABLED, null),
-                mock(SessionService.class), INSIDE_ONLY);
+                mock(SessionService.class), INSIDE_ONLY, mock(AuditService.class));
 
         var liveChain = new MockFilterChain();
         var live = new MockHttpServletRequest("GET", "/api/v1/live");
@@ -67,7 +68,7 @@ class TokenAuthFilterTest {
     }
 
     private static TokenAuthFilter jwtFilter() {
-        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), mock(SessionService.class), INSIDE_ONLY);
+        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), mock(SessionService.class), INSIDE_ONLY, mock(AuditService.class));
     }
 
     private static MockHttpServletResponse run(TokenAuthFilter filter, MockHttpServletRequest req, MockFilterChain chain)
@@ -135,7 +136,7 @@ class TokenAuthFilterTest {
         var auth = new JwtAuth(new HubProperties.Jwt("http://127.0.0.1:1/realms/main", JwtFixture.AUDIENCE, null,
                 "realm_access.roles", JwtFixture.ADMIN_ROLE), null);
         var chain = new MockFilterChain();
-        var resp = run(new TokenAuthFilter(mock(TokenService.class), auth, mock(SessionService.class), INSIDE_ONLY),
+        var resp = run(new TokenAuthFilter(mock(TokenService.class), auth, mock(SessionService.class), INSIDE_ONLY, mock(AuditService.class)),
                 bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin()), chain);
         assertNull(chain.getRequest());
         assertEquals(503, resp.getStatus());
@@ -158,7 +159,7 @@ class TokenAuthFilterTest {
                 null, null, 0);
         org.mockito.Mockito.when(tokens.authenticate("test-admin-token-0123456789abcdef0123456789abcdef"))
                 .thenReturn(java.util.Optional.of(record));
-        var filter = new TokenAuthFilter(tokens, JwtAuthTest.auth(), mock(SessionService.class), INSIDE_ONLY);
+        var filter = new TokenAuthFilter(tokens, JwtAuthTest.auth(), mock(SessionService.class), INSIDE_ONLY, mock(AuditService.class));
 
         var chain = new MockFilterChain();
         var req = bearer("GET", "/api/v1/status", "test-admin-token-0123456789abcdef0123456789abcdef");
@@ -183,7 +184,7 @@ class TokenAuthFilterTest {
 
         var open = new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), mock(SessionService.class),
                 new NetworkPolicy(new HubProperties.Access(true, HubProperties.Access.DEFAULT.internalNetworks(),
-                        java.util.List.of())));
+                        java.util.List.of())), mock(AuditService.class));
         var allowed = outside(bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin()));
         var openChain = new MockFilterChain();
         assertEquals(200, run(open, allowed, openChain).getStatus());
@@ -208,7 +209,7 @@ class TokenAuthFilterTest {
     @Test
     void whenJwtSignInIsOffAJwtIsJustAnUnknownToken() throws Exception {
         var filter = new TokenAuthFilter(mock(TokenService.class), new JwtAuth(HubProperties.Jwt.DISABLED, null),
-                mock(SessionService.class), INSIDE_ONLY);
+                mock(SessionService.class), INSIDE_ONLY, mock(AuditService.class));
         var chain = new MockFilterChain();
         var resp = run(filter, bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin()), chain);
         assertNull(chain.getRequest());
@@ -265,7 +266,7 @@ class TokenAuthFilterTest {
         SessionService sessions = mock(SessionService.class);
         org.mockito.Mockito.when(sessions.authenticate(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(java.util.Optional.ofNullable(who));
-        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), sessions, INSIDE_ONLY);
+        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), sessions, INSIDE_ONLY, mock(AuditService.class));
     }
 
     private static MockHttpServletRequest withCookie(MockHttpServletRequest r) {

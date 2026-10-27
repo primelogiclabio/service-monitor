@@ -13,9 +13,10 @@ Everything the [README](../README.md) leaves out: what is built and how far it h
 | Agent service install (`svcmon agent install`: Windows service, systemd unit, macOS launchd plist) | Built. The Windows service install and the Linux systemd install (Ubuntu 26.04) have run for real; the macOS launchd one is only compiled |
 | Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners; another builds a Windows package with the jar and WinSW so the install needs no download (not published as a release yet). No macOS installer |
 | Alert channels | Webhook (optionally signed), Slack, Discord and email (HTML with a plain-text part, or plain text only), plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
-| People's sign-in: users (administrator or read-only), cookie sessions, forced change of a first password, Settings screen, `users reset` | Built: hub and dashboard tests, and a run of both together on a throwaway hub. Not yet installed anywhere. An audit is next; see the [sign-in and access plan](https://github.com/primelogiclabio/service-monitor/blob/main/docs/service-monitor-signin-plan.md) |
+| People's sign-in: users (administrator or read-only), cookie sessions, forced change of a first password, Settings screen, `users reset` | Built: hub and dashboard tests, and a run of both together on a throwaway hub. Not yet installed anywhere. The gateway as a gate only is next; see the [sign-in and access plan](https://github.com/primelogiclabio/service-monitor/blob/main/docs/service-monitor-signin-plan.md) |
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub serves it from inside its jar when built with it, or from a folder (`svcmon.ui-dir`), or it is allowed from another address (`svcmon.cors-allowed-origins`) |
 | Internal-only access (`svcmon.access.*`): people outside the internal network refused by default, or let in over HTTPS only | Built: hub and dashboard tests, and a run against a throwaway hub. Not yet installed anywhere |
+| Audit of sign-ins and changes (Settings > Activity, `GET /api/v1/audit`) | Built: hub and dashboard tests, and a run against a throwaway hub. Not yet installed anywhere |
 | Multi-hub console | Not started |
 
 ## Deployment model
@@ -201,6 +202,26 @@ svcmon:
 
 **Check it.** The start-up log has an `Access:` line with the setting and both lists. A signed-in user sees the same in Settings, under Access, together with how the hub sees their browser: inside or outside, its address, and whether it came over HTTPS. `GET /api/v1/access` returns the same. Open the dashboard from a phone on mobile data and confirm that it is seen as outside, and with `allow-outside: false` that it is refused.
 
+## Audit
+
+The hub keeps a record of who signed in and who changed what. Administrators read it in Settings, under Activity, or at `GET /api/v1/audit`; nobody else can.
+
+| Part | Kept | What is in it |
+|---|---|---|
+| Sign-ins | 30 days (`svcmon.audit.sign-in-days`) | Signing in, with the reason a failure failed (`unknown_user`, `wrong_password`, `account_disabled`, `initial_password_inside_only`); too many attempts; refused for where it came from (`outside_not_allowed`, `insecure_transport`); signing out; a sign-in ended by its owner or an administrator; password changes (and wrong current passwords); resets, by an administrator or with `users reset`; the first use of each JWT |
+| Changes | 365 days (`svcmon.audit.change-days`) | Every POST, PUT, PATCH and DELETE a person sends under `/api/`, whether it worked or not (except those that are sign-in events: signing in and out, password changes and resets, ending a sign-in), as its route (`DELETE /api/v1/checks/{id}`), the id or user name it was about and the outcome (`ok` or the hub's error code); each agent that registers, with the name of the enrollment token or join key it used |
+
+Each event also has the time, who it was (a user name, an API token's name, or `unknown`), the client address and whether that is inside or outside.
+
+What it never holds:
+- A request body, so no check settings, alert addresses or secrets.
+- A password, token or cookie.
+- A name nobody has: it is written as `unknown`, since it may be a password typed into the wrong box.
+
+Text is cut to one line of at most 200 characters. The agents' own calls (reports, heartbeats, declared checks) are not recorded, and neither is reading. A refusal that repeats (too many attempts, or a script outside trying again and again) is recorded once per address every 15 minutes.
+
+`GET /api/v1/audit` answers newest first, as `{"events": [...], "next": <id>}`. It takes `category` (`sign_in` or `change`; both when left out), `limit` (1 to 500, 100 by default) and `before`: pass `next` to get the page after. `next` is absent on the last page. Old events are deleted every few hours, each part after its own number of days (1 to 3650).
+
 ## Build the agent and CLI
 
 Needs Go 1.27 or newer (https://go.dev/dl/). One command builds every platform, with no C toolchain:
@@ -365,6 +386,7 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 | `GET /hub` | read | Hub ID, version, Java runtime age and warning |
 | `GET /session`, `POST /session`, `DELETE /session` | none | Who is signed in, and how the hub sees the browser (`network` inside or outside, `address`, `signInAllowed`, and `signInRefusal` when it is not); sign in with a user name and password (sets the cookie; wrong attempts are throttled); sign out |
 | `GET /access` | read | Where people may use the hub from (`allowOutside`, `internalNetworks`, `publicProxies`) and how it sees the caller (`network`, `address`, `secure`) |
+| `GET /audit?category=&before=&limit=` | admin | The audit, newest first: `{events, next}`; see "Audit" |
 | `POST /session/live-ticket` | a user | A one-time ticket for the live view, valid 30 seconds |
 | `PUT /me/password` | a user | Change your own password: `{"currentPassword", "newPassword"}` |
 | `GET /sessions`, `DELETE /sessions/{id}` | a user | Your sign-ins (an administrator sees and ends everyone's) |
@@ -428,6 +450,8 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 | `svcmon.access.internal-networks` | loopback and the private ranges | The internal network, as IP addresses or ranges (`10.0.0.0/8`); setting it replaces the whole list. A name or a `/0` range stops the start-up |
 | `svcmon.access.public-proxies` | empty | Proxies that people outside come through; a request that shows up as one of them is outside |
 | `server.tomcat.remoteip.internal-proxies` | private and loopback addresses | The proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` the hub believes, as a regular expression; narrow it to your load balancers |
+| `svcmon.audit.sign-in-days` | 30 | Days the audit keeps sign-in events, 1 to 3650 |
+| `svcmon.audit.change-days` | 365 | Days the audit keeps change events, 1 to 3650 |
 | `svcmon.alert-retry-delays-ms` | `0,2000,5000` | Waits between delivery attempts for a failing alert channel, in milliseconds |
 | `svcmon.allow-insecure-alert-urls` | false | Lets Slack and Discord URLs use http; for tests and local receivers only |
 | `svcmon.bootstrap-admin-token` | unset | Use this value (32+ characters) as the first admin token on a fresh database instead of generating one; ignored once an admin token exists |

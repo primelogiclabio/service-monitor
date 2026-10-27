@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService;
 import io.primelogiclab.svcmon.hub.core.ApiException;
 import io.primelogiclab.svcmon.hub.model.Role;
 import io.primelogiclab.svcmon.hub.model.Scope;
@@ -66,11 +67,13 @@ public class SessionController {
     private final UserService users;
     private final SessionService sessions;
     private final NetworkPolicy network;
+    private final AuditService audit;
 
-    public SessionController(UserService users, SessionService sessions, NetworkPolicy network) {
+    public SessionController(UserService users, SessionService sessions, NetworkPolicy network, AuditService audit) {
         this.users = users;
         this.sessions = sessions;
         this.network = network;
+        this.audit = audit;
     }
 
     @GetMapping("/session")
@@ -111,7 +114,11 @@ public class SessionController {
     @DeleteMapping("/session")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void signOut(HttpServletRequest req, HttpServletResponse resp) {
-        sessions.authenticate(req).ifPresent(who -> sessions.end(who.session().id()));
+        sessions.authenticate(req).ifPresent(who -> {
+            sessions.end(who.session().id());
+            audit.signIn("sign_out", "ok", AuditService.Actor.user(who.user().username()), req.getRemoteAddr(), null,
+                    null);
+        });
         sessions.clearCookie(req, resp);
     }
 
@@ -157,11 +164,15 @@ public class SessionController {
     public void end(@PathVariable String id, HttpServletRequest req) {
         SessionService.Signed who = (SessionService.Signed) req.getAttribute(TokenAuthFilter.USER_ATTR);
         Function<SessionRecord, Boolean> mine = s -> who != null && s.userId().equals(who.user().id());
-        boolean allowed = sessions.list().stream().filter(s -> s.id().equals(id))
-                .anyMatch(s -> isAdmin(req) || mine.apply(s));
-        if (!allowed || !sessions.end(id)) {
+        SessionRecord session = sessions.list().stream().filter(s -> s.id().equals(id))
+                .filter(s -> isAdmin(req) || mine.apply(s)).findFirst().orElse(null);
+        if (session == null || !sessions.end(id)) {
             throw ApiException.notFound("Session " + id);
         }
+        String owner = users.list().stream().filter(u -> u.id().equals(session.userId())).map(UserRecord::username)
+                .findFirst().orElse("?");
+        req.setAttribute(AuditService.TARGET_ATTR, owner);
+        audit.signIn("session_ended", "ok", AuditService.actorOf(req), req.getRemoteAddr(), owner, null);
     }
 
     private static SessionService.Signed signedIn(HttpServletRequest req) {

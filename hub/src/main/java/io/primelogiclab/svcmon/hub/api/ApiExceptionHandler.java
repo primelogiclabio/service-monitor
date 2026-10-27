@@ -2,7 +2,9 @@ package io.primelogiclab.svcmon.hub.api;
 
 import java.util.Map;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService;
 import io.primelogiclab.svcmon.hub.core.ApiException;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -17,14 +19,16 @@ public class ApiExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(ApiException.class)
-    public ResponseEntity<Map<String, String>> api(ApiException e) {
+    public ResponseEntity<Map<String, String>> api(ApiException e, HttpServletRequest req) {
+        req.setAttribute(AuditService.ERROR_ATTR, e.code()); // the audit records the refusal by its code
         return ResponseEntity.status(e.status()).body(Map.of(
                 "error", e.code(),
                 "message", e.getMessage()));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<Map<String, String>> unreadable(HttpMessageNotReadableException e) {
+    public ResponseEntity<Map<String, String>> unreadable(HttpMessageNotReadableException e, HttpServletRequest req) {
+        req.setAttribute(AuditService.ERROR_ATTR, "bad_request");
         return ResponseEntity.badRequest().body(Map.of(
                 "error", "bad_request",
                 "message", "Request body is missing or not valid JSON for this endpoint"));

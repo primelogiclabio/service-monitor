@@ -1,7 +1,10 @@
 package io.primelogiclab.svcmon.hub.api;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService;
 import io.primelogiclab.svcmon.hub.model.Role;
 import io.primelogiclab.svcmon.hub.model.UserRecord;
 import io.primelogiclab.svcmon.hub.security.SessionService;
@@ -22,7 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Users, for administrators (TokenAuthFilter lets nobody else in). A new user, or one whose password is reset, gets a
- * temporary password that appears once in the answer and must be changed at their first sign-in.
+ * temporary password that appears once in the answer and must be changed at their first sign-in. Each change names
+ * the user in the audit (see {@link AuditService}); the temporary password never goes there.
  */
 @RestController
 @RequestMapping("/api/v1/users")
@@ -47,9 +51,11 @@ public class UserController {
     }
 
     private final UserService users;
+    private final AuditService audit;
 
-    public UserController(UserService users) {
+    public UserController(UserService users, AuditService audit) {
         this.users = users;
+        this.audit = audit;
     }
 
     @GetMapping
@@ -58,7 +64,9 @@ public class UserController {
     }
 
     @PostMapping
-    public ResponseEntity<WithPassword> create(@RequestBody CreateRequest body) {
+    public ResponseEntity<WithPassword> create(@RequestBody CreateRequest body, HttpServletRequest req) {
+        req.setAttribute(AuditService.TARGET_ATTR, body.username());
+        req.setAttribute(AuditService.DETAIL_ATTR, body.role() == null ? null : "role " + body.role());
         UserService.WithPassword created = users.create(body.username(), body.role());
         return ResponseEntity.status(HttpStatus.CREATED).header("Cache-Control", "no-store")
                 .body(new WithPassword(UserView.of(created.user()), created.temporaryPassword()));
@@ -66,12 +74,19 @@ public class UserController {
 
     @PatchMapping("/{id}")
     public UserView update(@PathVariable String id, @RequestBody UpdateRequest body, HttpServletRequest req) {
+        named(req, id);
+        req.setAttribute(AuditService.DETAIL_ATTR, String.join(", ", Stream.of(
+                body.role() == null ? null : "role " + body.role(),
+                body.disabled() == null ? null : body.disabled() ? "disabled" : "enabled")
+                .filter(Objects::nonNull).toList()));
         return UserView.of(users.update(id, body.role(), body.disabled(), actor(req)));
     }
 
     @PostMapping("/{id}/password-reset")
     public ResponseEntity<WithPassword> resetPassword(@PathVariable String id, HttpServletRequest req) {
+        String name = named(req, id);
         UserService.WithPassword reset = users.resetPassword(id, actor(req));
+        audit.signIn("password_reset", "ok", AuditService.actorOf(req), req.getRemoteAddr(), name, null);
         return ResponseEntity.ok().header("Cache-Control", "no-store")
                 .body(new WithPassword(UserView.of(reset.user()), reset.temporaryPassword()));
     }
@@ -79,7 +94,18 @@ public class UserController {
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String id, HttpServletRequest req) {
+        named(req, id);
         users.delete(id, actor(req));
+    }
+
+    /** Names the user a change is about in the audit, by name rather than id; returns the name, or null. */
+    private String named(HttpServletRequest req, String id) {
+        String name = users.list().stream().filter(u -> u.id().equals(id)).map(UserRecord::username).findFirst()
+                .orElse(null);
+        if (name != null) {
+            req.setAttribute(AuditService.TARGET_ATTR, name);
+        }
+        return name;
     }
 
     /** The administrator's own user id, or null when an ADMIN API token or JWT is calling. */

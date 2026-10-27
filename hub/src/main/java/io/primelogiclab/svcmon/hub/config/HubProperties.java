@@ -42,7 +42,17 @@ public record HubProperties(
         /** How the dashboard that comes from inside the jar behaves; ui-dir has its own config.json. */
         @DefaultValue Ui ui,
         /** Whether people may use the hub from outside the internal network; agents are never affected. */
-        @DefaultValue Access access) {
+        @DefaultValue Access access,
+        /** How long the audit of sign-ins and changes is kept. */
+        @DefaultValue Audit audit) {
+
+    /** Days the audit keeps each kind of event, 1 to 3650; older events are deleted. */
+    public record Audit(
+            @DefaultValue("30") int signInDays,
+            @DefaultValue("365") int changeDays) {
+
+        public static final Audit DEFAULT = new Audit(30, 365);
+    }
 
     /**
      * Where people may use the hub from. A request is outside when its address (after the load balancer's
