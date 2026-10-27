@@ -25,7 +25,7 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 |---|---|---|
 | 0 | Strict settings: an unknown or removed `svcmon.*` setting stops the hub before it touches the database, naming the setting and where it came from | Done, https://github.com/primelogiclabio/service-monitor/pull/37 |
 | 1 | Users and cookie sessions, forced password change, Settings screen, `users reset` | Done, https://github.com/primelogiclabio/service-monitor/pull/38 and https://github.com/primelogiclabio/service-monitor-ui/pull/16 |
-| 2 | Internal-only access | Built, in review |
+| 2 | Internal-only access | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
 | 3 | Audit of sign-ins and changes | Next |
 | 4 | The gateway as a gate only | Planned; details settled when it starts |
 
