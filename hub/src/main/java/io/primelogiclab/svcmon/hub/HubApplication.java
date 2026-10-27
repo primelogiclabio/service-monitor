@@ -15,6 +15,10 @@ public class HubApplication {
         if (args.length > 0 && args[0].equals("init")) {
             System.exit(HubInit.run(args, System.out, System.err));
         }
+        // "users reset NAME" reaches only the database: the way back in when no administrator knows a password.
+        if (args.length > 0 && args[0].equals("users")) {
+            System.exit(UsersCommand.run(args, System.out, System.err));
+        }
         SpringApplication.run(HubApplication.class, args);
     }
 }

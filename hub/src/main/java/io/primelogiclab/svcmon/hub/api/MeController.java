@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
+import io.primelogiclab.svcmon.hub.security.SessionService;
 import io.primelogiclab.svcmon.hub.security.TokenAuthFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,7 +19,11 @@ public class MeController {
     @GetMapping("/me")
     public Map<String, Object> me(HttpServletRequest req) {
         Map<String, Object> m = new LinkedHashMap<>();
-        if (req.getAttribute(TokenAuthFilter.JWT_USER_ATTR) instanceof String user) {
+        if (req.getAttribute(TokenAuthFilter.USER_ATTR) instanceof SessionService.Signed who) {
+            m.put("method", "session");
+            m.put("name", who.user().username());
+            m.put("scope", who.user().role().scope().name());
+        } else if (req.getAttribute(TokenAuthFilter.JWT_USER_ATTR) instanceof String user) {
             m.put("method", "jwt");
             m.put("name", user);
             m.put("scope", "ADMIN");

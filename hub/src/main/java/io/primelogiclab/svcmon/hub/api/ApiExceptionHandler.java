@@ -19,7 +19,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Map<String, String>> api(ApiException e) {
         return ResponseEntity.status(e.status()).body(Map.of(
-                "error", e.status().name().toLowerCase(),
+                "error", e.code(),
                 "message", e.getMessage()));
     }
 

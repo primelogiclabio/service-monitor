@@ -66,14 +66,18 @@ svcmon:
   #   admin-role: platform-admin
   #   roles-claim: realm_access.roles
   #   jwks-uri: https://auth.example.com/realms/main/protocol/openid-connect/certs
-  # Optional: the hub's own administrator, for when nothing else works. On by default: the first start prints
-  # a random password once. Only a salted hash is stored. Signing in at POST /api/v1/login returns an ADMIN token.
-  # local-admin:
+  # Optional: people sign in with a user name and password (POST /api/v1/session sets a cookie). A new hub has one
+  # administrator with the initial password, which works only from the internal network and must be changed at the
+  # first sign-in. Only salted hashes are stored. false leaves only the proxy sign-in (jwt) and API tokens.
+  # users:
   #   enabled: true
-  #   username: admin
-  #   password: choose-12-to-128-characters   # only used to create the account
-  #   new-password: false                     # true prints a new password at start-up (recovery)
-  #   session-hours: 12
+  #   initial-admin-username: admin   # only used to create the account
+  #   initial-admin-password: admin   # only used to create the account
+  # Optional: a sign-in ends after max-hours, or after idle-minutes without use (the dashboard's own refreshing
+  # does not count).
+  # sessions:
+  #   idle-minutes: 60
+  #   max-hours: 12
   # Optional: the address people open the dashboard at (a path is fine; no query or fragment). Alert emails then
   # get an "Open in dashboard" button linking to the affected server. Unset means no button.
   # public-url: https://monitor.example.com

@@ -105,15 +105,16 @@ In one SQLite file in its data folder:
 - every check result for 30 days (`svcmon.retention-days`), then it is deleted;
 - API tokens, as SHA-256 fingerprints only, never the tokens themselves;
 - alert channels, including their secrets: webhook and Slack or Discord addresses, signing secrets and the SMTP password;
-- the local admin account's password, as a salted PBKDF2 hash.
+- the users: name, role, password as a salted PBKDF2 hash, when they last signed in and changed their password;
+- while someone is signed in: a SHA-256 fingerprint of their cookie, the client address, the browser's own description of itself (user agent) and the times; deleted when the sign-in ends.
 
 ### What it does not collect
 
-Files or their contents, documents, passwords or keys of your systems, environment variables, process lists, network traffic, screenshots, location, or anything about the people who use the dashboard beyond the sign-in name that appears in the hub's log. There are no user profiles and no advertising or tracking identifiers.
+Files or their contents, documents, passwords or keys of your systems, environment variables, process lists, network traffic, screenshots, location, or anything about the people who use the dashboard beyond their user name and role, the sign-in details above and the names in the hub's log. There are no user profiles and no advertising or tracking identifiers.
 
 ### In the browser
 
-The dashboard keeps a few items in the browser's own storage: the sign-in token (in session storage, or in local storage if "remember" is chosen), the theme, which help panels are open, and the sign-in mode. It sets no cookies of its own and makes no requests except to the hub it was served from or pointed at. It loads no fonts, scripts or images from other sites.
+The sign-in is one cookie the hub sets (`svcmon`, or `__Host-svcmon` over HTTPS). It is strictly necessary, holds only a random value, cannot be read by the page (HttpOnly), is sent to the hub alone and goes away when the browser closes. The dashboard keeps nothing secret in the browser's own storage, only the theme and which help panels are open. It makes no requests except to the hub it was served from (or the sign-in proxy on the same site) and loads no fonts, scripts or images from other sites.
 
 ### Logs
 
@@ -161,7 +162,7 @@ Protected:
 
 - API tokens are stored only as SHA-256 fingerprints, shown once when created.
 - Alert channel secrets are masked in every API answer, and an update that sends the masked value back keeps the stored one.
-- The hub's local admin password is stored only as a salted PBKDF2-HMAC-SHA256 hash. Sign-in attempts are throttled.
+- Users' passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes. Sign-in attempts are throttled per address, per account and in total, separately for the internal network and the outside. A sign-in ends after a set time, when unused, and at once on a password change, reset, role change or disabled account.
 - Sign-in with an OpenID Connect provider checks the token's signature, issuer, audience and expiry in the hub; nothing is trusted because of where a request came from.
 - Names and messages from agents are treated as untrusted: Slack markup is escaped, Discord mentions are off, mail headers cannot be injected, and the HTML in alert emails has no scripts, images or tracking.
 - Strict settings: an unknown setting is an error, so a typo does not silently weaken something.
@@ -171,7 +172,7 @@ Things to know and handle yourself:
 - **Secrets in the database are not encrypted at rest.** Alert channel secrets sit in the SQLite file as stored. Keep the data folder and any backup of it readable only by the hub's account and administrators (the installers do this for the folders they create).
 - **Check settings are not masked.** A check's address and settings, including any HTTP headers you add, are shown to anyone holding a read token and are sent to the agent that runs the check. Do not put passwords or tokens in a check's URL or headers. The check's address also appears in alert messages.
 - **Agent to hub traffic is plain HTTP inside your network** by design (TLS ends at your load balancer). Anyone who can read that network can see the bearer tokens. Firewall the hub's port to the load balancer and the internal networks.
-- **A new hub prints one random admin password in its log at first start** (unless you set one). Read it once and keep the log folder restricted.
+- **A new hub has the administrator `admin` with the password `admin`** (unless you set others). That password works only from the internal network and must be changed at the first sign-in: do that before anything else. The first start also prints an admin token for the CLI in its log; read it once and keep the log folder restricted.
 - **The agent is powerful by nature.** It runs with high privileges to read service states and the container socket. A container socket is as powerful as root, so the agent only sends read requests to it.
 - **A stolen agent token** can report results for that one server and, unless you set `svcmon.agent-declared-checks: false`, declare checks for that server (only its own, only ones that run on the agent, at most 200). Revoke the token to stop it.
 

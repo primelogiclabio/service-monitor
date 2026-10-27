@@ -22,7 +22,7 @@ import org.springframework.web.servlet.function.ServerResponse;
 /**
  * Serves the web dashboard so the hub and the dashboard share one address. It comes from a folder
  * (svcmon.ui-dir) when one is set, otherwise from inside the jar when the jar was built with it, and
- * svcmon.ui-enabled=false turns it off. The files are public; sign-in happens in the page with an API token.
+ * svcmon.ui-enabled=false turns it off. The files are public; people sign in from the page with a user name and password.
  * API routes always win over files because controllers are matched before the resource handlers.
  */
 @Configuration

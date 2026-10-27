@@ -10,6 +10,7 @@ import io.primelogiclab.svcmon.hub.core.StatusViews.StatusResponse;
 import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.security.JwtAuth;
+import io.primelogiclab.svcmon.hub.security.SessionService;
 import io.primelogiclab.svcmon.hub.security.TokenService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,15 +31,18 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>JSON text frames:
  * <ul>
- *   <li>client to hub {@code {"type":"auth","token":"..."}}: must be the first frame, within {@value #AUTH_TIMEOUT_MS} ms,
- *       unless the upgrade request already carried a JWT (see {@link LiveHandshake})</li>
+ *   <li>client to hub {@code {"type":"auth","ticket":"..."}} or {@code {"type":"auth","token":"..."}}: must be the
+ *       first frame, within {@value #AUTH_TIMEOUT_MS} ms, unless the upgrade request already carried a JWT (see
+ *       {@link LiveHandshake}). A signed-in user's page gets the ticket from POST /api/v1/session/live-ticket.</li>
  *   <li>client to hub {@code {"type":"ping"}}: keeps the link open through proxies; answered with {@code {"type":"pong"}}</li>
  *   <li>hub to client {@code {"type":"status","data":{...}}}: right after authenticating, then after every change</li>
  * </ul>
  *
  * <p>A browser cannot set an Authorization header on a WebSocket, and a token in the URL would end up in access
  * logs, so the token travels in the first frame instead. It needs a READ or ADMIN token, is never logged, and the
- * connection is closed within a second if the token is revoked or expires. An OIDC access token (JWT) works in
+ * connection is closed within a second if the token is revoked or expires. A signed-in user sends a one-time ticket
+ * instead, so the socket never relies on the session cookie, which the browser would send for any page that opens
+ * it; the connection closes when that sign-in ends. An OIDC access token (JWT) works in
  * place of a hub token, in the first frame or on the upgrade request, and ends the connection when it expires; a
  * dashboard reconnects and gets a fresh one. Because nothing but that frame authenticates, the browser's Origin
  * does not matter and is not checked (see {@link LiveConfig} for the one exception).
@@ -60,7 +64,7 @@ public class LiveHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(LiveHandler.class);
 
-    record Frame(String type, String token) {
+    record Frame(String type, String token, String ticket) {
     }
 
     record StatusFrame(String type, StatusResponse data) {
@@ -74,6 +78,8 @@ public class LiveHandler extends TextWebSocketHandler {
         /** Set instead of the token when an administrator signed in with a JWT, which also says when it ends. */
         volatile String jwtUser;
         volatile long jwtExpiresAt;
+        /** Set instead when a signed-in user's page sent a live ticket. */
+        volatile String sessionId;
         /** What this client was last sent, without its timestamp, so it is only sent what changed. */
         volatile StatusResponse sent;
 
@@ -82,20 +88,23 @@ public class LiveHandler extends TextWebSocketHandler {
         }
 
         boolean authenticated() {
-            return token != null || jwtUser != null;
+            return token != null || jwtUser != null || sessionId != null;
         }
     }
 
     private final TokenService tokens;
     private final JwtAuth jwt;
+    private final SessionService sessions;
     private final StatusService status;
     private final HubProperties props;
     private final JsonMapper json;
     private final Map<String, Client> clients = new ConcurrentHashMap<>();
 
-    public LiveHandler(TokenService tokens, JwtAuth jwt, StatusService status, HubProperties props, JsonMapper json) {
+    public LiveHandler(TokenService tokens, JwtAuth jwt, SessionService sessions, StatusService status,
+                       HubProperties props, JsonMapper json) {
         this.tokens = tokens;
         this.jwt = jwt;
+        this.sessions = sessions;
         this.status = status;
         this.props = props;
         this.json = json;
@@ -138,7 +147,9 @@ public class LiveHandler extends TextWebSocketHandler {
         String type = frame == null || frame.type() == null ? "" : frame.type();
 
         if (!client.authenticated()) {
-            if (type.equals("auth")) {
+            if (type.equals("auth") && frame.ticket() != null) {
+                authenticateTicket(client, frame.ticket());
+            } else if (type.equals("auth")) {
                 authenticate(client, frame.token());
             } else {
                 close(client, CloseStatus.POLICY_VIOLATION.withReason("authenticate first"));
@@ -170,6 +181,17 @@ public class LiveHandler extends TextWebSocketHandler {
             return;
         }
         client.token = token;
+        push(client, status.status());
+    }
+
+    private void authenticateTicket(Client client, String ticket) {
+        String sessionId = sessions.redeemLiveTicket(ticket).orElse(null);
+        if (sessionId == null) {
+            log.warn("Rejected live connection from {}: unknown, used or expired ticket", client.session.getRemoteAddress());
+            close(client, CloseStatus.POLICY_VIOLATION.withReason("unauthorized"));
+            return;
+        }
+        client.sessionId = sessionId;
         push(client, status.status());
     }
 
@@ -217,7 +239,9 @@ public class LiveHandler extends TextWebSocketHandler {
                 close(c, CloseStatus.GOING_AWAY.withReason("idle"));
             } else if (c.token != null && !tokens.isActive(c.token)) {
                 close(c, CloseStatus.POLICY_VIOLATION.withReason("token no longer valid"));
-            } else if (c.token == null && now >= c.jwtExpiresAt) {
+            } else if (c.sessionId != null && !sessions.isActive(c.sessionId)) {
+                close(c, CloseStatus.POLICY_VIOLATION.withReason("signed out"));
+            } else if (c.jwtUser != null && now >= c.jwtExpiresAt) {
                 // Not a refusal: the dashboard reconnects and the proxy adds a fresh token to the new request.
                 close(c, CloseStatus.GOING_AWAY.withReason("sign-in expired"));
             }

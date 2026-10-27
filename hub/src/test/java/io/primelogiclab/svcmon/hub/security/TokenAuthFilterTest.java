@@ -2,6 +2,7 @@ package io.primelogiclab.svcmon.hub.security;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,7 +11,11 @@ import static org.mockito.Mockito.mock;
 import java.util.EnumSet;
 
 import io.primelogiclab.svcmon.hub.config.HubProperties;
+import io.primelogiclab.svcmon.hub.model.Role;
 import io.primelogiclab.svcmon.hub.model.Scope;
+import io.primelogiclab.svcmon.hub.model.SessionRecord;
+import io.primelogiclab.svcmon.hub.model.UserRecord;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -42,7 +47,8 @@ class TokenAuthFilterTest {
 
     @Test
     void theLiveSocketChecksItsTokenInItsFirstFrameInsteadOfAHeader() throws Exception {
-        var filter = new TokenAuthFilter(mock(TokenService.class), new JwtAuth(HubProperties.Jwt.DISABLED, null));
+        var filter = new TokenAuthFilter(mock(TokenService.class), new JwtAuth(HubProperties.Jwt.DISABLED, null),
+                mock(SessionService.class));
 
         var liveChain = new MockFilterChain();
         var live = new MockHttpServletRequest("GET", "/api/v1/live");
@@ -59,7 +65,7 @@ class TokenAuthFilterTest {
     }
 
     private static TokenAuthFilter jwtFilter() {
-        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth());
+        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), mock(SessionService.class));
     }
 
     private static MockHttpServletResponse run(TokenAuthFilter filter, MockHttpServletRequest req, MockFilterChain chain)
@@ -127,7 +133,7 @@ class TokenAuthFilterTest {
         var auth = new JwtAuth(new HubProperties.Jwt("http://127.0.0.1:1/realms/main", JwtFixture.AUDIENCE, null,
                 "realm_access.roles", JwtFixture.ADMIN_ROLE), null);
         var chain = new MockFilterChain();
-        var resp = run(new TokenAuthFilter(mock(TokenService.class), auth),
+        var resp = run(new TokenAuthFilter(mock(TokenService.class), auth, mock(SessionService.class)),
                 bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin()), chain);
         assertNull(chain.getRequest());
         assertEquals(503, resp.getStatus());
@@ -150,7 +156,7 @@ class TokenAuthFilterTest {
                 null, null, 0);
         org.mockito.Mockito.when(tokens.authenticate("test-admin-token-0123456789abcdef0123456789abcdef"))
                 .thenReturn(java.util.Optional.of(record));
-        var filter = new TokenAuthFilter(tokens, JwtAuthTest.auth());
+        var filter = new TokenAuthFilter(tokens, JwtAuthTest.auth(), mock(SessionService.class));
 
         var chain = new MockFilterChain();
         var req = bearer("GET", "/api/v1/status", "test-admin-token-0123456789abcdef0123456789abcdef");
@@ -162,7 +168,8 @@ class TokenAuthFilterTest {
 
     @Test
     void whenJwtSignInIsOffAJwtIsJustAnUnknownToken() throws Exception {
-        var filter = new TokenAuthFilter(mock(TokenService.class), new JwtAuth(HubProperties.Jwt.DISABLED, null));
+        var filter = new TokenAuthFilter(mock(TokenService.class), new JwtAuth(HubProperties.Jwt.DISABLED, null),
+                mock(SessionService.class));
         var chain = new MockFilterChain();
         var resp = run(filter, bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin()), chain);
         assertNull(chain.getRequest());
@@ -170,21 +177,136 @@ class TokenAuthFilterTest {
         assertEquals("Bearer", resp.getHeader("WWW-Authenticate"));
     }
 
-    @Test
-    void thePasswordSignInIsTheOnlyApiCallThatNeedsNoToken() throws Exception {
-        var filter = jwtFilter();
-        var post = new MockHttpServletRequest("POST", "/api/v1/login");
-        var chain = new MockFilterChain();
-        assertEquals(200, run(filter, post, chain).getStatus());
-        assertSame(post, chain.getRequest());
+    private static MockHttpServletRequest fromPage(String method, String path) {
+        MockHttpServletRequest r = new MockHttpServletRequest(method, path);
+        r.addHeader(TokenAuthFilter.REQUEST_HEADER, "1");
+        r.addHeader("Sec-Fetch-Site", "same-origin");
+        return r;
+    }
 
-        for (String[] other : new String[][] {{"GET", "/api/v1/login"}, {"PUT", "/api/v1/login"},
-                {"POST", "/api/v1/login/x"}, {"POST", "/api/v1/logins"}, {"PUT", "/api/v1/local-admin/password"}}) {
+    @Test
+    void signingInAndOutNeedNoSignInButMustComeFromTheHubsOwnPage() throws Exception {
+        var filter = jwtFilter();
+        for (String method : new String[] {"GET", "POST", "DELETE"}) {
+            var req = fromPage(method, "/api/v1/session");
+            var chain = new MockFilterChain();
+            assertEquals(200, run(filter, req, chain).getStatus(), method);
+            assertSame(req, chain.getRequest(), method);
+        }
+        var get = new MockHttpServletRequest("GET", "/api/v1/session");
+        var getChain = new MockFilterChain();
+        run(filter, get, getChain);
+        assertSame(get, getChain.getRequest(), "asking who is signed in changes nothing, so needs no header");
+
+        var bare = new MockFilterChain();
+        assertEquals(403, run(filter, new MockHttpServletRequest("POST", "/api/v1/session"), bare).getStatus(),
+                "a form on another site cannot sign the browser in");
+        assertNull(bare.getRequest());
+        var crossSite = fromPage("POST", "/api/v1/session");
+        crossSite.removeHeader("Sec-Fetch-Site");
+        crossSite.addHeader("Sec-Fetch-Site", "cross-site");
+        assertEquals(403, run(filter, crossSite, new MockFilterChain()).getStatus());
+
+        for (String[] other : new String[][] {{"PUT", "/api/v1/session"}, {"POST", "/api/v1/sessions"},
+                {"POST", "/api/v1/session/live-ticket"}, {"PUT", "/api/v1/me/password"}, {"POST", "/api/v1/login"}}) {
             var blocked = new MockFilterChain();
-            assertEquals(401, run(filter, new MockHttpServletRequest(other[0], other[1]), blocked).getStatus(),
-                    other[0] + " " + other[1]);
+            assertEquals(401, run(filter, fromPage(other[0], other[1]), blocked).getStatus(), other[0] + " " + other[1]);
             assertNull(blocked.getRequest());
         }
+    }
+
+    private static final String COOKIE_VALUE = "c".repeat(43);
+
+    private static SessionService.Signed signed(Role role, boolean mustChange) {
+        var user = new UserRecord("u1", "carol", role, "hash", mustChange, false, 0L, null, null);
+        return new SessionService.Signed(new SessionRecord("s1", "u1", "h", 0L, 0L, Long.MAX_VALUE, null, null), user);
+    }
+
+    private static TokenAuthFilter sessionFilter(SessionService.Signed who) {
+        SessionService sessions = mock(SessionService.class);
+        org.mockito.Mockito.when(sessions.authenticate(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.Optional.ofNullable(who));
+        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), sessions);
+    }
+
+    private static MockHttpServletRequest withCookie(MockHttpServletRequest r) {
+        r.setCookies(new Cookie(SessionService.PLAIN_COOKIE, COOKIE_VALUE));
+        return r;
+    }
+
+    @Test
+    void aSessionCookieSignsInAUserWhoseRoleCountsAsTheScope() throws Exception {
+        var who = signed(Role.READ, false);
+        var req = withCookie(new MockHttpServletRequest("GET", "/api/v1/status"));
+        var chain = new MockFilterChain();
+        assertEquals(200, run(sessionFilter(who), req, chain).getStatus());
+        assertSame(req, chain.getRequest());
+        assertSame(who, req.getAttribute(TokenAuthFilter.USER_ATTR));
+
+        var write = new MockFilterChain();
+        assertEquals(403, run(sessionFilter(who), withCookie(fromPage("POST", "/api/v1/checks")), write).getStatus(),
+                "a read-only user cannot write");
+        assertNull(write.getRequest());
+        var own = new MockFilterChain();
+        run(sessionFilter(who), withCookie(fromPage("PUT", "/api/v1/me/password")), own);
+        assertNotNull(own.getRequest(), "but may change their own password");
+    }
+
+    @Test
+    void aWriteWithTheCookieNeedsTheHeaderAndNoOtherSite() throws Exception {
+        var who = signed(Role.ADMIN, false);
+        var noHeader = new MockFilterChain();
+        var resp = run(sessionFilter(who), withCookie(new MockHttpServletRequest("POST", "/api/v1/checks")), noHeader);
+        assertEquals(403, resp.getStatus());
+        assertTrue(resp.getContentAsString().contains("cross_site"), resp.getContentAsString());
+        assertNull(noHeader.getRequest());
+
+        var other = withCookie(new MockHttpServletRequest("DELETE", "/api/v1/checks/abc"));
+        other.addHeader(TokenAuthFilter.REQUEST_HEADER, "1");
+        other.addHeader("Sec-Fetch-Site", "same-site");
+        assertEquals(403, run(sessionFilter(who), other, new MockFilterChain()).getStatus(), "a sibling subdomain too");
+
+        var ok = new MockFilterChain();
+        run(sessionFilter(who), withCookie(fromPage("POST", "/api/v1/checks")), ok);
+        assertNotNull(ok.getRequest());
+    }
+
+    @Test
+    void aUserWhoMustChangeTheirPasswordCanDoNothingElse() throws Exception {
+        var who = signed(Role.ADMIN, true);
+        var resp = run(sessionFilter(who), withCookie(new MockHttpServletRequest("GET", "/api/v1/status")),
+                new MockFilterChain());
+        assertEquals(403, resp.getStatus());
+        assertTrue(resp.getContentAsString().contains("password_change_required"));
+        for (String[] allowed : new String[][] {{"PUT", "/api/v1/me/password"}, {"GET", "/api/v1/me"}}) {
+            var chain = new MockFilterChain();
+            run(sessionFilter(who), withCookie(fromPage(allowed[0], allowed[1])), chain);
+            assertNotNull(chain.getRequest(), allowed[1]);
+        }
+        assertEquals(403, run(sessionFilter(who), withCookie(new MockHttpServletRequest("GET", "/api/v1/sessions")),
+                new MockFilterChain()).getStatus());
+    }
+
+    @Test
+    void anEndedSessionIsTold401() throws Exception {
+        var chain = new MockFilterChain();
+        var resp = run(sessionFilter(null), withCookie(new MockHttpServletRequest("GET", "/api/v1/status")), chain);
+        assertEquals(401, resp.getStatus());
+        assertTrue(resp.getContentAsString().contains("no_session"));
+        assertNull(chain.getRequest());
+    }
+
+    @Test
+    void aUserIsNeverAnAgentAndABearerTokenWinsOverTheCookie() throws Exception {
+        var admin = signed(Role.ADMIN, false);
+        for (String path : new String[] {"/api/v1/agent/config", "/api/v1/agent/report", "/api/v1/agent/register"}) {
+            var chain = new MockFilterChain();
+            assertEquals(403, run(sessionFilter(admin), withCookie(fromPage("POST", path)), chain).getStatus(), path);
+            assertNull(chain.getRequest());
+        }
+        var both = withCookie(bearer("GET", "/api/v1/status", "not-a-known-token-0123456789abcdef"));
+        assertEquals(401, run(sessionFilter(admin), both, new MockFilterChain()).getStatus(),
+                "the header is what counts, and that token is unknown");
     }
 
     @Test
@@ -199,5 +321,12 @@ class TokenAuthFilterTest {
         assertEquals(EnumSet.of(Scope.ENROLL, Scope.JOIN), TokenAuthFilter.required("POST", "/api/v1/agent/register"));
         assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("GET", "/api/v1/join-keys"));
         assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("DELETE", "/api/v1/join-keys/abc"));
+        assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("GET", "/api/v1/users"));
+        assertEquals(EnumSet.of(Scope.ADMIN), TokenAuthFilter.required("POST", "/api/v1/users/abc/password-reset"));
+        assertEquals(EnumSet.of(Scope.READ, Scope.ADMIN), TokenAuthFilter.required("PUT", "/api/v1/me/password"));
+        assertEquals(EnumSet.of(Scope.READ, Scope.ADMIN), TokenAuthFilter.required("DELETE", "/api/v1/sessions/abc"));
+        assertEquals(EnumSet.of(Scope.READ, Scope.ADMIN), TokenAuthFilter.required("POST", "/api/v1/session/live-ticket"));
+        assertEquals(EnumSet.of(Scope.READ, Scope.ADMIN), TokenAuthFilter.required("GET", "/api/v1/usersx"),
+                "only the users path itself");
     }
 }
