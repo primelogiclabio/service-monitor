@@ -29,7 +29,7 @@ java -jar svcmon-hub-<version>.jar init    # optional: writes application.yml wi
 java -jar svcmon-hub-<version>.jar         # starts the hub; it reads application.yml from this folder
 ```
 
-`init` takes a folder (`init /etc/svcmon`), refuses to replace an existing file unless you add `--force`, and `--stdout` prints the template instead. Everything the hub can be set to is in that one file, including how the dashboard signs people in (no file inside the jar is ever edited). A wrong or unknown value stops the hub at start-up with a message that names it. Any setting can also be passed as `--svcmon.<name>=<value>`.
+`init` takes a folder (`init /etc/svcmon`), refuses to replace an existing file unless you add `--force`, and `--stdout` prints the template instead. Everything the hub can be set to is in that one file, including how the dashboard signs people in (no file inside the jar is ever edited). A wrong or unknown value stops the hub at start-up, before it touches the database, with a message that names it and where it came from (file and line, or the command line). Environment variables are not checked, because the CLI's `SVCMON_HUB` and `SVCMON_TOKEN` may be set on the same machine. Any setting can also be passed as `--svcmon.<name>=<value>`.
 
 To build the jar from source: `cd hub; mvn package`, then `java -jar target/svcmon-hub-0.1.0-SNAPSHOT.jar`. That jar has no dashboard inside unless you add one (see "Host the web UI").
 
