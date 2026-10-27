@@ -314,8 +314,9 @@ checks:
     <li>Alerting channels.</li>
     <li>Optional web UI.</li>
     <li>Console role (multi-hub). The API is designed for it from the start: stable hub ID, read-scoped tokens, aggregate-friendly endpoints.</li>
+    <li>Sign-in and access: users and sessions, then internal-only access, an audit, and a gateway that only gates (<code>docs/service-monitor-signin-plan.md</code> has the phases and the reasons).</li>
   </ol>
-  <div class="callout"><b>Status:</b> steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21) and the Go <code>svcmon</code> binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address. The hub can be installed as a service on Windows (WinSW) and Linux (systemd), with a dry run first, and logs a start-up summary of its address and what it watches. The bundled runtime and release pipeline (section 6) are not built.</div>
+  <div class="callout"><b>Status:</b> steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21) and the Go <code>svcmon</code> binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address. The hub can be installed as a service on Windows (WinSW) and Linux (systemd), with a dry run first, and logs a start-up summary of its address and what it watches. The bundled runtime (section 6) is not built; releases are built by a workflow when a version is tagged. Of step 7, users with cookie sessions and the Settings screen are built; internal-only access, the audit and the gate-only gateway are not.</div>
 </section>
 
 <section id="open">
@@ -330,6 +331,7 @@ checks:
       <li><b>macOS ping:</b> unprivileged ICMP on macOS is not confirmed by the sources used.</li>
       <li><b>Beszel on Windows services:</b> not confirmed either way from the pages read.</li>
       <li><b>Resource figures</b> (RAM, disk, agent size) are estimates, not measurements.</li>
+      <li><b>Sign-in:</b> users and sessions are built and tested, but not yet run on an installed hub. Until internal-only access is built, a hub reachable from outside accepts sign-in from outside; keep it behind a gateway or on the internal network.</li>
       <li><b>Not covered:</b> high availability for the hub, long-term metric retention rules, and a public status page.</li>
     </ul>
   </div>

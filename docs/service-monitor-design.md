@@ -202,8 +202,9 @@ Keeping it safe:
 4. Alerting channels.
 5. Optional web UI.
 6. Console role (multi-hub). The API is designed for it from the start: stable hub ID, read-scoped tokens, aggregate-friendly endpoints.
+7. Sign-in and access: users and sessions, then internal-only access, an audit, and a gateway that only gates (docs/service-monitor-signin-plan.md has the phases and the reasons).
 
-**Status:** steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21) and the Go `svcmon` binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address. The hub can be installed as a service on Windows (WinSW) and Linux (systemd), with a dry run first, and logs a start-up summary of its address and what it watches. The bundled runtime and release pipeline (section 6) are not built.
+**Status:** steps 1 to 3 are built and tested: the hub (Spring Boot 4.1 on Java 21) and the Go `svcmon` binary that is both the agent and the CLI (Go 1.27, unit tests, and a run against a real hub on Windows). Alert channels (webhook, Slack, Discord, email) are built; the console role is not. The web UI is built in its own repository and the hub can serve it or allow it from another address. The hub can be installed as a service on Windows (WinSW) and Linux (systemd), with a dry run first, and logs a start-up summary of its address and what it watches. The bundled runtime (section 6) is not built; releases are built by a workflow when a version is tagged. Of step 7, users with cookie sessions and the Settings screen are built; internal-only access, the audit and the gate-only gateway are not.
 
 ## 10. Open questions and limits
 
@@ -215,6 +216,7 @@ Keeping it safe:
 - **macOS ping:** unprivileged ICMP on macOS is not confirmed by the sources used.
 - **Beszel on Windows services:** not confirmed either way from the pages read.
 - **Resource figures** (RAM, disk, agent size) are estimates, not measurements.
+- **Sign-in:** users and sessions are built and tested, but not yet run on an installed hub. Until internal-only access is built, a hub reachable from outside accepts sign-in from outside; keep it behind a gateway or on the internal network.
 - **Not covered:** high availability for the hub, long-term metric retention rules, and a public status page.
 
 ## References
