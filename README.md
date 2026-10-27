@@ -71,6 +71,7 @@ cd ../service-monitor-ui && npm ci && npm run build      # dashboard; copy dist/
 | [Reference](docs/service-monitor-reference.md) | What is built and how far it has been tried, running and upgrading the hub, signing in (users, tokens, OpenID Connect), servers and checks, alerts, the API, every setting |
 | [Hub as a service](hub/service/README.md) | The Windows and Linux installers, their dry runs and the release packages |
 | [Design](docs/service-monitor-design.md) | Why it is built this way ([HTML](docs/service-monitor-design.html)) |
+| [Sign-in and access plan](docs/service-monitor-signin-plan.md) | What is built of people's sign-in and what comes next: internal-only access, an audit, a gateway that only gates ([HTML](docs/service-monitor-signin-plan.html)) |
 | [Stack guide](docs/service-monitor-stack-guide.md) | The technology, explained for a Java developer ([HTML](docs/service-monitor-stack-guide.html)) |
 | [Trust policy](docs/service-monitor-trust-policy.md) | Licences, what data it handles, what it connects to and installs ([HTML](docs/service-monitor-trust-policy.html)) |
 | [RELEASING.md](RELEASING.md) | How a release is made |
