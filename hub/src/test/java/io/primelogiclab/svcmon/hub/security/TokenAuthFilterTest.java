@@ -23,6 +23,8 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 class TokenAuthFilterTest {
 
+    static final NetworkPolicy INSIDE_ONLY = new NetworkPolicy(HubProperties.Access.DEFAULT);
+
     private static MockHttpServletRequest request(String method, String origin, String requestMethod) {
         MockHttpServletRequest r = new MockHttpServletRequest(method, "/api/v1/status");
         if (origin != null) {
@@ -48,7 +50,7 @@ class TokenAuthFilterTest {
     @Test
     void theLiveSocketChecksItsTokenInItsFirstFrameInsteadOfAHeader() throws Exception {
         var filter = new TokenAuthFilter(mock(TokenService.class), new JwtAuth(HubProperties.Jwt.DISABLED, null),
-                mock(SessionService.class));
+                mock(SessionService.class), INSIDE_ONLY);
 
         var liveChain = new MockFilterChain();
         var live = new MockHttpServletRequest("GET", "/api/v1/live");
@@ -65,7 +67,7 @@ class TokenAuthFilterTest {
     }
 
     private static TokenAuthFilter jwtFilter() {
-        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), mock(SessionService.class));
+        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), mock(SessionService.class), INSIDE_ONLY);
     }
 
     private static MockHttpServletResponse run(TokenAuthFilter filter, MockHttpServletRequest req, MockFilterChain chain)
@@ -133,7 +135,7 @@ class TokenAuthFilterTest {
         var auth = new JwtAuth(new HubProperties.Jwt("http://127.0.0.1:1/realms/main", JwtFixture.AUDIENCE, null,
                 "realm_access.roles", JwtFixture.ADMIN_ROLE), null);
         var chain = new MockFilterChain();
-        var resp = run(new TokenAuthFilter(mock(TokenService.class), auth, mock(SessionService.class)),
+        var resp = run(new TokenAuthFilter(mock(TokenService.class), auth, mock(SessionService.class), INSIDE_ONLY),
                 bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin()), chain);
         assertNull(chain.getRequest());
         assertEquals(503, resp.getStatus());
@@ -156,7 +158,7 @@ class TokenAuthFilterTest {
                 null, null, 0);
         org.mockito.Mockito.when(tokens.authenticate("test-admin-token-0123456789abcdef0123456789abcdef"))
                 .thenReturn(java.util.Optional.of(record));
-        var filter = new TokenAuthFilter(tokens, JwtAuthTest.auth(), mock(SessionService.class));
+        var filter = new TokenAuthFilter(tokens, JwtAuthTest.auth(), mock(SessionService.class), INSIDE_ONLY);
 
         var chain = new MockFilterChain();
         var req = bearer("GET", "/api/v1/status", "test-admin-token-0123456789abcdef0123456789abcdef");
@@ -166,10 +168,47 @@ class TokenAuthFilterTest {
         assertNull(req.getAttribute(TokenAuthFilter.JWT_USER_ATTR));
     }
 
+    private static MockHttpServletRequest outside(MockHttpServletRequest r) {
+        r.setRemoteAddr("203.0.113.7");
+        return r;
+    }
+
+    @Test
+    void fromOutsideAJwtIsRefusedBeforeItIsCheckedUnlessOutsideIsAllowed() throws Exception {
+        var chain = new MockFilterChain();
+        var resp = run(jwtFilter(), outside(bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin())), chain);
+        assertNull(chain.getRequest());
+        assertEquals(403, resp.getStatus());
+        assertTrue(resp.getContentAsString().contains("\"error\":\"outside_not_allowed\""), resp.getContentAsString());
+
+        var open = new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), mock(SessionService.class),
+                new NetworkPolicy(new HubProperties.Access(true, HubProperties.Access.DEFAULT.internalNetworks(),
+                        java.util.List.of())));
+        var allowed = outside(bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin()));
+        var openChain = new MockFilterChain();
+        assertEquals(200, run(open, allowed, openChain).getStatus());
+        assertSame(allowed, openChain.getRequest(), "a JWT from a gateway works from outside while that is allowed");
+    }
+
+    @Test
+    void whereARequestComesFromNeverStopsAnAgentButStopsTheLiveViewForEveryoneElse() throws Exception {
+        var filter = jwtFilter();
+        for (String path : new String[] {"/api/v1/agent/config", "/api/v1/agent/register"}) {
+            var resp = run(filter, outside(bearer("POST", path, "some-agent-token-0123456789abcdef")), new MockFilterChain());
+            assertEquals(401, resp.getStatus(), path + ": the token is checked as usual, wherever the agent is");
+        }
+        var live = run(filter, outside(new MockHttpServletRequest("GET", "/api/v1/live")), new MockFilterChain());
+        assertEquals(403, live.getStatus());
+        assertTrue(live.getContentAsString().contains("outside_not_allowed"));
+        var health = new MockFilterChain();
+        run(filter, outside(new MockHttpServletRequest("GET", "/api/v1/health")), health);
+        assertNotNull(health.getRequest(), "the load balancer's probe still works");
+    }
+
     @Test
     void whenJwtSignInIsOffAJwtIsJustAnUnknownToken() throws Exception {
         var filter = new TokenAuthFilter(mock(TokenService.class), new JwtAuth(HubProperties.Jwt.DISABLED, null),
-                mock(SessionService.class));
+                mock(SessionService.class), INSIDE_ONLY);
         var chain = new MockFilterChain();
         var resp = run(filter, bearer("GET", "/api/v1/status", JwtAuthTest.PROVIDER.admin()), chain);
         assertNull(chain.getRequest());
@@ -226,7 +265,7 @@ class TokenAuthFilterTest {
         SessionService sessions = mock(SessionService.class);
         org.mockito.Mockito.when(sessions.authenticate(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(java.util.Optional.ofNullable(who));
-        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), sessions);
+        return new TokenAuthFilter(mock(TokenService.class), JwtAuthTest.auth(), sessions, INSIDE_ONLY);
     }
 
     private static MockHttpServletRequest withCookie(MockHttpServletRequest r) {

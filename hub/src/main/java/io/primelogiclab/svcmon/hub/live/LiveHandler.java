@@ -10,6 +10,7 @@ import io.primelogiclab.svcmon.hub.core.StatusViews.StatusResponse;
 import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.security.JwtAuth;
+import io.primelogiclab.svcmon.hub.security.NetworkPolicy;
 import io.primelogiclab.svcmon.hub.security.SessionService;
 import io.primelogiclab.svcmon.hub.security.TokenService;
 import org.slf4j.Logger;
@@ -45,7 +46,9 @@ import tools.jackson.databind.json.JsonMapper;
  * it; the connection closes when that sign-in ends. An OIDC access token (JWT) works in
  * place of a hub token, in the first frame or on the upgrade request, and ends the connection when it expires; a
  * dashboard reconnects and gets a fresh one. Because nothing but that frame authenticates, the browser's Origin
- * does not matter and is not checked (see {@link LiveConfig} for the one exception).
+ * does not matter and is not checked (see {@link LiveConfig} for the one exception). Where the connection comes from
+ * limits the first frame as it limits any other request (see {@link NetworkPolicy}): from outside the internal
+ * network a token is refused, and a ticket works only over HTTPS while svcmon.access.allow-outside is true.
  *
  * <p>One timer thread does all the work: it drops connections that stayed silent or lost their token, builds the
  * roll-up once per second while someone is watching, and sends each client only what differs from what it last
@@ -80,6 +83,9 @@ public class LiveHandler extends TextWebSocketHandler {
         volatile long jwtExpiresAt;
         /** Set instead when a signed-in user's page sent a live ticket. */
         volatile String sessionId;
+        /** Where the connection comes from, as LiveHandshake saw it; unknown counts as outside over plain HTTP. */
+        volatile boolean inside;
+        volatile boolean secure;
         /** What this client was last sent, without its timestamp, so it is only sent what changed. */
         volatile StatusResponse sent;
 
@@ -95,16 +101,18 @@ public class LiveHandler extends TextWebSocketHandler {
     private final TokenService tokens;
     private final JwtAuth jwt;
     private final SessionService sessions;
+    private final NetworkPolicy network;
     private final StatusService status;
     private final HubProperties props;
     private final JsonMapper json;
     private final Map<String, Client> clients = new ConcurrentHashMap<>();
 
-    public LiveHandler(TokenService tokens, JwtAuth jwt, SessionService sessions, StatusService status,
-                       HubProperties props, JsonMapper json) {
+    public LiveHandler(TokenService tokens, JwtAuth jwt, SessionService sessions, NetworkPolicy network,
+                       StatusService status, HubProperties props, JsonMapper json) {
         this.tokens = tokens;
         this.jwt = jwt;
         this.sessions = sessions;
+        this.network = network;
         this.status = status;
         this.props = props;
         this.json = json;
@@ -120,6 +128,8 @@ public class LiveHandler extends TextWebSocketHandler {
         // Sends come from the timer thread and from this handler, and Tomcat allows one at a time.
         Client client = new Client(
                 new ConcurrentWebSocketSessionDecorator(raw, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT_BYTES));
+        client.inside = Boolean.TRUE.equals(raw.getAttributes().get(LiveHandshake.INSIDE));
+        client.secure = Boolean.TRUE.equals(raw.getAttributes().get(LiveHandshake.SECURE));
         clients.put(raw.getId(), client);
         // A JWT on the upgrade request was already checked by LiveHandshake: no first frame is needed.
         if (raw.getAttributes().get(LiveHandshake.USER) instanceof String user) {
@@ -168,6 +178,9 @@ public class LiveHandler extends TextWebSocketHandler {
             authenticateJwt(client, raw);
             return;
         }
+        if (refused(client, network.forToken(client.inside))) {
+            return;
+        }
         TokenRecord token = tokens.authenticate(raw).orElse(null);
         if (token == null) {
             log.warn("Rejected live connection from {}: missing or invalid token", client.session.getRemoteAddress());
@@ -185,6 +198,9 @@ public class LiveHandler extends TextWebSocketHandler {
     }
 
     private void authenticateTicket(Client client, String ticket) {
+        if (refused(client, network.forUser(client.inside, client.secure))) {
+            return;
+        }
         String sessionId = sessions.redeemLiveTicket(ticket).orElse(null);
         if (sessionId == null) {
             log.warn("Rejected live connection from {}: unknown, used or expired ticket", client.session.getRemoteAddress());
@@ -196,6 +212,9 @@ public class LiveHandler extends TextWebSocketHandler {
     }
 
     private void authenticateJwt(Client client, String raw) {
+        if (refused(client, network.forJwt(client.inside))) {
+            return;
+        }
         JwtAuth.Result who = jwt.verify(raw);
         if (who.kind() != JwtAuth.Kind.ADMIN) {
             log.warn("Rejected live connection from {}: JWT: {}", client.session.getRemoteAddress(),
@@ -208,6 +227,16 @@ public class LiveHandler extends TextWebSocketHandler {
         client.jwtUser = who.user();
         client.jwtExpiresAt = who.expiresAtMillis();
         push(client, status.status());
+    }
+
+    /** Closes the connection when where it comes from does not allow this kind of sign-in (see NetworkPolicy). */
+    private boolean refused(Client client, NetworkPolicy.Refusal refusal) {
+        if (refusal == null) {
+            return false;
+        }
+        log.warn("Rejected live connection from {}: {}", client.session.getRemoteAddress(), refusal.message);
+        close(client, CloseStatus.POLICY_VIOLATION.withReason(refusal.code));
+        return true;
     }
 
     @Override

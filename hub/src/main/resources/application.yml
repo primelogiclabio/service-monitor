@@ -19,8 +19,10 @@ server:
   # Firewall this port to the load balancer and the internal network only.
   port: 8080
   # Trust X-Forwarded-For / X-Forwarded-Proto from private-range proxies so client
-  # addresses in logs are real. The load balancer must overwrite client-supplied values.
-  # If it is not in a private range, set server.tomcat.remoteip.internal-proxies.
+  # addresses are real: the logs and svcmon.access depend on them. The load balancer must
+  # set or append X-Forwarded-For and set X-Forwarded-Proto, never pass the client's own on.
+  # To trust only the load balancers, or one outside the private ranges, set
+  # server.tomcat.remoteip.internal-proxies (a regular expression).
   forward-headers-strategy: native
 
 svcmon:
@@ -78,6 +80,16 @@ svcmon:
   # sessions:
   #   idle-minutes: 60
   #   max-hours: 12
+  # Optional: where people may use the hub from. From outside the internal network an API token (the CLI's) and the
+  # initial password never work, and a signed-in user only when allow-outside is true and the request came over
+  # HTTPS; everything else is refused with 403 outside_not_allowed. A request is outside when its address (after
+  # X-Forwarded-For from a trusted proxy) is not in internal-networks, or is one of public-proxies: a proxy that
+  # people outside come through, so that one which forgets X-Forwarded-For is refused rather than let in. IP
+  # addresses or ranges only, no names; setting internal-networks replaces the whole list. Agents are never affected.
+  # access:
+  #   allow-outside: false
+  #   internal-networks: [127.0.0.0/8, "::1/128", 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, "fc00::/7"]
+  #   public-proxies: []
   # Optional: the address people open the dashboard at (a path is fine; no query or fragment). Alert emails then
   # get an "Open in dashboard" button linking to the affected server. Unset means no button.
   # public-url: https://monitor.example.com
