@@ -6,12 +6,14 @@ import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService;
 import io.primelogiclab.svcmon.hub.config.DataSourceConfig;
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.config.SettingsGuard;
 import io.primelogiclab.svcmon.hub.model.Role;
 import io.primelogiclab.svcmon.hub.model.UserRecord;
 import io.primelogiclab.svcmon.hub.security.PasswordHasher;
+import io.primelogiclab.svcmon.hub.store.AuditRepo;
 import io.primelogiclab.svcmon.hub.store.SessionRepo;
 import io.primelogiclab.svcmon.hub.store.UserRepo;
 import org.flywaydb.core.Flyway;
@@ -92,6 +94,10 @@ final class UsersCommand {
                 users.setRole(user.id(), Role.ADMIN);
             }
             int ended = new SessionRepo(jdbc).deleteByUser(user.id());
+            // Written straight to the database: this runs with the hub stopped, from the hub's machine.
+            new AuditRepo(jdbc).insert(AuditService.event(System.currentTimeMillis(), AuditService.SIGN_IN,
+                    "password_reset", "ok", "users reset", "command_line", null, null, null, user.username(),
+                    promoted ? "made an administrator" : null));
 
             out.println();
             out.println("==================================================================");

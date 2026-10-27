@@ -13,10 +13,12 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import io.primelogiclab.svcmon.hub.model.AuditEvent;
 import io.primelogiclab.svcmon.hub.model.Role;
 import io.primelogiclab.svcmon.hub.model.SessionRecord;
 import io.primelogiclab.svcmon.hub.model.UserRecord;
 import io.primelogiclab.svcmon.hub.security.PasswordHasher;
+import io.primelogiclab.svcmon.hub.store.AuditRepo;
 import io.primelogiclab.svcmon.hub.store.SessionRepo;
 import io.primelogiclab.svcmon.hub.store.UserRepo;
 import org.flywaydb.core.Flyway;
@@ -76,6 +78,13 @@ class UsersCommandTest {
         assertFalse(after.disabled());
         assertEquals(Role.ADMIN, after.role());
         assertTrue(new SessionRepo(jdbc).findByUser("u1").isEmpty());
+
+        List<AuditEvent> audit = new AuditRepo(jdbc).find(null, null, 10);
+        assertEquals(1, audit.size(), "the reset is in the audit");
+        AuditEvent e = audit.get(0);
+        assertEquals(List.of("sign_in", "password_reset", "ok", "users reset", "command_line", "root"),
+                List.of(e.category(), e.kind(), e.outcome(), e.actor(), e.actorKind(), e.target()));
+        assertFalse(e.toString().contains(temporary), "the temporary password is not");
     }
 
     @Test

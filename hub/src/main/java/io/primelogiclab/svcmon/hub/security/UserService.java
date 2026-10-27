@@ -5,6 +5,8 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService;
+import io.primelogiclab.svcmon.hub.audit.AuditService.Actor;
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.core.ApiException;
 import io.primelogiclab.svcmon.hub.model.Role;
@@ -21,7 +23,8 @@ import org.springframework.stereotype.Service;
  * A password someone else set (the initial one, or a temporary one from an administrator) must be changed at the
  * first sign-in, and until then the session can do nothing else. Such a password also works only from the internal
  * network, so the well-known initial one cannot be tried from outside. Every failed sign-in gets the same answer,
- * whether the name, the password or the account was wrong, and costs the same time.
+ * whether the name, the password or the account was wrong, and costs the same time. The audit (see
+ * {@link AuditService}) does record which it was, for the administrators.
  */
 @Service
 public class UserService {
@@ -48,15 +51,17 @@ public class UserService {
     private final SessionService sessions;
     private final PasswordHasher hasher;
     private final LoginThrottle throttle;
+    private final AuditService audit;
     private volatile String dummyHash;
 
     public UserService(HubProperties props, UserRepo users, SessionService sessions, PasswordHasher hasher,
-                       LoginThrottle throttle) {
+                       LoginThrottle throttle, AuditService audit) {
         this.cfg = props.users() == null ? HubProperties.Users.DEFAULT : props.users();
         this.users = users;
         this.sessions = sessions;
         this.hasher = hasher;
         this.throttle = throttle;
+        this.audit = audit;
         if (cfg.enabled()) {
             // Settings that would leave the first administrator unusable stop the start-up instead.
             if (cfg.initialAdminUsername() == null || !USERNAME.matcher(cfg.initialAdminUsername()).matches()) {
@@ -82,6 +87,9 @@ public class UserService {
         long wait = throttle.waitSeconds(client, username, inside);
         if (wait > 0) {
             log.warn("Refused a sign-in from {}: too many wrong attempts, try again in {} s", client, wait);
+            if (audit.once("throttled:" + client)) {
+                audit.signIn("sign_in", "too_many_attempts", known(username), client, null, null);
+            }
             return new SignInResult(Status.THROTTLED, null, null, wait);
         }
         boolean sizeOk = password != null && password.length() <= PasswordHasher.MAX_LENGTH;
@@ -94,11 +102,14 @@ public class UserService {
             // A name nobody has is not written down: it may be a password typed into the wrong box.
             log.warn("Wrong sign-in from {} for {}", client,
                     user == null ? "an unknown user" : "user '" + user.username() + "'" + (user.disabled() ? " (disabled)" : ""));
+            String reason = user == null ? "unknown_user" : !passwordOk || !sizeOk ? "wrong_password" : "account_disabled";
+            audit.signIn("sign_in", reason, user == null ? Actor.UNKNOWN : Actor.user(user.username()), client, null, null);
             return SignInResult.of(Status.WRONG);
         }
         if (user.mustChangePassword() && !inside) {
             log.warn("Refused a sign-in from {} for user '{}': a password that must be changed works only from the"
                     + " internal network", client, user.username());
+            audit.signIn("sign_in", "initial_password_inside_only", Actor.user(user.username()), client, null, null);
             return SignInResult.of(Status.INSIDE_ONLY);
         }
         throttle.succeeded(client);
@@ -106,6 +117,7 @@ public class UserService {
         users.signedIn(user.id(), now);
         SessionService.Issued session = sessions.create(user, client, userAgent);
         log.info("User '{}' signed in from {}", user.username(), client);
+        audit.signIn("sign_in", "ok", Actor.user(user.username()), client, null, null);
         return new SignInResult(Status.OK, session, user, 0);
     }
 
@@ -117,12 +129,16 @@ public class UserService {
                                                    String client, boolean inside) {
         UserRecord user = who.user();
         if (throttle.waitSeconds(client, user.username(), inside) > 0) {
+            if (audit.once("password-throttled:" + user.id())) {
+                audit.signIn("password_changed", "too_many_attempts", Actor.user(user.username()), client, null, null);
+            }
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "too_many_attempts",
                     "Too many wrong passwords; try again later");
         }
         boolean sizeOk = current != null && current.length() <= PasswordHasher.MAX_LENGTH;
         if (!sizeOk || !hasher.verify(current, user.passwordHash())) {
             throttle.failed(client, user.username(), inside);
+            audit.signIn("password_changed", "wrong_password", Actor.user(user.username()), client, null, null);
             throw ApiException.badRequest("wrong_password", "The current password is wrong");
         }
         String problem = problem(next, user.username());
@@ -136,6 +152,8 @@ public class UserService {
         int ended = sessions.endOthers(user.id(), who.session().id());
         log.info("User '{}' changed their password{}", user.username(),
                 ended > 0 ? "; " + ended + " other sign-in(s) ended" : "");
+        audit.signIn("password_changed", "ok", Actor.user(user.username()), client, null,
+                ended > 0 ? ended + " other sign-in(s) ended" : null);
         return sessions.renew(who.session());
     }
 
@@ -208,6 +226,13 @@ public class UserService {
         }
         users.delete(id);
         log.info("User '{}' was deleted", u.username());
+    }
+
+    /** The account a throttled attempt was for, when there is one; a name nobody has may be a mistyped password. */
+    private Actor known(String username) {
+        return username != null && USERNAME.matcher(username).matches()
+                ? users.findByUsername(username).map(u -> Actor.user(u.username())).orElse(Actor.UNKNOWN)
+                : Actor.UNKNOWN;
     }
 
     private UserRecord find(String id) {

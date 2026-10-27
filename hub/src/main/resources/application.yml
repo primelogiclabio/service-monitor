@@ -90,6 +90,12 @@ svcmon:
   #   allow-outside: false
   #   internal-networks: [127.0.0.0/8, "::1/128", 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, "fc00::/7"]
   #   public-proxies: []
+  # Optional: days the audit keeps sign-ins (signing in and out, refusals, password changes) and changes (every
+  # person's POST, PUT, PATCH or DELETE), 1 to 3650 each. It holds names, addresses and what was called, never a
+  # request body, a password or a token. Administrators read it at GET /api/v1/audit and in Settings > Activity.
+  # audit:
+  #   sign-in-days: 30
+  #   change-days: 365
   # Optional: the address people open the dashboard at (a path is fine; no query or fragment). Alert emails then
   # get an "Open in dashboard" button linking to the affected server. Unset means no button.
   # public-url: https://monitor.example.com
