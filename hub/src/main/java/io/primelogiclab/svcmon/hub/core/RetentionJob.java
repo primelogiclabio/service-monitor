@@ -3,23 +3,26 @@ package io.primelogiclab.svcmon.hub.core;
 import java.util.concurrent.TimeUnit;
 
 import io.primelogiclab.svcmon.hub.config.HubProperties;
+import io.primelogiclab.svcmon.hub.security.SessionService;
 import io.primelogiclab.svcmon.hub.store.ResultRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** Deletes raw results older than the retention period. */
+/** Deletes raw results older than the retention period, and sign-ins that have ended. */
 @Component
 public class RetentionJob {
 
     private static final Logger log = LoggerFactory.getLogger(RetentionJob.class);
 
     private final ResultRepo results;
+    private final SessionService sessions;
     private final HubProperties props;
 
-    public RetentionJob(ResultRepo results, HubProperties props) {
+    public RetentionJob(ResultRepo results, SessionService sessions, HubProperties props) {
         this.results = results;
+        this.sessions = sessions;
         this.props = props;
     }
 
@@ -30,5 +33,6 @@ public class RetentionJob {
         if (removed > 0) {
             log.info("Retention: removed {} result(s) older than {} days", removed, props.retentionDays());
         }
+        sessions.purge();
     }
 }

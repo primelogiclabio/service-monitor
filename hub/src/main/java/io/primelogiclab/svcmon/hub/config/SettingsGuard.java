@@ -42,7 +42,10 @@ public class SettingsGuard implements BeanFactoryPostProcessor {
      * Settings that no longer exist, by the name people used, with what to do instead. A key under one of these
      * names (or under it, for a group) stops the hub with that advice.
      */
-    static final Map<String, String> REMOVED = Map.of();
+    static final Map<String, String> REMOVED = Map.of(
+            "local-admin", "people now sign in as users; use svcmon.users.enabled, svcmon.users.initial-admin-username"
+                    + " and svcmon.users.initial-admin-password, and svcmon.sessions.max-hours for session-hours"
+                    + " (an existing local admin keeps its password as user 'admin', or the initial-admin-username)");
 
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) {

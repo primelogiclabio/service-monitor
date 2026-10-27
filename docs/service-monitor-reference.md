@@ -68,8 +68,8 @@ powershell -ExecutionPolicy Bypass -File hub\service\windows\install.ps1
 
 The dashboard lives in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui). Choose one of:
 
-1. **Inside the hub jar.** A jar built with the dashboard serves it at the hub's address with no setting at all: open the address in a browser and sign in with an API token or the local admin account. Nothing in it needs editing; what the page needs to know is set in `application.yml` (below). To build such a jar yourself: build the dashboard (`npm run build` in its repository), copy its `dist` folder to `hub/src/main/resources/ui`, then `cd hub; mvn package` (that folder is ignored by git). `svcmon.ui-enabled: false` makes the hub serve no dashboard, only the API.
-2. **From a folder.** Start the hub with `--svcmon.ui-dir=/path/to/service-monitor-ui/dist` to serve that build instead of, or without, the one inside the jar. The folder then has its own `config.json`. The files are public; the API still needs a token.
+1. **Inside the hub jar.** A jar built with the dashboard serves it at the hub's address with no setting at all: open the address in a browser and sign in with a user name and password (see "Users and sign-in"). Nothing in it needs editing; what the page needs to know is set in `application.yml` (below). To build such a jar yourself: build the dashboard (`npm run build` in its repository), copy its `dist` folder to `hub/src/main/resources/ui`, then `cd hub; mvn package` (that folder is ignored by git). `svcmon.ui-enabled: false` makes the hub serve no dashboard, only the API.
+2. **From a folder.** Start the hub with `--svcmon.ui-dir=/path/to/service-monitor-ui/dist` to serve that build instead of, or without, the one inside the jar. The folder then has its own `config.json`. The files are public; the API still needs a sign-in or a token.
 3. **Host it elsewhere**, for example a static file server: list its address in `svcmon.cors-allowed-origins` (exact origins such as `https://dashboard.example.com`; `*`, paths and trailing slashes are refused and stop the hub from starting), then enter the hub's address under "Hub address" when signing in. If you also open the dashboard through the hub's own address behind a load balancer, list that address too.
 
 **Sign-in through a reverse proxy.** Where nginx and a gateway sign people in and the hub accepts the token the proxy adds (see the Keycloak section below), the dashboard inside the jar is switched to that mode in `application.yml`; the hub builds the page's `config.json` from it:
@@ -139,16 +139,18 @@ How this is kept safe:
 
 The live connection ends with close code 1001 when its JWT expires; the dashboard reconnects and the proxy adds a fresh token to the new request.
 
-## Local admin account
+## Users and sign-in
 
-The hub keeps one administrator of its own, for when nothing else works: the provider behind the proxy is down, or none is set up. It is on unless `svcmon.local-admin.enabled` is `false`, and its user name is `admin` unless `svcmon.local-admin.username` says otherwise.
+People sign in to the dashboard with a user name and password. Each user is an **administrator** (`ADMIN`, may change anything) or **read-only** (`READ`, may look at everything but the user list, tokens and alert channels, and change only their own password). API tokens stay for the CLI and scripts; agents keep their own credentials. Turn user sign-in off with `svcmon.users.enabled: false` (then only the proxy sign-in and tokens work).
 
-- **First start:** the password is `svcmon.local-admin.password` (12 to 128 characters) if you set it, otherwise a random one that is printed once next to the first admin token. Only a salted PBKDF2-HMAC-SHA256 hash (600,000 rounds) is stored, in the hub's database; it is never logged or returned. The setting is used only to create the account.
-- **Signing in:** `POST /api/v1/login` with `{"username": "...", "password": "..."}` answers with `{"token", "expiresAt", "scope": "ADMIN", "name": "local-login"}`. The token is an ordinary ADMIN token that lasts `svcmon.local-admin.session-hours` (12 by default, at most 168), so the dashboard, the live view and revoking work as for any token; it appears in the token list as `local-login`. The dashboard's sign-in page has a user name and password form for it.
-- **Changing it:** `PUT /api/v1/local-admin/password` with `{"newPassword": "..."}` and an ADMIN token (or sign-in). Every `local-login` token is ended, so a stolen session does not survive it.
-- **Recovery:** start the hub once with `--svcmon.local-admin.new-password=true` to print a new password (this also ends the sign-ins made with the old one), then start it normally again.
-- **Guessing:** each client address may get the password wrong 5 times in 15 minutes, and all addresses together 20 times. After that every attempt, even with the right password, is refused with 429 and a `Retry-After` until the oldest failure ages out. A wrong user name and a wrong password get the same answer and take the same time. Behind a load balancer the client address is the one it forwards (see the note on `X-Forwarded-For` in the design document).
-- **Where to reach it:** treat the password as the way in on the hub's internal address, next to the API tokens, and keep it off the public site. With nginx in front, `location = /api/v1/login { return 404; }` does that, so only the proxy's sign-in is public.
+- **First start:** a hub without users creates the administrator `admin` (`svcmon.users.initial-admin-username`) with the password `admin` (`svcmon.users.initial-admin-password`). Both settings are used only to create that account. That password, and any temporary one an administrator gives out, works **only from the internal network** and must be changed at the first sign-in: until then the hub answers everything else with 403 `password_change_required`. The log says so at every start while an administrator still has one. A hub upgraded from the local admin account keeps that account's password, as user `admin` (or `svcmon.users.initial-admin-username`); the old `svcmon.local-admin.*` settings stop the hub with a message that names their replacements.
+- **Passwords:** 12 to 128 characters, not the user name; no composition rules. Only a salted PBKDF2-HMAC-SHA256 hash (600,000 rounds) is stored; a password is never logged or returned.
+- **Signing in:** `POST /api/v1/session` with `{"username", "password"}` (JSON only) sets a cookie and answers with who is signed in. Every failure gets the same 401 `wrong_credentials`, whether the name, the password or a disabled account was the problem, and takes the same time; a name nobody has is not even written to the log, as it may be a password typed into the wrong box.
+- **The cookie:** `svcmon`, or `__Host-svcmon` with `Secure` over HTTPS (as the load balancer reports it in `X-Forwarded-Proto`); `HttpOnly`, `SameSite=Strict`, no `Domain`, and gone when the browser closes. The page never sees it. A request with the cookie that changes something must also send `X-Svcmon-Request: 1` and not come from another site by the browser's `Sec-Fetch-Site`, which together stop other sites' pages from using it.
+- **How long:** a sign-in ends after `svcmon.sessions.max-hours` (12), or after `svcmon.sessions.idle-minutes` (60) without use. The dashboard's own refreshing (marked `X-Svcmon-Background: 1`) does not count, so a page left open is signed out too; raise `idle-minutes` for a screen that is meant to stay on the dashboard. Signing out, changing your password (your other sign-ins end and this one gets a new cookie), a password reset, a role change, disabling and deleting end sign-ins at once, the live view included.
+- **Users:** administrators add users with a role (`POST /api/v1/users`), which answers with a temporary password shown once; change a role or turn an account off and on (`PATCH /api/v1/users/{id}`); give a new temporary password (`POST /api/v1/users/{id}/password-reset`); and delete (`DELETE /api/v1/users/{id}`). Names are 1 to 64 letters, digits and `. _ @ -`, unique whatever their case. Nobody can demote, disable or delete the last administrator (409 `last_admin`), or their own account (409 `own_account`; another administrator can).
+- **Guessing:** each client address may get a password wrong 5 times in 15 minutes, each account 10 times, and all addresses together 20 times; the account and total counts are kept apart for the internal network and the outside, so guessing from outside cannot lock out the people inside. After that every attempt, even with the right password, is refused with 429 and a `Retry-After` until the oldest failure ages out. Behind a load balancer the client address is the one it forwards (see the note on `X-Forwarded-For` in the design document).
+- **Lost every administrator password:** `java -jar svcmon-hub.jar users reset <name>`, run from the hub's folder (or with the hub's `--svcmon.data-dir`) as someone who may write its data folder, prints a temporary password once, turns the account back on, makes it an administrator if none is left and ends its sign-ins.
 
 ## Build the agent and CLI
 
@@ -242,6 +244,8 @@ svcmon agent uninstall           # stop and remove the OS service
 
 An upgrade keeps everything that identifies the installation: the hub's database, settings and tokens, and each agent's `agent.json` (its token), `checks.json` and `assigned.json`. Nothing is enrolled again. Do the hub first (it carries the dashboard), then the agents, and check each with `svcmon hub` or `svcmon version` afterwards. The release page has the same steps for the downloaded files.
 
+**From a hub with the local admin account (0.1).** People now sign in as users. The local admin becomes the administrator `admin` with its password, and its old sign-ins end. Settings under `svcmon.local-admin` stop the hub with a message: remove them, or move `username` to `svcmon.users.initial-admin-username` before the upgrade (it names the account the old one turns into) and `session-hours` to `svcmon.sessions.max-hours`. API tokens and agents are unchanged.
+
 **The hub.** Build or unpack the new jar and run the installer again, with `--dry-run` / `-DryRun` first: the plan says "upgrade" and lists what is kept (see [hub/service](../hub/service/README.md); on Windows run `install.ps1` from the new [package](../hub/service/README.md#windows-package-no-download) or pass `-JarPath`). It stops the service, replaces the jar and starts it again; the database is migrated when the hub starts. Copy the data folder first if you want a way back. Without the installer, stop the hub and start it with the new jar. One change to know about: a hub built after the agent-declared checks work accepts them by default, so set `svcmon.agent-declared-checks: false` if only the admin should list checks.
 
 **The dashboard.** It is inside the hub jar, so upgrading the hub upgrades it. If your `application.yml` still has a `ui-dir:` line, the hub serves that older folder instead: remove the line and restart the service. A dashboard hosted elsewhere, or served from a folder on purpose, is upgraded by replacing `index.html` and the `assets/` folder in the folder the hub serves (`svcmon.ui-dir`) with the new build's, keeping your `config.json`. No restart is needed: `index.html` is never cached and the other files carry a hash in their names, so a normal reload shows the new one.
@@ -300,15 +304,20 @@ Safety:
 - With a signing secret, webhook bodies are signed: the hub sends `X-Svcmon-Signature: sha256=<HMAC-SHA256 of the body>`. The JSON has `event`, `kind` (`check`, `server` or `test`), `hub`, `time`, `subject`, `from`, `to` and `message`.
 - Names and messages can come from agents, so Slack markup is escaped, Discord mentions are switched off, and mail headers cannot be injected.
 
-## API (all under `/api/v1`, JSON, `Authorization: Bearer <token>`)
+## API (all under `/api/v1`, JSON, `Authorization: Bearer <token>` or a signed-in user's cookie)
+
+A user's role counts as the scope of the same name. Errors are `{"error": "<code>", "message": "..."}`.
 
 | Method and path | Scope | Purpose |
 |---|---|---|
 | `GET /health` | none | Liveness probe |
 | `GET /hub` | read | Hub ID, version, Java runtime age and warning |
-| `POST /login` | none | Password sign-in for the local admin: answers with an ADMIN token that ends after a few hours; wrong attempts are throttled |
-| `PUT /local-admin/password` | admin | Change the local admin password; ends the sign-ins made with the old one |
-| `GET /me` | read | Who is calling: `method` (`token` or `jwt`), `name` and `scope`; lets a dashboard that holds no token show who is signed in |
+| `GET /session`, `POST /session`, `DELETE /session` | none | Who is signed in; sign in with a user name and password (sets the cookie; wrong attempts are throttled); sign out |
+| `POST /session/live-ticket` | a user | A one-time ticket for the live view, valid 30 seconds |
+| `PUT /me/password` | a user | Change your own password: `{"currentPassword", "newPassword"}` |
+| `GET /sessions`, `DELETE /sessions/{id}` | a user | Your sign-ins (an administrator sees and ends everyone's) |
+| `GET/POST /users`, `PATCH/DELETE /users/{id}`, `POST /users/{id}/password-reset` | admin | Users; new and reset passwords appear once in the answer |
+| `GET /me` | read | Who is calling: `method` (`session`, `token` or `jwt`), `name` and `scope`; lets a dashboard that holds no token show who is signed in |
 | `GET /status` | read | Roll-up: summary, clusters, servers, checks |
 | `GET /live` (WebSocket) | read, sent in the first frame | Pushes the same roll-up whenever it changes, for the dashboard's Live switch; see below |
 | `GET /servers/{id}/status` | read | One server with its checks |
@@ -327,7 +336,7 @@ Safety:
 
 Polling `GET /status` is how every client works by default. For a dashboard someone is watching, `GET /api/v1/live` upgrades to a WebSocket that pushes the roll-up as it changes, so there is no refresh delay and no repeated requests. The web UI has a **Live** switch for it and turns it off again after 5 minutes without activity.
 
-A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the token: `{"type":"auth","token":"..."}`, within 5 seconds, from a READ or ADMIN token. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. No cookies are used, so any origin may open the socket and the CORS list does not apply to it. With JWT sign-in on, a JWT works in place of a hub token: in the first frame, or as `Authorization: Bearer` on the upgrade request when a proxy adds it (then no first frame is needed, the page must be on the hub's own address, and the connection closes with code 1001 when the token expires). `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
+A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the credential, within 5 seconds: a signed-in user's page sends `{"type":"auth","ticket":"..."}` with a ticket from `POST /session/live-ticket` (one use, 30 seconds; the connection closes when that sign-in ends), and a client with a READ or ADMIN token sends `{"type":"auth","token":"..."}`. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. The socket never reads cookies, so any origin may open it and the CORS list does not apply to it. With JWT sign-in on, a JWT works in place of a hub token: in the first frame, or as `Authorization: Bearer` on the upgrade request when a proxy adds it (then no first frame is needed, the page must be on the hub's own address, and the connection closes with code 1001 when the token expires). `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
 
 Behind a load balancer it must pass WebSocket upgrades (`Upgrade` and `Connection` headers) to the hub and allow idle connections for at least 30 seconds. If it does not, the Live switch tells the user it is unavailable and the dashboard keeps polling.
 
@@ -358,11 +367,11 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 | `svcmon.jwt.admin-role` | unset | The role that makes a user an administrator of the hub, who is the only kind let in; required with the issuer |
 | `svcmon.jwt.roles-claim` | `realm_access.roles` | Where the roles are in the token; dots walk into nested objects |
 | `svcmon.jwt.jwks-uri` | from discovery | Where the provider's signing keys are, if not the address in its discovery document |
-| `svcmon.local-admin.enabled` | true | The hub's own administrator account with a password; see above |
-| `svcmon.local-admin.username` | `admin` | Its user name |
-| `svcmon.local-admin.password` | unset | Password to create the account with, 12 to 128 characters; unset means a random one is printed once at first start |
-| `svcmon.local-admin.new-password` | false | Print a new random password at start-up and end earlier sign-ins (recovery) |
-| `svcmon.local-admin.session-hours` | 12 | How long a password sign-in lasts, 1 to 168 |
+| `svcmon.users.enabled` | true | Sign-in with a user name and password; see "Users and sign-in" |
+| `svcmon.users.initial-admin-username` | `admin` | Name of the first administrator, created on a hub without users |
+| `svcmon.users.initial-admin-password` | `admin` | Its password, which works only from the internal network and must be changed at the first sign-in |
+| `svcmon.sessions.idle-minutes` | 60 | A sign-in not used this long ends, 5 to 1440; the dashboard's own refreshing does not count |
+| `svcmon.sessions.max-hours` | 12 | A sign-in ends this long after it began, 1 to 168 |
 | `svcmon.alert-retry-delays-ms` | `0,2000,5000` | Waits between delivery attempts for a failing alert channel, in milliseconds |
 | `svcmon.allow-insecure-alert-urls` | false | Lets Slack and Discord URLs use http; for tests and local receivers only |
 | `svcmon.bootstrap-admin-token` | unset | Use this value (32+ characters) as the first admin token on a fresh database instead of generating one; ignored once an admin token exists |

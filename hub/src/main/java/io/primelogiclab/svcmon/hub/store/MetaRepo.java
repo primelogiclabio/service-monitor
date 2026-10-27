@@ -28,4 +28,8 @@ public class MetaRepo {
                 .param("value", value)
                 .update();
     }
+
+    public void delete(String key) {
+        jdbc.sql("DELETE FROM hub_meta WHERE key = :key").param("key", key).update();
+    }
 }

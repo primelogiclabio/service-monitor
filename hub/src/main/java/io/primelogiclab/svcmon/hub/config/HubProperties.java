@@ -31,8 +31,10 @@ public record HubProperties(
         @DefaultValue("200") int agentDeclaredChecksLimit,
         /** Optional sign-in with OpenID Connect access tokens (Keycloak and others); off unless an issuer is set. */
         @DefaultValue Jwt jwt,
-        /** The hub's own administrator account, for when no other sign-in works; on unless turned off. */
-        @DefaultValue LocalAdmin localAdmin,
+        /** People who sign in to the dashboard with a name and password; on unless turned off. */
+        @DefaultValue Users users,
+        /** How long a sign-in lasts. */
+        @DefaultValue Sessions sessions,
         /** False makes the hub headless: no dashboard is served, from ui-dir or from inside the jar. */
         @DefaultValue("true") boolean uiEnabled,
         /** Where inside the jar the dashboard sits; a jar built without one serves none. Only tests change it. */
@@ -61,20 +63,29 @@ public record HubProperties(
     }
 
     /**
-     * One administrator with a password, kept by the hub itself. Signing in with it returns an ADMIN token that
-     * lasts {@code sessionHours}. The password is stored only as a salted hash. Without {@code password} a random
-     * one is generated at first start and printed once; {@code newPassword} does that again (recovery).
+     * The hub's own users. On a hub without any, the first start creates an administrator with the initial
+     * password, which works only from the internal network and must be changed at the first sign-in. Passwords are
+     * stored only as salted hashes.
      */
-    public record LocalAdmin(
+    public record Users(
+            /** False leaves only the sign-in through a proxy (svcmon.jwt) and API tokens. */
             @DefaultValue("true") boolean enabled,
-            @DefaultValue("admin") String username,
-            /** Used only to create the account, 12 to 128 characters; ignored once the account exists. */
-            String password,
-            @DefaultValue("false") boolean newPassword,
-            /** How long a sign-in lasts, 1 to 168 hours. */
-            @DefaultValue("12") int sessionHours) {
+            /** The first administrator's name, 1 to 64 letters, digits and . _ @ -; used only to create it. */
+            @DefaultValue("admin") String initialAdminUsername,
+            /** The first administrator's password, used only to create it. */
+            @DefaultValue("admin") String initialAdminPassword) {
 
-        public static final LocalAdmin DEFAULT = new LocalAdmin(true, "admin", null, false, 12);
+        public static final Users DEFAULT = new Users(true, "admin", "admin");
+    }
+
+    /** A sign-in ends after {@code maxHours}, or sooner when it is not used for {@code idleMinutes}. */
+    public record Sessions(
+            /** 5 to 1440; the dashboard's own refreshing does not count as use. */
+            @DefaultValue("60") int idleMinutes,
+            /** 1 to 168. */
+            @DefaultValue("12") int maxHours) {
+
+        public static final Sessions DEFAULT = new Sessions(60, 12);
     }
 
     /**

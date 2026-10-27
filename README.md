@@ -23,7 +23,7 @@ Pictures are from a demo hub with made-up servers. More of them, with the story 
 
 You need Java 21 or newer for the hub. The files come from the [latest release](https://github.com/primelogiclabio/service-monitor/releases/latest), whose page has the install and upgrade steps (the Windows zip and Linux tarball install the hub as a service), or build them as shown under *Build from source*. To upgrade, see [Upgrading](docs/service-monitor-reference.md#upgrading).
 
-**1. Start the hub.** It prints an admin token (and the password of its local admin account) once; open <http://localhost:8080> and sign in.
+**1. Start the hub.** Open <http://localhost:8080> from the same network and sign in as `admin` with the password `admin`; the hub then asks you to choose a new password before anything else. The first start also prints an admin token once, for the CLI.
 
 ```bash
 java -jar svcmon-hub-<version>.jar init   # optional: write application.yml, every setting commented out
@@ -68,7 +68,7 @@ cd ../service-monitor-ui && npm ci && npm run build      # dashboard; copy dist/
 
 | | |
 |---|---|
-| [Reference](docs/service-monitor-reference.md) | What is built and how far it has been tried, running and upgrading the hub, signing in (tokens, local admin, OpenID Connect), servers and checks, alerts, the API, every setting |
+| [Reference](docs/service-monitor-reference.md) | What is built and how far it has been tried, running and upgrading the hub, signing in (users, tokens, OpenID Connect), servers and checks, alerts, the API, every setting |
 | [Hub as a service](hub/service/README.md) | The Windows and Linux installers, their dry runs and the release packages |
 | [Design](docs/service-monitor-design.md) | Why it is built this way ([HTML](docs/service-monitor-design.html)) |
 | [Stack guide](docs/service-monitor-stack-guide.md) | The technology, explained for a Java developer ([HTML](docs/service-monitor-stack-guide.html)) |

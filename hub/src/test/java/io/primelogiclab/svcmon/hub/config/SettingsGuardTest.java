@@ -41,7 +41,8 @@ class SettingsGuardTest {
                 .withProperty("svcmon.cors-allowed-origins[0]", "https://monitor.example.com")
                 .withProperty("svcmon.ui.proxy.headers.X-Web-Client", "1")
                 .withProperty("svcmon.jwt.issuer", "https://auth.example.com")
-                .withProperty("svcmon.local-admin.session-hours", "4")
+                .withProperty("svcmon.sessions.max-hours", "4")
+                .withProperty("svcmon.users.initialAdminUsername", "root")
                 .withProperty("svcmon.version", "1.2.3")
                 .withProperty("svcmon.alert-retry-delays-ms", "0,10")
                 .withProperty("server.port", "0")
@@ -81,6 +82,16 @@ class SettingsGuardTest {
         assertTrue(problems.contains("Setting svcmon.old-group.enabled (mockProperties) was removed: use svcmon.new-group instead"),
                 problems.toString());
         assertTrue(problems.contains("Unknown setting svcmon.old-groupie (mockProperties)"), problems.toString());
+    }
+
+    /** The settings of the old local admin account stop the hub, so a leftover enabled: false is never dropped silently. */
+    @Test
+    void theOldLocalAdminSettingsSayWhatReplacedThem() {
+        MockEnvironment env = new MockEnvironment().withProperty("svcmon.local-admin.enabled", "false");
+        List<String> problems = SettingsGuard.problems(env, SettingsGuard.REMOVED);
+        assertEquals(1, problems.size(), problems.toString());
+        assertTrue(problems.get(0).contains("was removed") && problems.get(0).contains("svcmon.users.enabled"),
+                problems.get(0));
     }
 
     @Test

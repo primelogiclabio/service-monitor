@@ -29,7 +29,7 @@
 #   ui-dir: ./ui
 ##   Sign-in through a reverse proxy (nginx with a gateway), so the page never holds a token. The page then calls
 ##   the proxy's path on its own site and sends only these headers, which your proxy must require before it turns
-##   the session into a token. Leave it off to sign in with an API token or the local admin account.
+##   the session into a token. Leave it off to sign in with a user name and password.
 #   ui:
 #     proxy:
 #       enabled: false
@@ -45,20 +45,24 @@
 #   public-url: https://monitor.example.com
 
 ##   ---- Signing in ----
-##   Use this value as the first admin token instead of a generated one (at least 32 characters).
+##   People sign in to the dashboard with a user name and password. A new hub has one administrator with the
+##   initial password, which works only from the internal network and must be changed at the first sign-in; only
+##   salted hashes are stored. Both values are used only to create that account. false leaves only the sign-in
+##   through a proxy (jwt) and API tokens. A forgotten password: java -jar svcmon-hub.jar users reset <name>.
+#   users:
+#     enabled: true
+#     initial-admin-username: admin
+#     initial-admin-password: admin
+##   A sign-in ends after max-hours (1 to 168), or after idle-minutes (5 to 1440) without use. The dashboard's own
+##   refreshing does not count as use: raise idle-minutes for a screen that is left showing the dashboard.
+#   sessions:
+#     idle-minutes: 60
+#     max-hours: 12
+##   API tokens are for the CLI and scripts. Use this value as the first admin token instead of a generated one (at
+##   least 32 characters).
 #   bootstrap-admin-token: choose-a-long-random-value-of-at-least-32-characters
 ##   true prints one more new admin token at start-up (token recovery), then set it back to false.
 #   new-admin-token: false
-##   The hub's own administrator, for when nothing else works. On by default: the first start prints a random
-##   password once, and only a salted hash is stored.
-#   local-admin:
-#     enabled: true
-#     username: admin
-##     Only used to create the account (12 to 128 characters); ignored once it exists.
-#     password: choose-12-to-128-characters
-##     true prints a new password at start-up (recovery).
-#     new-password: false
-#     session-hours: 12
 ##   Accept OpenID Connect access tokens (Keycloak or another provider) as Authorization: Bearer values. The hub
 ##   checks the signature, issuer, audience and expiry itself. Setting issuer turns it on; audience and admin-role
 ##   are then required.
