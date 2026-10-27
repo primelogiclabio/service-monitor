@@ -42,6 +42,8 @@ An upgrade keeps the hub's database, settings and tokens, and each agent's `agen
 
 **The hub.** Unpack the new package and run the installer again with the same options as the first time (`-InstallDir`, `-DataDir`, `--port` when you set them). The dry run says "upgrade" and lists what is kept; the real run stops the service, replaces the jar and starts it again, and the database is migrated at start. The dashboard is inside the jar, so it is upgraded too; if your `application.yml` still has a `ui-dir:` line the hub serves that older folder instead, so remove the line. Check with `svcmon hub` or `GET /api/v1/hub`.
 
+**A hub that people reach from outside the internal network** refuses them until `svcmon.access.allow-outside: true` is set in `application.yml`, and then lets them sign in over HTTPS only. The proxy in front of it must send `X-Forwarded-For` and `X-Forwarded-Proto`. The command line's API tokens work from inside only. Agents are not affected.
+
 **An agent.** Do not run `agent install` again. Stop the service, replace the program file with the new one (renamed to `svcmon`), start it:
 
 ```powershell

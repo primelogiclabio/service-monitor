@@ -6,12 +6,15 @@ import java.util.Map;
 import io.primelogiclab.svcmon.hub.config.CorsConfig;
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.security.JwtAuth;
+import io.primelogiclab.svcmon.hub.security.NetworkPolicy;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
@@ -30,20 +33,31 @@ public class LiveHandshake implements HandshakeInterceptor {
 
     static final String USER = "svcmon.live.user";
     static final String EXPIRES_AT = "svcmon.live.expires-at";
+    static final String INSIDE = "svcmon.live.inside";
+    static final String SECURE = "svcmon.live.secure";
 
     private static final Logger log = LoggerFactory.getLogger(LiveHandshake.class);
 
     private final JwtAuth jwt;
+    private final NetworkPolicy network;
     private final List<String> allowedOrigins;
 
-    public LiveHandshake(JwtAuth jwt, HubProperties props) {
+    public LiveHandshake(JwtAuth jwt, NetworkPolicy network, HubProperties props) {
         this.jwt = jwt;
+        this.network = network;
         this.allowedOrigins = CorsConfig.validate(props.corsAllowedOrigins());
     }
 
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler handler,
                                    Map<String, Object> attributes) {
+        // Where the connection comes from decides which first frames LiveHandler accepts (see NetworkPolicy). The
+        // filter has already refused an upgrade from where nobody may use the hub. Anything else counts as outside.
+        if (request instanceof ServletServerHttpRequest servlet) {
+            HttpServletRequest req = servlet.getServletRequest();
+            attributes.put(INSIDE, network.isInside(req));
+            attributes.put(SECURE, req.isSecure());
+        }
         HttpHeaders headers = request.getHeaders();
         String header = headers.getFirst(HttpHeaders.AUTHORIZATION);
         String raw = header != null && header.regionMatches(true, 0, "Bearer ", 0, 7) ? header.substring(7).trim() : null;

@@ -5,28 +5,123 @@ import java.net.UnknownHostException;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import io.primelogiclab.svcmon.hub.config.HubProperties;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * Tells whether a client address is on the internal network. The address is the one Tomcat settled on after reading
- * X-Forwarded-For from trusted proxies (server.forward-headers-strategy), so behind a load balancer it is the
- * person's own. Being inside never grants access by itself; it only lifts a refusal, such as for the initial
- * password, which works from inside only.
+ * Tells whether a request comes from the internal network, and what a person may do from where they are
+ * (svcmon.access). The address is the one Tomcat settled on after reading X-Forwarded-For from trusted proxies
+ * (server.forward-headers-strategy), so behind a load balancer it is the person's own.
+ * <p>
+ * Where a request comes from never grants access; it can only refuse it. A request is outside when its address is
+ * not internal, or when it is one of the public proxies: a gateway that forgot X-Forwarded-For shows up as itself,
+ * and is then refused rather than let in. A forged X-Forwarded-For sent from inside can only make a request look
+ * outside. Agents are never asked: they only call /api/v1/agent/, which this policy does not cover.
  */
 @Component
 public class NetworkPolicy {
 
-    /** Loopback, the private IPv4 ranges and IPv6 unique local addresses. */
-    static final List<String> INTERNAL = List.of(
-            "127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7");
+    /** Why a person's request is refused because of where it comes from; the code is the API's error code. */
+    public enum Refusal {
+        OUTSIDE_NOT_ALLOWED("outside_not_allowed", "Access from outside the internal network is not allowed"),
+        INSECURE_TRANSPORT("insecure_transport", "From outside the internal network the hub works over HTTPS only");
+
+        public final String code;
+        public final String message;
+
+        Refusal(String code, String message) {
+            this.code = code;
+            this.message = message;
+        }
+    }
 
     private static final Pattern LITERAL = Pattern.compile("[0-9.]+|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*");
 
-    private final List<Cidr> internal = INTERNAL.stream().map(Cidr::parse).toList();
+    private final HubProperties.Access cfg;
+    private final List<Cidr> internal;
+    private final List<Cidr> publicProxies;
+
+    @Autowired
+    public NetworkPolicy(HubProperties props) {
+        this(props.access());
+    }
+
+    public NetworkPolicy(HubProperties.Access access) {
+        this.cfg = access == null ? HubProperties.Access.DEFAULT : access;
+        this.internal = parse("svcmon.access.internal-networks", cfg.internalNetworks());
+        this.publicProxies = parse("svcmon.access.public-proxies", cfg.publicProxies());
+    }
+
+    private static List<Cidr> parse(String setting, List<String> values) {
+        return (values == null ? List.<String>of() : values).stream().map(v -> {
+            try {
+                return Cidr.parse(v);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException(setting + ": " + e.getMessage());
+            }
+        }).toList();
+    }
+
+    public boolean allowOutside() {
+        return cfg.allowOutside();
+    }
+
+    public List<String> internalNetworks() {
+        return cfg.internalNetworks() == null ? List.of() : cfg.internalNetworks();
+    }
+
+    public List<String> publicProxies() {
+        return cfg.publicProxies() == null ? List.of() : cfg.publicProxies();
+    }
 
     public boolean isInside(String address) {
         InetAddress a = literal(address);
-        return a != null && internal.stream().anyMatch(c -> c.contains(a));
+        return a != null && internal.stream().anyMatch(c -> c.contains(a))
+                && publicProxies.stream().noneMatch(c -> c.contains(a));
+    }
+
+    public boolean isInside(HttpServletRequest req) {
+        return isInside(req.getRemoteAddr());
+    }
+
+    /** True when nobody may use the hub from where this request comes, whatever they sign in with. */
+    public boolean refusesEveryone(HttpServletRequest req) {
+        return !cfg.allowOutside() && !isInside(req);
+    }
+
+    /** For a user signed in with a password, or signing in: from outside only when allowed, and only over HTTPS. */
+    public Refusal forUser(HttpServletRequest req) {
+        return forUser(isInside(req), req.isSecure());
+    }
+
+    public Refusal forUser(boolean inside, boolean secure) {
+        if (inside) {
+            return null;
+        }
+        if (!cfg.allowOutside()) {
+            return Refusal.OUTSIDE_NOT_ALLOWED;
+        }
+        return secure ? null : Refusal.INSECURE_TRANSPORT;
+    }
+
+    /** For a person's API token (READ or ADMIN, the CLI's): from inside only. */
+    public Refusal forToken(boolean inside) {
+        return inside ? null : Refusal.OUTSIDE_NOT_ALLOWED;
+    }
+
+    /** For an OpenID Connect token from a sign-in proxy: from outside when allowed, as the proxy carries it. */
+    public Refusal forJwt(boolean inside) {
+        return inside || cfg.allowOutside() ? null : Refusal.OUTSIDE_NOT_ALLOWED;
+    }
+
+    /** One line for the start-up summary. */
+    public String describe() {
+        return (cfg.allowOutside() ? "people may sign in from outside over HTTPS (svcmon.access.allow-outside: true)"
+                : "internal network only (svcmon.access.allow-outside: false)")
+                + "; internal networks " + (internalNetworks().isEmpty() ? "none" : String.join(", ", internalNetworks()))
+                + "; public proxies " + (publicProxies().isEmpty() ? "none" : String.join(", ", publicProxies()));
     }
 
     /** Parses an IP literal and nothing else: a name would mean a DNS lookup, which is never wanted here. */
@@ -57,7 +152,7 @@ public class NetworkPolicy {
     record Cidr(byte[] network, int prefix) {
 
         static Cidr parse(String text) {
-            String[] parts = text.strip().split("/", -1);
+            String[] parts = text == null ? new String[] {""} : text.strip().split("/", -1);
             InetAddress a = parts.length <= 2 ? literal(parts[0]) : null;
             if (a == null) {
                 throw new IllegalArgumentException("'" + text + "' is not an IP address or range such as 10.0.0.0/8");
@@ -69,6 +164,7 @@ public class NetworkPolicy {
             } catch (NumberFormatException e) {
                 prefix = -1;
             }
+            // Not /0: a range that holds every address would make the whole internet inside.
             if (prefix < 1 || prefix > bits) {
                 throw new IllegalArgumentException("'" + text + "' needs a range length from 1 to " + bits);
             }

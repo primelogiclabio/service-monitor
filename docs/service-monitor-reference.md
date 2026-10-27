@@ -13,13 +13,14 @@ Everything the [README](../README.md) leaves out: what is built and how far it h
 | Agent service install (`svcmon agent install`: Windows service, systemd unit, macOS launchd plist) | Built. The Windows service install and the Linux systemd install (Ubuntu 26.04) have run for real; the macOS launchd one is only compiled |
 | Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners; another builds a Windows package with the jar and WinSW so the install needs no download (not published as a release yet). No macOS installer |
 | Alert channels | Webhook (optionally signed), Slack, Discord and email (HTML with a plain-text part, or plain text only), plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
-| People's sign-in: users (administrator or read-only), cookie sessions, forced change of a first password, Settings screen, `users reset` | Built: hub and dashboard tests, and a run of both together on a throwaway hub. Not yet installed anywhere. Internal-only access and an audit are next; see the [sign-in and access plan](https://github.com/primelogiclabio/service-monitor/blob/main/docs/service-monitor-signin-plan.md) |
+| People's sign-in: users (administrator or read-only), cookie sessions, forced change of a first password, Settings screen, `users reset` | Built: hub and dashboard tests, and a run of both together on a throwaway hub. Not yet installed anywhere. An audit is next; see the [sign-in and access plan](https://github.com/primelogiclabio/service-monitor/blob/main/docs/service-monitor-signin-plan.md) |
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub serves it from inside its jar when built with it, or from a folder (`svcmon.ui-dir`), or it is allowed from another address (`svcmon.cors-allowed-origins`) |
+| Internal-only access (`svcmon.access.*`): people outside the internal network refused by default, or let in over HTTPS only | Built: hub and dashboard tests, and a run against a throwaway hub. Not yet installed anywhere |
 | Multi-hub console | Not started |
 
 ## Deployment model
 
-TLS is terminated at your load balancer; only the hub is exposed. The hub speaks plain HTTP on port 8080. Agents, the CLI inside the network, and any future console talk to it over the internal network. Firewall the hub port to the load balancer and the internal ranges, have the load balancer overwrite any client-supplied `X-Forwarded-For`, and optionally block `/api/v1/agent/*` from outside. The hub trusts `X-Forwarded-*` from private-range proxies (`server.forward-headers-strategy: native`; set `server.tomcat.remoteip.internal-proxies` if yours is elsewhere), so rejected requests are logged with the real client address. Use `GET /api/v1/health` for load balancer health checks.
+TLS is terminated at your load balancer; only the hub is exposed. The hub speaks plain HTTP on port 8080. Agents, the CLI inside the network, and any future console talk to it over the internal network. Firewall the hub port to the load balancer and the internal ranges, have the load balancer set or append `X-Forwarded-For` and set `X-Forwarded-Proto` (never pass the client's own on), and optionally block `/api/v1/agent/*` from outside. The hub trusts `X-Forwarded-*` from private-range proxies (`server.forward-headers-strategy: native`; set `server.tomcat.remoteip.internal-proxies` to narrow that to your load balancers, or if yours is elsewhere), so it knows each client's real address: the logs show it, and by default people outside the internal network are refused (see "Access from outside the internal network"). Use `GET /api/v1/health` for load balancer health checks.
 
 ## Run the hub
 
@@ -129,6 +130,8 @@ location = /api/v1/live {                                # the live view: the sa
     proxy_pass http://hub:8080;
 }
 location /api/ { proxy_pass http://hub:8080; }           # agents, the CLI: their own tokens, no sign-in
+# In every location also: proxy_set_header X-Forwarded-For $remote_addr; and X-Forwarded-Proto $scheme;
+# without them the hub cannot tell people outside from people inside (see "Access from outside the internal network").
 ```
 
 How this is kept safe:
@@ -150,8 +153,53 @@ People sign in to the dashboard with a user name and password. Each user is an *
 - **The cookie:** `svcmon`, or `__Host-svcmon` with `Secure` over HTTPS (as the load balancer reports it in `X-Forwarded-Proto`); `HttpOnly`, `SameSite=Strict`, no `Domain`, and gone when the browser closes. The page never sees it. A request with the cookie that changes something must also send `X-Svcmon-Request: 1` and not come from another site by the browser's `Sec-Fetch-Site`, which together stop other sites' pages from using it.
 - **How long:** a sign-in ends after `svcmon.sessions.max-hours` (12), or after `svcmon.sessions.idle-minutes` (60) without use. The dashboard's own refreshing (marked `X-Svcmon-Background: 1`) does not count, so a page left open is signed out too; raise `idle-minutes` for a screen that is meant to stay on the dashboard. Signing out, changing your password (your other sign-ins end and this one gets a new cookie), a password reset, a role change, disabling and deleting end sign-ins at once, the live view included.
 - **Users:** administrators add users with a role (`POST /api/v1/users`), which answers with a temporary password shown once; change a role or turn an account off and on (`PATCH /api/v1/users/{id}`); give a new temporary password (`POST /api/v1/users/{id}/password-reset`); and delete (`DELETE /api/v1/users/{id}`). Names are 1 to 64 letters, digits and `. _ @ -`, unique whatever their case. Nobody can demote, disable or delete the last administrator (409 `last_admin`), or their own account (409 `own_account`; another administrator can).
-- **Guessing:** each client address may get a password wrong 5 times in 15 minutes, each account 10 times, and all addresses together 20 times; the account and total counts are kept apart for the internal network and the outside, so guessing from outside cannot lock out the people inside. After that every attempt, even with the right password, is refused with 429 and a `Retry-After` until the oldest failure ages out. Behind a load balancer the client address is the one it forwards (see the note on `X-Forwarded-For` in the design document).
+- **Guessing:** each client address may get a password wrong 5 times in 15 minutes, each account 10 times, and all addresses together 20 times; the account and total counts are kept apart for the internal network and the outside, so guessing from outside cannot lock out the people inside. After that every attempt, even with the right password, is refused with 429 and a `Retry-After` until the oldest failure ages out. Behind a load balancer the client address is the one it forwards (see "Access from outside the internal network").
 - **Lost every administrator password:** `java -jar svcmon-hub.jar users reset <name>`, run from the hub's folder (or with the hub's `--svcmon.data-dir`) as someone who may write its data folder, prints a temporary password once, turns the account back on, makes it an administrator if none is left and ends its sign-ins.
+
+## Access from outside the internal network
+
+By default only people on the internal network may use the hub. From anywhere else the API answers 403 `outside_not_allowed`, and the sign-in page says that access from outside is not allowed instead of showing the form. Where a request comes from never grants anything; it can only refuse.
+
+| Who | From inside | From outside, `allow-outside: false` (default) | From outside, `allow-outside: true` |
+|---|---|---|---|
+| A signed-in user | Yes | No | Over HTTPS only, otherwise 403 `insecure_transport` |
+| The initial password, or a temporary one | Yes | No | No (403 `initial_password_inside_only`) |
+| An API token (the CLI, scripts) | Yes | No | No |
+| A JWT from a sign-in proxy (see above) | Yes | No | Yes |
+| Agents (`/api/v1/agent/*`) | Yes | Yes | Yes |
+
+The live view's upgrade request is refused like any other request. `GET /api/v1/health` and the dashboard's own files are served to anyone, since they hold nothing secret.
+
+The settings, in `application.yml` under `svcmon.access`:
+
+- **`allow-outside`** (false): set it to true for a hub that people reach through a gateway's sign-in. They then sign in at the gateway first, and then with the hub's user name and password.
+- **`internal-networks`**: IP addresses or ranges such as `10.0.0.0/8`, never names. The default is loopback (`127.0.0.0/8`, `::1/128`), `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `fc00::/7`. Setting it replaces the whole list, loopback included. A range of every address (`/0`) stops the start-up, and an IPv4 address written as IPv6 (`::ffff:10.0.0.1`) counts as IPv4.
+- **`public-proxies`** (none): proxies that people outside come through. A request that shows up with one of these addresses is outside, so a proxy that forgot `X-Forwarded-For` is refused instead of being let in.
+
+**How the hub knows where a request comes from.** It uses the client address Tomcat settles on after reading `X-Forwarded-For` from the right, through trusted proxies (`server.tomcat.remoteip.internal-proxies`, by default every private and loopback address). For that to hold:
+
+- Narrow `server.tomcat.remoteip.internal-proxies` to your load balancers. It is a regular expression, such as `'10\.0\.0\.5|10\.0\.0\.6'`. Firewall the hub's port to them and to the internal network.
+- Every proxy must set (`$remote_addr` in nginx) or append (`$proxy_add_x_forwarded_for`) `X-Forwarded-For`, and set `X-Forwarded-Proto`. A proxy that passes on the client's own value unchanged would let someone outside claim to be inside.
+- A forged `X-Forwarded-For` sent from inside can only make a request look outside.
+- nginx on the hub's own machine (Linux): give it a loopback address of its own and list that address as a public proxy. A forgotten header is then refused, while an SSH tunnel, which arrives from `127.0.0.1`, stays inside:
+
+```nginx
+location / {
+    proxy_bind 127.0.0.2;
+    proxy_set_header X-Forwarded-For   $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_pass http://127.0.0.1:8080;
+}
+```
+
+```yaml
+svcmon:
+  access:
+    allow-outside: true        # only when people outside should reach it, through the gateway's sign-in
+    public-proxies: [127.0.0.2]
+```
+
+**Check it.** The start-up log has an `Access:` line with the setting and both lists. A signed-in user sees the same in Settings, under Access, together with how the hub sees their browser: inside or outside, its address, and whether it came over HTTPS. `GET /api/v1/access` returns the same. Open the dashboard from a phone on mobile data and confirm that it is seen as outside, and with `allow-outside: false` that it is refused.
 
 ## Build the agent and CLI
 
@@ -247,6 +295,8 @@ An upgrade keeps everything that identifies the installation: the hub's database
 
 **From a hub with the local admin account (0.1).** People now sign in as users. The local admin becomes the administrator `admin` with its password, and its old sign-ins end. Settings under `svcmon.local-admin` stop the hub with a message: remove them, or move `username` to `svcmon.users.initial-admin-username` before the upgrade (it names the account the old one turns into) and `session-hours` to `svcmon.sessions.max-hours`. API tokens and agents are unchanged.
 
+**A hub that people reach from outside the internal network.** A hub with internal-only access refuses everyone outside until `svcmon.access.allow-outside: true` is set, and then only over HTTPS. Before upgrading such a hub, check that the proxy in front of it sends `X-Forwarded-For` and `X-Forwarded-Proto` (see "Access from outside the internal network"); a proxy on the same machine that does not send them makes every request look inside. Agents are not affected either way.
+
 **The hub.** Build or unpack the new jar and run the installer again, with `--dry-run` / `-DryRun` first: the plan says "upgrade" and lists what is kept (see [hub/service](../hub/service/README.md); on Windows run `install.ps1` from the new [package](../hub/service/README.md#windows-package-no-download) or pass `-JarPath`). It stops the service, replaces the jar and starts it again; the database is migrated when the hub starts. Copy the data folder first if you want a way back. Without the installer, stop the hub and start it with the new jar. One change to know about: a hub built after the agent-declared checks work accepts them by default, so set `svcmon.agent-declared-checks: false` if only the admin should list checks.
 
 **The dashboard.** It is inside the hub jar, so upgrading the hub upgrades it. If your `application.yml` still has a `ui-dir:` line, the hub serves that older folder instead: remove the line and restart the service. A dashboard hosted elsewhere, or served from a folder on purpose, is upgraded by replacing `index.html` and the `assets/` folder in the folder the hub serves (`svcmon.ui-dir`) with the new build's, keeping your `config.json`. No restart is needed: `index.html` is never cached and the other files carry a hash in their names, so a normal reload shows the new one.
@@ -313,7 +363,8 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 |---|---|---|
 | `GET /health` | none | Liveness probe |
 | `GET /hub` | read | Hub ID, version, Java runtime age and warning |
-| `GET /session`, `POST /session`, `DELETE /session` | none | Who is signed in; sign in with a user name and password (sets the cookie; wrong attempts are throttled); sign out |
+| `GET /session`, `POST /session`, `DELETE /session` | none | Who is signed in, and how the hub sees the browser (`network` inside or outside, `address`, `signInAllowed`, and `signInRefusal` when it is not); sign in with a user name and password (sets the cookie; wrong attempts are throttled); sign out |
+| `GET /access` | read | Where people may use the hub from (`allowOutside`, `internalNetworks`, `publicProxies`) and how it sees the caller (`network`, `address`, `secure`) |
 | `POST /session/live-ticket` | a user | A one-time ticket for the live view, valid 30 seconds |
 | `PUT /me/password` | a user | Change your own password: `{"currentPassword", "newPassword"}` |
 | `GET /sessions`, `DELETE /sessions/{id}` | a user | Your sign-ins (an administrator sees and ends everyone's) |
@@ -373,6 +424,10 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 | `svcmon.users.initial-admin-password` | `admin` | Its password, which works only from the internal network and must be changed at the first sign-in |
 | `svcmon.sessions.idle-minutes` | 60 | A sign-in not used this long ends, 5 to 1440; the dashboard's own refreshing does not count |
 | `svcmon.sessions.max-hours` | 12 | A sign-in ends this long after it began, 1 to 168 |
+| `svcmon.access.allow-outside` | false | Lets people outside the internal network sign in, over HTTPS only; API tokens and the initial password still work from inside only. See "Access from outside the internal network" |
+| `svcmon.access.internal-networks` | loopback and the private ranges | The internal network, as IP addresses or ranges (`10.0.0.0/8`); setting it replaces the whole list. A name or a `/0` range stops the start-up |
+| `svcmon.access.public-proxies` | empty | Proxies that people outside come through; a request that shows up as one of them is outside |
+| `server.tomcat.remoteip.internal-proxies` | private and loopback addresses | The proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` the hub believes, as a regular expression; narrow it to your load balancers |
 | `svcmon.alert-retry-delays-ms` | `0,2000,5000` | Waits between delivery attempts for a failing alert channel, in milliseconds |
 | `svcmon.allow-insecure-alert-urls` | false | Lets Slack and Discord URLs use http; for tests and local receivers only |
 | `svcmon.bootstrap-admin-token` | unset | Use this value (32+ characters) as the first admin token on a fresh database instead of generating one; ignored once an admin token exists |

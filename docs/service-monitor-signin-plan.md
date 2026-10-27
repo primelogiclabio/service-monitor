@@ -25,11 +25,11 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 |---|---|---|
 | 0 | Strict settings: an unknown or removed `svcmon.*` setting stops the hub before it touches the database, naming the setting and where it came from | Done, https://github.com/primelogiclabio/service-monitor/pull/37 |
 | 1 | Users and cookie sessions, forced password change, Settings screen, `users reset` | Done, https://github.com/primelogiclabio/service-monitor/pull/38 and https://github.com/primelogiclabio/service-monitor-ui/pull/16 |
-| 2 | Internal-only access | Next |
-| 3 | Audit of sign-ins and changes | Planned |
+| 2 | Internal-only access | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
+| 3 | Audit of sign-ins and changes | Next |
 | 4 | The gateway as a gate only | Planned; details settled when it starts |
 
-Phases 0 to 3 should all be in the next release. Phase 1 alone is safe to run inside a network; a hub reachable from outside should wait for phase 2.
+Phases 0 to 3 should all be in the next release. Phase 1 alone is safe to run inside a network; with phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
 ### Phase 1, as built
 
@@ -38,7 +38,17 @@ Phases 0 to 3 should all be in the next release. Phase 1 alone is safe to run in
 - Sessions end after `svcmon.sessions.max-hours` (12), after `idle-minutes` (60) without use (the page's own refreshing does not count), and at once on a password change, reset, role change, disable or delete.
 - Every failed sign-in gets the same answer. A name nobody has is not logged. Guessing is throttled per address, per account and in total, apart for inside and outside.
 - The old `svcmon.local-admin.*` settings stop the hub with their replacements. The old local admin keeps its password as user `admin`.
-- Which addresses count as internal is fixed for now (loopback, the private IPv4 ranges, IPv6 unique local addresses); phase 2 makes it a setting.
+- Which addresses count as internal was fixed in phase 1 (loopback, the private IPv4 ranges, IPv6 unique local addresses); phase 2 made it a setting.
+
+### Phase 2, as built
+
+As planned below, plus:
+
+- `GET /api/v1/session` answers `network`, `address`, `signInAllowed` and, when sign-in is refused, `signInRefusal` (`outside_not_allowed` or `insecure_transport`). It does not report a sign-in that may not be used from where the browser is, so the page shows the refusal instead of a dashboard that cannot load.
+- `GET /api/v1/access` (any signed-in user) returns the setting, both lists and how the hub sees the caller, for the Settings screen's Access section.
+- A JWT from outside is refused before it is checked, so the provider is not asked about it.
+- With `allow-outside` true, a request from outside with no credential at all gets 401 (sign in), not 403.
+- The start-up summary has an `Access:` line.
 
 ### Phase 2: internal-only access
 

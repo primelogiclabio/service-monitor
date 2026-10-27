@@ -12,7 +12,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 /** A bare WebSocket client for the live view tests: collects text frames and remembers how the hub closed. */
-final class LiveClient implements WebSocket.Listener {
+public final class LiveClient implements WebSocket.Listener {
 
     final BlockingQueue<String> frames = new LinkedBlockingQueue<>();
     final CompletableFuture<Integer> closeCode = new CompletableFuture<>();
@@ -22,12 +22,12 @@ final class LiveClient implements WebSocket.Listener {
     private WebSocket socket;
 
     /** Opens the socket with no Authorization header, as a browser would. */
-    static LiveClient connect(int port) {
+    public static LiveClient connect(int port) {
         return connect(port, Map.of());
     }
 
     /** Opens the socket with these headers on the upgrade request, as a proxy that adds a token would. */
-    static LiveClient connect(int port, Map<String, String> headers) {
+    public static LiveClient connect(int port, Map<String, String> headers) {
         LiveClient client = new LiveClient();
         var builder = HttpClient.newHttpClient().newWebSocketBuilder();
         headers.forEach(builder::header);
@@ -38,24 +38,34 @@ final class LiveClient implements WebSocket.Listener {
         return client;
     }
 
-    void send(String text) {
+    public void send(String text) {
         socket.sendText(text, true).join();
     }
 
-    void auth(String token) {
+    public void auth(String token) {
         send("{\"type\":\"auth\",\"token\":\"" + token + "\"}");
     }
 
+    /** Signs in as a user's page does, with a ticket from POST /api/v1/session/live-ticket. */
+    public void ticket(String ticket) {
+        send("{\"type\":\"auth\",\"ticket\":\"" + ticket + "\"}");
+    }
+
     /** The next frame, or null if none arrives in time. */
-    String next(Duration wait) throws InterruptedException {
+    public String next(Duration wait) throws InterruptedException {
         return frames.poll(wait.toMillis(), TimeUnit.MILLISECONDS);
     }
 
-    int awaitClose(Duration wait) throws Exception {
+    public int awaitClose(Duration wait) throws Exception {
         return closeCode.get(wait.toMillis(), TimeUnit.MILLISECONDS);
     }
 
-    void close() {
+    /** Why the hub closed the connection; call after {@link #awaitClose}. */
+    public String closeReason() {
+        return closeReason.getNow(null);
+    }
+
+    public void close() {
         if (!socket.isOutputClosed()) {
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done");
         }

@@ -164,6 +164,7 @@ Protected:
 - Alert channel secrets are masked in every API answer, and an update that sends the masked value back keeps the stored one.
 - Users' passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes. Sign-in attempts are throttled per address, per account and in total, separately for the internal network and the outside. A sign-in ends after a set time, when unused, and at once on a password change, reset, role change or disabled account.
 - Sign-in with an OpenID Connect provider checks the token's signature, issuer, audience and expiry in the hub; nothing is trusted because of where a request came from.
+- By default only people on the internal network may use the hub. From outside, the command line's API tokens and the initial password never work, and signed-in users only when you set `svcmon.access.allow-outside: true`, and then over HTTPS only. Where a request comes from can refuse it, never let it in. Agents are not affected.
 - Names and messages from agents are treated as untrusted: Slack markup is escaped, Discord mentions are off, mail headers cannot be injected, and the HTML in alert emails has no scripts, images or tracking.
 - Strict settings: an unknown setting is an error, so a typo does not silently weaken something.
 
@@ -171,6 +172,7 @@ Things to know and handle yourself:
 
 - **Secrets in the database are not encrypted at rest.** Alert channel secrets sit in the SQLite file as stored. Keep the data folder and any backup of it readable only by the hub's account and administrators (the installers do this for the folders they create).
 - **Check settings are not masked.** A check's address and settings, including any HTTP headers you add, are shown to anyone holding a read token and are sent to the agent that runs the check. Do not put passwords or tokens in a check's URL or headers. The check's address also appears in alert messages.
+- **Inside or outside is decided from the address your proxy forwards.** A load balancer or nginx in front of the hub must send `X-Forwarded-For` and `X-Forwarded-Proto`. One that does not makes every request look as if it came from the proxy, which is inside unless you list it in `svcmon.access.public-proxies`. The reference shows how to set this up and how to check it from outside.
 - **Agent to hub traffic is plain HTTP inside your network** by design (TLS ends at your load balancer). Anyone who can read that network can see the bearer tokens. Firewall the hub's port to the load balancer and the internal networks.
 - **A new hub has the administrator `admin` with the password `admin`** (unless you set others). That password works only from the internal network and must be changed at the first sign-in: do that before anything else. The first start also prints an admin token for the CLI in its log; read it once and keep the log folder restricted.
 - **The agent is powerful by nature.** It runs with high privileges to read service states and the container socket. A container socket is as powerful as root, so the agent only sends read requests to it.

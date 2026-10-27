@@ -40,7 +40,28 @@ public record HubProperties(
         /** Where inside the jar the dashboard sits; a jar built without one serves none. Only tests change it. */
         @DefaultValue("classpath:/ui/") String embeddedUi,
         /** How the dashboard that comes from inside the jar behaves; ui-dir has its own config.json. */
-        @DefaultValue Ui ui) {
+        @DefaultValue Ui ui,
+        /** Whether people may use the hub from outside the internal network; agents are never affected. */
+        @DefaultValue Access access) {
+
+    /**
+     * Where people may use the hub from. A request is outside when its address (after the load balancer's
+     * X-Forwarded-For) is not in {@code internalNetworks}, or is one of {@code publicProxies}. From outside, an API
+     * token and the initial password are always refused; a signed-in user only when {@code allowOutside} is true and
+     * the request came over HTTPS. Values are IP addresses or ranges such as 10.0.0.0/8, never names.
+     */
+    public record Access(
+            /** True lets people sign in from outside, over HTTPS only; meant for a hub behind a gateway's sign-in. */
+            @DefaultValue("false") boolean allowOutside,
+            /** The internal network. Setting it replaces the whole list, loopback included. */
+            @DefaultValue({"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"})
+            List<String> internalNetworks,
+            /** Proxies that people outside come through; a request that shows up as one of them is outside. */
+            @DefaultValue List<String> publicProxies) {
+
+        public static final Access DEFAULT = new Access(false,
+                List.of("127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"), List.of());
+    }
 
     /** Settings of the dashboard, served to the page as config.json. */
     public record Ui(@DefaultValue Proxy proxy) {

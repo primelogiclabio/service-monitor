@@ -200,9 +200,10 @@ class UserSignInTest {
         assertEquals(201, created.statusCode(), created.body());
         String temporary = (String) map(created).get("temporaryPassword");
 
+        // Here nobody may sign in from outside; OutsideAccessTest has the same rule where outside is allowed.
         HttpResponse<String> outside = signIn("dave", temporary, "X-Forwarded-For", "203.0.113.7");
         assertEquals(403, outside.statusCode(), outside.body());
-        assertTrue(outside.body().contains("initial_password_inside_only"));
+        assertTrue(outside.body().contains("outside_not_allowed"), outside.body());
         assertEquals(200, signIn("dave", temporary).statusCode(), "from inside it works");
     }
 

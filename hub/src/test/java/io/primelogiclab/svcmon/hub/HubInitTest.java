@@ -95,7 +95,8 @@ class HubInitTest {
         Set<String> notForUsers = Set.of("embedded-ui"); // only tests change where the jar's dashboard sits
         List<String> missing = new ArrayList<>();
         for (Class<?> type : new Class<?>[] {HubProperties.class, HubProperties.Jwt.class, HubProperties.Users.class,
-                HubProperties.Sessions.class, HubProperties.Ui.class, HubProperties.Proxy.class}) {
+                HubProperties.Sessions.class, HubProperties.Ui.class, HubProperties.Proxy.class,
+                HubProperties.Access.class}) {
             for (RecordComponent c : type.getRecordComponents()) {
                 String name = kebab(c.getName());
                 if (!notForUsers.contains(name) && !text.contains(name + ":")) {
@@ -129,6 +130,9 @@ class HubInitTest {
         assertEquals(List.of("https://monitor.example.com"), p.corsAllowedOrigins());
         assertEquals(HubProperties.Users.DEFAULT, p.users());
         assertEquals(HubProperties.Sessions.DEFAULT, p.sessions());
+        assertFalse(p.access().allowOutside());
+        assertEquals(HubProperties.Access.DEFAULT.internalNetworks(), p.access().internalNetworks());
+        assertEquals(List.of("127.0.0.2"), p.access().publicProxies());
         assertEquals("realm_access.roles", p.jwt().rolesClaim());
         assertEquals("platform-admin", p.jwt().adminRole());
         assertFalse(p.ui().proxy().enabled());

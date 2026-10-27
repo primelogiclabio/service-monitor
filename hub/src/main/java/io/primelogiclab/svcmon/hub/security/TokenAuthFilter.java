@@ -20,7 +20,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * The check in front of everything under /api/ except the health probe and the live WebSocket, which cannot
- * send a header from a browser and checks a ticket or token in its first frame instead.
+ * send a header from a browser and checks a ticket or token in its first frame instead (only the network rule below
+ * applies to its upgrade request).
  * Reads need READ or ADMIN, writes need ADMIN, /agent/register needs an ENROLL token or a join key and the other
  * /agent/ calls need the agent's own token.
  * <p>
@@ -34,6 +35,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * something must also carry {@value #REQUEST_HEADER}: 1, which a page on another site cannot add without asking
  * first (a CORS preflight the hub never approves), and must not come from another site by the browser's own word
  * (Sec-Fetch-Site). A user who must change their password can do only that until they have.
+ * <p>
+ * Where a person's request comes from can refuse it before any of that (see {@link NetworkPolicy}): from outside the
+ * internal network an API token never works, a user only when svcmon.access.allow-outside is true and the request
+ * came over HTTPS, a JWT only while allow-outside is true. The /agent/ calls are never refused for where they come
+ * from: agents connect out to the hub from wherever their servers are.
  */
 @Component
 public class TokenAuthFilter extends OncePerRequestFilter {
@@ -56,18 +62,29 @@ public class TokenAuthFilter extends OncePerRequestFilter {
     private final TokenService tokens;
     private final JwtAuth jwt;
     private final SessionService sessions;
+    private final NetworkPolicy network;
 
-    public TokenAuthFilter(TokenService tokens, JwtAuth jwt, SessionService sessions) {
+    public TokenAuthFilter(TokenService tokens, JwtAuth jwt, SessionService sessions, NetworkPolicy network) {
         this.tokens = tokens;
         this.jwt = jwt;
         this.sessions = sessions;
+        this.network = network;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String path = req.getRequestURI();
-        if (!path.startsWith("/api/") || path.equals(HEALTH) || path.equals(LiveHandler.PATH) || isPreflight(req)) {
+        if (!path.startsWith("/api/") || path.equals(HEALTH) || isPreflight(req)) {
+            chain.doFilter(req, resp);
+            return;
+        }
+        if (path.equals(LiveHandler.PATH)) {
+            // The live view signs in with its first frame, where LiveHandler applies the rest of the network rules.
+            if (network.refusesEveryone(req)) {
+                refuse(req, resp, path, NetworkPolicy.Refusal.OUTSIDE_NOT_ALLOWED);
+                return;
+            }
             chain.doFilter(req, resp);
             return;
         }
@@ -79,16 +96,37 @@ public class TokenAuthFilter extends OncePerRequestFilter {
                 reject(resp, 403, "cross_site", "This request must come from the hub's own page");
                 return;
             }
+            NetworkPolicy.Refusal refusal = req.getMethod().equals("POST") ? network.forUser(req) : null;
+            if (refusal != null) {
+                refuse(req, resp, path, refusal);
+                return;
+            }
             chain.doFilter(req, resp);
             return;
         }
         if (header == null && SessionService.hasCookie(req)) {
+            NetworkPolicy.Refusal refusal = network.forUser(req);
+            if (refusal != null) {
+                refuse(req, resp, path, refusal);
+                return;
+            }
             viaSession(req, resp, chain, path);
             return;
         }
         String raw = header != null && header.regionMatches(true, 0, "Bearer ", 0, 7) ? header.substring(7).trim() : null;
+        boolean inside = network.isInside(req);
         if (jwt.handles(raw)) {
+            NetworkPolicy.Refusal refusal = network.forJwt(inside);
+            if (refusal != null) {
+                refuse(req, resp, path, refusal);
+                return;
+            }
             viaJwt(req, resp, chain, path, jwt.verify(raw));
+            return;
+        }
+        // A person's API token works from inside only; without any credential, say what would help from there.
+        if (!inside && !path.startsWith(AGENT) && (raw != null || !network.allowOutside())) {
+            refuse(req, resp, path, network.forToken(false));
             return;
         }
         Optional<TokenRecord> token = tokens.authenticate(raw);
@@ -208,6 +246,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
                 && req.getHeader("Access-Control-Request-Method") != null;
     }
 
+    static final String AGENT = "/api/v1/agent/";
     static final String ME = "/api/v1/me";
     static final String PASSWORD = "/api/v1/me/password";
 
@@ -215,7 +254,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         if (path.equals("/api/v1/agent/register")) {
             return EnumSet.of(Scope.ENROLL, Scope.JOIN);
         }
-        if (path.startsWith("/api/v1/agent/")) {
+        if (path.startsWith(AGENT)) {
             return EnumSet.of(Scope.AGENT);
         }
         if (path.startsWith("/api/v1/tokens") || path.startsWith("/api/v1/enrollment-tokens")
@@ -230,6 +269,14 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         }
         boolean read = method.equals("GET") || method.equals("HEAD");
         return read ? EnumSet.of(Scope.READ, Scope.ADMIN) : EnumSet.of(Scope.ADMIN);
+    }
+
+    private static void refuse(HttpServletRequest req, HttpServletResponse resp, String path,
+                               NetworkPolicy.Refusal refusal) throws IOException {
+        log.warn("Refused {} {} from {}: {}", req.getMethod(), path, req.getRemoteAddr(),
+                refusal == NetworkPolicy.Refusal.INSECURE_TRANSPORT ? "outside the internal network over plain HTTP"
+                        : "outside the internal network");
+        reject(resp, 403, refusal.code, refusal.message);
     }
 
     private static void reject(HttpServletResponse resp, int status, String error, String message) throws IOException {

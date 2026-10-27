@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.model.AlertChannel;
 import io.primelogiclab.svcmon.hub.model.AlertType;
 import io.primelogiclab.svcmon.hub.model.CheckDef;
@@ -17,6 +18,7 @@ import io.primelogiclab.svcmon.hub.model.CheckType;
 import io.primelogiclab.svcmon.hub.model.RunFrom;
 import io.primelogiclab.svcmon.hub.model.ServerInfo;
 import io.primelogiclab.svcmon.hub.model.Status;
+import io.primelogiclab.svcmon.hub.security.NetworkPolicy;
 import org.junit.jupiter.api.Test;
 
 /** The start-up summary's layout: what it shows, what it caps, and what it must never print. */
@@ -28,8 +30,10 @@ class StartupSummaryTest {
 
     private static StartupSummary.Facts facts(List<CheckDef> checks, List<ServerInfo> servers,
                                               List<AlertChannel> channels) {
-        return new StartupSummary.Facts("0.1.0", URLS, DB, NOT_SERVED, List.of(), checks, servers, channels);
+        return new StartupSummary.Facts("0.1.0", URLS, DB, NOT_SERVED, List.of(), ACCESS, checks, servers, channels);
     }
+
+    private static final String ACCESS = new NetworkPolicy(HubProperties.Access.DEFAULT).describe();
 
     private static CheckDef check(String name, CheckType type, RunFrom from, String serverId, boolean enabled) {
         return new CheckDef("id-" + name, name, type, "https://user:hunter2@internal.example/hook?token=abc123",
@@ -126,9 +130,22 @@ class StartupSummaryTest {
     @Test
     void servedDashboardAndCorsOriginsAreShown() {
         String text = StartupSummary.render(new StartupSummary.Facts("0.1.0", URLS, DB, "served from " + Path.of("/srv/ui"),
-                List.of("https://monitor.example.com"), List.of(), List.of(), List.of()));
+                List.of("https://monitor.example.com"), ACCESS, List.of(), List.of(), List.of()));
 
         assertTrue(text.contains("served from " + Path.of("/srv/ui")), text);
         assertTrue(text.contains("browser access allowed from https://monitor.example.com"), text);
+    }
+
+    @Test
+    void whoMayUseTheHubFromWhereIsShown() {
+        String text = StartupSummary.render(facts(List.of(), List.of(), List.of()));
+        assertTrue(text.contains("Access:    internal network only (svcmon.access.allow-outside: false); internal"
+                + " networks 127.0.0.0/8, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7; public proxies"
+                + " none"), text);
+
+        String open = new NetworkPolicy(new HubProperties.Access(true, List.of("10.0.0.0/8"), List.of("10.0.0.5")))
+                .describe();
+        assertEquals("people may sign in from outside over HTTPS (svcmon.access.allow-outside: true); internal networks"
+                + " 10.0.0.0/8; public proxies 10.0.0.5", open);
     }
 }

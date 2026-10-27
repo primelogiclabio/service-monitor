@@ -47,8 +47,13 @@ public class SessionController {
     public record Who(String id, String name, Role role) {
     }
 
-    /** {@code user}, {@code mustChangePassword} and {@code expiresAt} are there only when signed in. */
-    public record State(boolean signedIn, Who user, Boolean mustChangePassword, Long expiresAt) {
+    /**
+     * {@code user}, {@code mustChangePassword} and {@code expiresAt} are there only when signed in. {@code network}
+     * (inside or outside) and {@code address} say how the hub sees this browser; {@code signInAllowed} is false when
+     * a password sign-in from here would be refused, and {@code signInRefusal} then names the network's reason.
+     */
+    public record State(boolean signedIn, Who user, Boolean mustChangePassword, Long expiresAt, String network,
+                        String address, boolean signInAllowed, String signInRefusal) {
     }
 
     public record SessionView(String id, String user, long createdAt, long lastSeenAt, long expiresAt,
@@ -70,15 +75,16 @@ public class SessionController {
 
     @GetMapping("/session")
     public ResponseEntity<State> state(HttpServletRequest req) {
-        State state = sessions.authenticate(req).map(SessionController::state).orElse(new State(false, null, null, null));
-        return ResponseEntity.ok().header("Cache-Control", "no-store").body(state);
+        // A sign-in that may not be used from here is not reported, so the page shows the refusal instead.
+        SessionService.Signed who = network.forUser(req) == null ? sessions.authenticate(req).orElse(null) : null;
+        return ResponseEntity.ok().header("Cache-Control", "no-store").body(state(who, req));
     }
 
     @PostMapping(value = "/session", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> signIn(@RequestBody SignInRequest body, HttpServletRequest req, HttpServletResponse resp) {
         String client = req.getRemoteAddr();
         UserService.SignInResult result = users.signIn(body.username(), body.password(), client,
-                network.isInside(client), req.getHeader("User-Agent"));
+                network.isInside(req), req.getHeader("User-Agent"));
         ResponseEntity.BodyBuilder reply = ResponseEntity.status(switch (result.status()) {
             case OK -> HttpStatus.OK;
             case WRONG -> HttpStatus.UNAUTHORIZED;
@@ -89,7 +95,7 @@ public class SessionController {
         return switch (result.status()) {
             case OK -> {
                 sessions.writeCookie(req, resp, result.session().raw());
-                yield reply.body(state(new SessionService.Signed(result.session().session(), result.user())));
+                yield reply.body(state(new SessionService.Signed(result.session().session(), result.user()), req));
             }
             // The same answer for a wrong name, a wrong password and a disabled account.
             case WRONG -> reply.body(error("wrong_credentials", "Wrong user name or password"));
@@ -124,7 +130,7 @@ public class SessionController {
         SessionService.Signed who = signedIn(req);
         String client = req.getRemoteAddr();
         SessionService.Issued renewed = users.changeOwnPassword(who, body.currentPassword(), body.newPassword(), client,
-                network.isInside(client));
+                network.isInside(req));
         sessions.writeCookie(req, resp, renewed.raw());
     }
 
@@ -173,9 +179,17 @@ public class SessionController {
                 || req.getAttribute(TokenAuthFilter.ATTR) instanceof TokenRecord t && t.scope() == Scope.ADMIN;
     }
 
-    private static State state(SessionService.Signed who) {
+    private State state(SessionService.Signed who, HttpServletRequest req) {
+        NetworkPolicy.Refusal refusal = network.forUser(req);
+        String where = network.isInside(req) ? "inside" : "outside";
+        boolean allowed = refusal == null && users.enabled();
+        String reason = refusal == null ? null : refusal.code;
+        if (who == null) {
+            return new State(false, null, null, null, where, req.getRemoteAddr(), allowed, reason);
+        }
         UserRecord u = who.user();
-        return new State(true, new Who(u.id(), u.username(), u.role()), u.mustChangePassword(), who.session().expiresAt());
+        return new State(true, new Who(u.id(), u.username(), u.role()), u.mustChangePassword(), who.session().expiresAt(),
+                where, req.getRemoteAddr(), allowed, reason);
     }
 
     private static Map<String, String> error(String code, String message) {

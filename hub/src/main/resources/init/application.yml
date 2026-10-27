@@ -11,6 +11,12 @@
 #   port: 8080
 ##   Listen on one address only (the default is every address).
 #   address: 127.0.0.1
+##   The proxies whose X-Forwarded-For and X-Forwarded-Proto the hub believes, as a regular expression. The default
+##   is every private and loopback address; narrow it to your load balancers. They must set or append
+##   X-Forwarded-For and set X-Forwarded-Proto, never pass on what the client sent.
+#   tomcat:
+#     remoteip:
+#       internal-proxies: '10\.0\.0\.5|10\.0\.0\.6'
 
 # svcmon:
 ##   The SQLite database lives here (created on first start). Back up this folder.
@@ -58,6 +64,24 @@
 #   sessions:
 #     idle-minutes: 60
 #     max-hours: 12
+##   Where people may use the hub from. From outside the internal network an API token (the CLI's) and the initial
+##   password never work, and a signed-in user only when allow-outside is true and the request came over HTTPS; the
+##   rest is refused. Turn it on for a hub that people reach through a gateway's sign-in. Agents are never affected.
+##   A request is outside when its address is not in internal-networks (IP addresses or ranges; setting it replaces
+##   the whole list, so keep 127.0.0.0/8 and ::1/128 for this machine), or is one of public-proxies: a proxy that
+##   people outside come through, so one that forgets X-Forwarded-For is refused rather than let in. For nginx on
+##   this machine, give it its own address (proxy_bind 127.0.0.2) and list that here.
+#   access:
+#     allow-outside: false
+#     internal-networks:
+#       - 127.0.0.0/8
+#       - "::1/128"
+#       - 10.0.0.0/8
+#       - 172.16.0.0/12
+#       - 192.168.0.0/16
+#       - "fc00::/7"
+#     public-proxies:
+#       - 127.0.0.2
 ##   API tokens are for the CLI and scripts. Use this value as the first admin token instead of a generated one (at
 ##   least 32 characters).
 #   bootstrap-admin-token: choose-a-long-random-value-of-at-least-32-characters

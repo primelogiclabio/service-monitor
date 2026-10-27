@@ -21,7 +21,8 @@ class UiHostingConfigTest {
 
     private static HubProperties props(boolean enabled, Path uiDir, String embedded, HubProperties.Ui ui) {
         return new HubProperties(Path.of("."), 30, 30, 90, null, false, uiDir, List.of(), false, 50, null, true, 200,
-                HubProperties.Jwt.DISABLED, HubProperties.Users.DEFAULT, HubProperties.Sessions.DEFAULT, enabled, embedded, ui);
+                HubProperties.Jwt.DISABLED, HubProperties.Users.DEFAULT, HubProperties.Sessions.DEFAULT, enabled, embedded, ui,
+                HubProperties.Access.DEFAULT);
     }
 
     private static HubProperties.Ui proxy(String apiBase, Map<String, String> headers, String signIn, String signOut) {
