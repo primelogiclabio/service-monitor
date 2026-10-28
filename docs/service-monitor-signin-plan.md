@@ -27,7 +27,7 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 | 1 | Users and cookie sessions, forced password change, Settings screen, `users reset` | Done, https://github.com/primelogiclabio/service-monitor/pull/38 and https://github.com/primelogiclabio/service-monitor-ui/pull/16 |
 | 2 | Internal-only access | Done, https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
 | 3 | Audit of sign-ins and changes | Done, https://github.com/primelogiclabio/service-monitor/pull/41 and https://github.com/primelogiclabio/service-monitor-ui/pull/18 |
-| 4 | The gateway as a gate only | Built, in review |
+| 4 | The gateway as a gate only | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/42 and https://github.com/primelogiclabio/service-monitor-ui/pull/19 |
 
 Phases 0 to 3 should all be in the next release. Phase 1 alone is safe to run inside a network; with phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
