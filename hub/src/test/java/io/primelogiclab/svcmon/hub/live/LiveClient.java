@@ -60,9 +60,9 @@ public final class LiveClient implements WebSocket.Listener {
         return closeCode.get(wait.toMillis(), TimeUnit.MILLISECONDS);
     }
 
-    /** Why the hub closed the connection; call after {@link #awaitClose}. */
-    public String closeReason() {
-        return closeReason.getNow(null);
+    /** Why the hub closed the connection; waits for it like {@link #awaitClose}. */
+    public String closeReason() throws Exception {
+        return closeReason.get(5, TimeUnit.SECONDS);
     }
 
     public void close() {
@@ -84,14 +84,15 @@ public final class LiveClient implements WebSocket.Listener {
 
     @Override
     public CompletionStage<?> onClose(WebSocket ws, int statusCode, String reason) {
-        closeCode.complete(statusCode);
+        // The reason first: a test that waits for the code may read the reason straight after.
         closeReason.complete(reason);
+        closeCode.complete(statusCode);
         return null;
     }
 
     @Override
     public void onError(WebSocket ws, Throwable error) {
-        closeCode.complete(-1);
         closeReason.complete(String.valueOf(error));
+        closeCode.complete(-1);
     }
 }
