@@ -23,10 +23,6 @@ public class MeController {
             m.put("method", "session");
             m.put("name", who.user().username());
             m.put("scope", who.user().role().scope().name());
-        } else if (req.getAttribute(TokenAuthFilter.JWT_USER_ATTR) instanceof String user) {
-            m.put("method", "jwt");
-            m.put("name", user);
-            m.put("scope", "ADMIN");
         } else {
             TokenRecord token = (TokenRecord) req.getAttribute(TokenAuthFilter.ATTR);
             m.put("method", "token");

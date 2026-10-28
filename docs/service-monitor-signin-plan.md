@@ -15,7 +15,7 @@ The hub is the central dashboard for every connected agent and the only place al
 - **No one-time codes for now.** Behind a gateway they were judged more than needed; they stay on the list for a hub reachable without one.
 - **The CLI keeps API tokens.** It is not exposed publicly, so those tokens work from the internal network only. Agents keep their own credentials and are never affected by where they connect from.
 - **Audit:** sign-ins kept 30 days, changes 365 days.
-- **Identity providers:** the hub trusts an identity only when it can check it itself, as it does a signed JWT. It never trusts an identity header (such as OAM's `OAM_REMOTE_USER`), because anyone who reaches the hub's port without the gateway could set one. In the end a gateway is a gate only, and the hub's own sign-in always follows.
+- **Identity providers:** the hub never trusts an identity header (such as OAM's `OAM_REMOTE_USER`), because anyone who reaches the hub's port without the gateway could set one. A gateway is a gate only, and the hub's own sign-in always follows.
 
 ## Phases
 
@@ -26,8 +26,8 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 | 0 | Strict settings: an unknown or removed `svcmon.*` setting stops the hub before it touches the database, naming the setting and where it came from | Done, https://github.com/primelogiclabio/service-monitor/pull/37 |
 | 1 | Users and cookie sessions, forced password change, Settings screen, `users reset` | Done, https://github.com/primelogiclabio/service-monitor/pull/38 and https://github.com/primelogiclabio/service-monitor-ui/pull/16 |
 | 2 | Internal-only access | Done, https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
-| 3 | Audit of sign-ins and changes | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/41 and https://github.com/primelogiclabio/service-monitor-ui/pull/18 |
-| 4 | The gateway as a gate only | Next; details settled when it starts |
+| 3 | Audit of sign-ins and changes | Done, https://github.com/primelogiclabio/service-monitor/pull/41 and https://github.com/primelogiclabio/service-monitor-ui/pull/18 |
+| 4 | The gateway as a gate only | Built, in review |
 
 Phases 0 to 3 should all be in the next release. Phase 1 alone is safe to run inside a network; with phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
@@ -91,6 +91,14 @@ As planned above, plus:
 - The hub stops turning a gateway's JWT into dashboard access: the dashboard's proxy mode (`svcmon.ui.proxy.*`) and the JWT on the live view go, and the hub's own sign-in always follows the gateway's.
 - To settle then: whether `svcmon.jwt.*` goes entirely, or stays so the hub can check the gateway's token as proof that the gate was passed, without granting anything.
 - A deployment such as the droplet changes its nginx: it keeps the gateway's sign-in as the gate, stops exchanging the session for a token, passes the hub's cookie and `X-Forwarded-For`/`-Proto` through, and lets `/api/v1/agent/*` past the gate. The owner applies that change.
+
+### Phase 4, as built
+
+- **Settled:** `svcmon.jwt.*` goes entirely. The hub accepts no provider token at all, not even as proof of the gate, and has no connection to the provider. A JWT sent as a bearer token is just an unknown token (401).
+- **The gate:** any signed-in user of the provider gets past it (nginx asks the gateway's check with no API name, so no role and no token exchange); the hub's users and roles decide the rest.
+- **Removed settings:** `svcmon.jwt.*` and `svcmon.ui.proxy.*` stop the hub with advice. Removed settings are now also caught in environment variables (`SVCMON_JWT_ISSUER`, `SVCMON_LOCALADMIN_PASSWORD` and the like); other environment variables are still not checked, because of the CLI's own.
+- **The dashboard:** proxy mode and its gate page are gone. A 401 the hub did not send (no hub error code, or `gateway_sign_in`) makes the page reload once, so the gateway can sign the person in again; a second one within 30 seconds is reported instead. A `config.json` that still says `"proxy"` is reported on the sign-in page, and the form still works.
+- **Tested locally:** nginx (Docker) with the gate configuration from the reference, a stand-in for the gateway, and the hub. That run also showed that nginx needs `absolute_redirect off`, and that a first or temporary password cannot be used through the gate (it works from inside only), so a new user's first sign-in is from inside.
 
 ## Later
 

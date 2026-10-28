@@ -82,18 +82,15 @@ class NetworkPolicyTest {
     void fromInsideEveryoneMayTryAndFromOutsideOnlyWhatTheSettingAllows() {
         assertNull(DEFAULT.forUser(from("10.0.0.1", false)), "plain HTTP inside is fine");
         assertNull(DEFAULT.forToken(true));
-        assertNull(DEFAULT.forJwt(true));
 
         assertEquals(Refusal.OUTSIDE_NOT_ALLOWED, DEFAULT.forUser(from("203.0.113.7", true)));
         assertEquals(Refusal.OUTSIDE_NOT_ALLOWED, DEFAULT.forToken(false));
-        assertEquals(Refusal.OUTSIDE_NOT_ALLOWED, DEFAULT.forJwt(false));
         assertTrue(DEFAULT.refusesEveryone(from("203.0.113.7", true)));
 
         NetworkPolicy open = policy(true, HubProperties.Access.DEFAULT.internalNetworks(), List.of());
         assertNull(open.forUser(from("203.0.113.7", true)));
         assertEquals(Refusal.INSECURE_TRANSPORT, open.forUser(from("203.0.113.7", false)));
         assertEquals(Refusal.OUTSIDE_NOT_ALLOWED, open.forToken(false), "the CLI's tokens stay inside");
-        assertNull(open.forJwt(false));
         assertFalse(open.refusesEveryone(from("203.0.113.7", false)));
         assertEquals("outside_not_allowed", Refusal.OUTSIDE_NOT_ALLOWED.code);
         assertEquals("insecure_transport", Refusal.INSECURE_TRANSPORT.code);

@@ -35,11 +35,8 @@ public class UiHostingConfig implements WebMvcConfigurer {
     private final Kind kind;
     private final Path uiDir;
     private final String embedded;
-    private final String configJson;
 
     public UiHostingConfig(HubProperties props, ResourceLoader loader) {
-        // Checked even when it is not used, so a typo in svcmon.ui.proxy is found at start-up.
-        this.configJson = UiSettings.json(props.ui());
         String location = props.embeddedUi() == null || props.embeddedUi().isBlank() ? "classpath:/ui/" : props.embeddedUi();
         this.embedded = location.endsWith("/") ? location : location + "/";
         if (!props.uiEnabled()) {
@@ -121,8 +118,8 @@ public class UiHostingConfig implements WebMvcConfigurer {
     }
 
     /**
-     * The page asks for ./config.json. A folder has its own file; the dashboard inside the jar gets one built from
-     * svcmon.ui.proxy.*, so nobody edits files inside the jar.
+     * The page asks for ./config.json. A folder has its own file; the dashboard inside the jar gets an empty one, since
+     * it always signs in with the hub's own accounts and needs no settings.
      */
     @Bean
     RouterFunction<ServerResponse> dashboardConfig() {
@@ -133,7 +130,7 @@ public class UiHostingConfig implements WebMvcConfigurer {
                 .GET("/config.json", request -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .cacheControl(CacheControl.noCache())
-                        .body(configJson))
+                        .body("{}"))
                 .build();
     }
 }

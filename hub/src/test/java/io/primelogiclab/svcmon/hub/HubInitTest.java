@@ -94,8 +94,7 @@ class HubInitTest {
         String text = template();
         Set<String> notForUsers = Set.of("embedded-ui"); // only tests change where the jar's dashboard sits
         List<String> missing = new ArrayList<>();
-        for (Class<?> type : new Class<?>[] {HubProperties.class, HubProperties.Jwt.class, HubProperties.Users.class,
-                HubProperties.Sessions.class, HubProperties.Ui.class, HubProperties.Proxy.class,
+        for (Class<?> type : new Class<?>[] {HubProperties.class, HubProperties.Users.class, HubProperties.Sessions.class,
                 HubProperties.Access.class, HubProperties.Audit.class}) {
             for (RecordComponent c : type.getRecordComponents()) {
                 String name = kebab(c.getName());
@@ -134,16 +133,6 @@ class HubInitTest {
         assertEquals(HubProperties.Access.DEFAULT.internalNetworks(), p.access().internalNetworks());
         assertEquals(List.of("127.0.0.2"), p.access().publicProxies());
         assertEquals(HubProperties.Audit.DEFAULT, p.audit());
-        assertEquals("realm_access.roles", p.jwt().rolesClaim());
-        assertEquals("platform-admin", p.jwt().adminRole());
-        assertFalse(p.ui().proxy().enabled());
-        assertEquals("/web-api", p.ui().proxy().apiBase());
-        assertEquals("/oauth2/start", p.ui().proxy().signInUrl());
-        assertEquals("/oauth2/sign_out", p.ui().proxy().signOutUrl());
-        // The header keeps its name, which is what the proxy must demand (HTTP names ignore case, but people read it).
-        assertEquals(1, p.ui().proxy().headers().size());
-        assertEquals("1", p.ui().proxy().headers().entrySet().iterator().next().getValue());
-        assertEquals("x-web-client", p.ui().proxy().headers().keySet().iterator().next().toLowerCase(Locale.ROOT));
     }
 
     @Test

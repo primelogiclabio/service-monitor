@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Starts a release hub jar on a throwaway port and data folder and checks the things a release must get right:
 # it starts, it reports the version it was built as, it serves the dashboard from inside itself, the dashboard's
-# config.json comes from the settings, and "init" writes a settings file and then refuses to replace it.
+# config.json is the hub's own (empty: the dashboard has no settings), and "init" writes a settings file and then
+# refuses to replace it.
 # Nothing outside a temporary folder is touched. The release workflow runs it on every release jar; it also runs by
 # hand:  .github/release/smoke-hub-jar.sh target/svcmon-hub-0.1.0.jar 0.1.0 [port]
 set -euo pipefail
@@ -56,8 +57,8 @@ asset=$(printf '%s' "$page" | grep -o 'assets/[^"]*\.js' | head -n 1)
 curl -fsS "$base/$asset" >/dev/null || fail "the script $asset is not served"
 ok "$asset is served"
 cfg=$(curl -fsS "$base/config.json")
-[ "$cfg" = '{"proxy":false}' ] || fail "config.json is $cfg"
-ok "config.json is built from the settings: $cfg"
+[ "$cfg" = '{}' ] || fail "config.json is $cfg"
+ok "config.json is the hub's own: $cfg"
 grep -q "inside the hub jar" "$work/hub.log" || fail "the start-up summary does not say the dashboard is inside the jar"
 ok "the start-up summary says where the dashboard comes from"
 

@@ -186,8 +186,7 @@ public class SessionController {
         if (req.getAttribute(TokenAuthFilter.USER_ATTR) instanceof SessionService.Signed who) {
             return who.user().role() == Role.ADMIN;
         }
-        return req.getAttribute(TokenAuthFilter.JWT_USER_ATTR) != null
-                || req.getAttribute(TokenAuthFilter.ATTR) instanceof TokenRecord t && t.scope() == Scope.ADMIN;
+        return req.getAttribute(TokenAuthFilter.ATTR) instanceof TokenRecord t && t.scope() == Scope.ADMIN;
     }
 
     private State state(SessionService.Signed who, HttpServletRequest req) {

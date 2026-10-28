@@ -103,7 +103,7 @@ jobs:
         run: |
           mkdir -p out
           (cd dist && zip -qr "../out/service-monitor-ui-$VERSION-dist.zip" .)
-      # The hub builds its own config.json from its settings, so the copy that goes inside the jar leaves it out.
+      # The hub serves its own config.json, so the copy that goes inside the jar leaves it out.
       - run: rm dist/config.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

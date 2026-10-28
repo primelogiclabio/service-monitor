@@ -1,9 +1,5 @@
 package io.primelogiclab.svcmon.hub.audit;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,9 +27,9 @@ import org.springframework.web.servlet.HandlerMapping;
  * token, so nothing secret ends up in it. Text that comes from outside (a user name, a path) is trimmed and has its
  * control characters removed. A failure to write an event is logged and does not fail the request.
  * <p>
- * Sign-in events are written where they happen (UserService, SessionController, TokenAuthFilter). Change events are
- * written by {@link #requestDone} once a person's POST, PUT, PATCH or DELETE under /api/ has been answered: the route
- * pattern (POST /api/v1/checks/{id}), the id in the path, the outcome and who it was. A controller may add a target
+ * Sign-in events are written where they happen (UserService, SessionController, UserController, TokenAuthFilter).
+ * Change events are written by {@link #requestDone} once a person's POST, PUT, PATCH or DELETE under /api/ has been
+ * answered: the route pattern (POST /api/v1/checks/{id}), the id in the path, the outcome and who it was. A controller may add a target
  * and a detail in the request attributes {@link #TARGET_ATTR} and {@link #DETAIL_ATTR}. Agents only appear when they
  * register.
  */
@@ -64,7 +60,7 @@ public class AuditService {
             "POST /api/v1/session", "DELETE /api/v1/session", "POST /api/v1/session/live-ticket",
             "PUT /api/v1/me/password", "POST /api/v1/users/{id}/password-reset", "DELETE /api/v1/sessions/{id}");
 
-    /** Who did something: a name and what kind of credential it was (user, jwt, token, ...). */
+    /** Who did something: a name and what kind of credential it was (user, token, ...). */
     public record Actor(String name, String kind) {
 
         public static final Actor UNKNOWN = new Actor("unknown", "unknown");
@@ -139,13 +135,6 @@ public class AuditService {
         }
     }
 
-    /** Records the first use of each JWT (by its hash) as a sign-in; a JWT is sent with every call. */
-    public void jwtUsed(String rawToken, String user, String outcome, String address) {
-        if (once("jwt:" + outcome + ":" + sha256(rawToken))) {
-            signIn("jwt_sign_in", outcome, new Actor(user == null ? "unknown" : user, "jwt"), address, null, null);
-        }
-    }
-
     /**
      * Records a person's change once it has been answered with {@code status}. Reads, the /agent/ calls and signing in
      * and out are not changes.
@@ -182,9 +171,6 @@ public class AuditService {
     public static Actor actorOf(HttpServletRequest req) {
         if (req.getAttribute(TokenAuthFilter.USER_ATTR) instanceof SessionService.Signed who) {
             return Actor.user(who.user().username());
-        }
-        if (req.getAttribute(TokenAuthFilter.JWT_USER_ATTR) instanceof String user) {
-            return new Actor(user, "jwt");
         }
         if (req.getAttribute(TokenAuthFilter.ATTR) instanceof TokenRecord token) {
             return new Actor(token.name(), "token");
@@ -240,14 +226,5 @@ public class AuditService {
             return null;
         }
         return one.length() > MAX_TEXT ? one.substring(0, MAX_TEXT) + "..." : one;
-    }
-
-    private static String sha256(String s) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(String.valueOf(s).getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
     }
 }

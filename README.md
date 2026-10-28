@@ -12,7 +12,7 @@ Pictures are from a demo hub with made-up servers. More of them, with the story 
 
 | Part | Built with |
 |---|---|
-| Hub | Java 21, Spring Boot 4.1 (web, WebSocket, JDBC), Maven, SQLite with Flyway migrations, Nimbus JOSE+JWT for OpenID Connect sign-in, Angus Mail for email alerts |
+| Hub | Java 21, Spring Boot 4.1 (web, WebSocket, JDBC), Maven, SQLite with Flyway migrations, Angus Mail for email alerts |
 | Agent and CLI (`svcmon`) | Go 1.27 with [gopsutil](https://github.com/shirou/gopsutil), [pro-bing](https://github.com/prometheus-community/pro-bing), `golang.org/x/sys` and go-winio; one self-contained binary, built for Windows, Linux, macOS and FreeBSD |
 | Dashboard | Svelte 5, Vite 6 and uPlot, in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); built files go inside the hub jar |
 | Running as a service | WinSW on Windows, systemd on Linux, launchd for the macOS agent |
@@ -68,7 +68,7 @@ cd ../service-monitor-ui && npm ci && npm run build      # dashboard; copy dist/
 
 | | |
 |---|---|
-| [Reference](docs/service-monitor-reference.md) | What is built and how far it has been tried, running and upgrading the hub, signing in (users, tokens, OpenID Connect), servers and checks, alerts, the API, every setting |
+| [Reference](docs/service-monitor-reference.md) | What is built and how far it has been tried, running and upgrading the hub, signing in (users, tokens, behind a sign-in gateway), servers and checks, alerts, the API, every setting |
 | [Hub as a service](hub/service/README.md) | The Windows and Linux installers, their dry runs and the release packages |
 | [Design](docs/service-monitor-design.md) | Why it is built this way ([HTML](docs/service-monitor-design.html)) |
 | [Sign-in and access plan](docs/service-monitor-signin-plan.md) | What is built of people's sign-in and what comes next: internal-only access, an audit, a gateway that only gates ([HTML](docs/service-monitor-signin-plan.html)) |

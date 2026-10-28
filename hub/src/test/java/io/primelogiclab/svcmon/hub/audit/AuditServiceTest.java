@@ -138,17 +138,6 @@ class AuditServiceTest {
     }
 
     @Test
-    void eachJwtIsRecordedTheFirstTimeOnly() {
-        audit.jwtUsed("header.payload.signature", "alice", "ok", "10.0.0.7");
-        audit.jwtUsed("header.payload.signature", "alice", "ok", "10.0.0.7");
-        audit.jwtUsed("header.other.signature", "alice", "ok", "10.0.0.7");
-        verify(repo, times(2)).insert(any());
-        assertEquals("jwt_sign_in", lastWritten().kind());
-        assertEquals("jwt", lastWritten().actorKind());
-        assertFalse(lastWritten().toString().contains("signature"), "the token itself is never kept");
-    }
-
-    @Test
     void oldEventsGoAfterTheirCategorysDays() {
         audit.purge();
         verify(repo).deleteOlderThan(AuditService.SIGN_IN, NOW - TimeUnit.DAYS.toMillis(30));

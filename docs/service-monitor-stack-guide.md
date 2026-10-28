@@ -34,7 +34,7 @@ Monitored servers (they only call OUT)
      Dashboard (Svelte)   CLI (svcmon)     Alert channels
      served by the hub    same Go program  Slack, Discord, email, webhook
 
-   Sign-in (optional): Keycloak or another OpenID Connect provider, checked by the hub
+   Sign-in gateway (optional): Keycloak with nginx, a gate in front of the hub
 ```
 
 Three programs live in two repositories:
@@ -77,13 +77,12 @@ These pictures come from a throwaway demo hub filled with made-up servers (the d
 | Virtual threads (Java 21, JEP 444) | Very cheap threads managed by the JVM; blocking in one costs almost nothing | `spring.threads.virtual.enabled` is on. One ordinary thread keeps time in `CheckScheduler`; every check run executes on its own virtual thread, so hundreds of slow checks do not need a big pool |
 | JdbcClient | Spring's plain-SQL helper (no JPA, no Hibernate) | The `store/` package writes SQL by hand and maps rows into Java records |
 | SQLite and `sqlite-jdbc` 3.53.4.0 | A database that is just a file | Lives in `svcmon.data-dir`. Opened in WAL mode (readers do not block the writer), with a 10 second busy timeout and foreign keys on. The jar carries the native libraries for every platform |
-| Flyway | Applies numbered SQL scripts to the database on start | `src/main/resources/db/migration/V1` to `V4`. An applied migration is never edited; a change is a new file |
+| Flyway | Applies numbered SQL scripts to the database on start | `src/main/resources/db/migration/V1` to `V6`. An applied migration is never edited; a change is a new file |
 | Spring WebSocket | A long-lived two-way connection to the browser | `/api/v1/live` pushes the status to a dashboard when it changes |
 | Angus Mail 2.0.5 | The implementation of Jakarta Mail | Sends alert emails over SMTP |
-| Nimbus JOSE+JWT 10.9.1 | A library for signed tokens | Checks the signed sign-in tokens from your identity provider (section 4.5) |
 | Maven | Your build tool | `mvn -B -ntp test` runs the tests, which start the real hub on random ports with temporary data folders |
 
-All of these were checked in the build files and the local Maven cache; their licences are Apache-2.0 for Flyway, `sqlite-jdbc` and Nimbus, and EPL-2.0 or GPL-2.0 with the Classpath Exception for Angus Mail.
+All of these were checked in the build files and the local Maven cache; their licences are Apache-2.0 for Flyway and `sqlite-jdbc`, and EPL-2.0 or GPL-2.0 with the Classpath Exception for Angus Mail.
 
 ### 4.2 The agent and the CLI (the Go side)
 
@@ -180,8 +179,7 @@ A "service" is a program the operating system starts at boot and restarts if it 
 | Bearer token | A secret string sent in the `Authorization` header | Every call to the hub carries one. The hub stores only a SHA-256 fingerprint of each token, never the token |
 | Scopes | What a token may do | `ADMIN`, `READ`, `ENROLL`, `JOIN` and `AGENT` |
 | Enrollment token and join key | How a server proves it may register | An enrollment token works once; a join key registers many servers until it is revoked. Each server then receives its own `AGENT` token |
-| JWT and OpenID Connect | A signed token that proves who someone is, issued by a sign-in provider | Optional. The hub checks the signature, issuer, audience and expiry itself |
-| Identity provider (Keycloak is the one tried) | The service that signs people in and issues the tokens. Use whichever your organisation already runs | The hub is told four things: `svcmon.jwt.issuer` (the provider's address), `audience`, `admin-role` and `roles-claim` (where the roles sit inside the token), and `jwks-uri` only if the provider keeps its signing keys somewhere unusual. Nothing else is Keycloak-specific; Keycloak is only the default for `roles-claim` and the one provider that has been tried. Another should work if its access tokens are JWTs signed with an asymmetric key and carry a role you can name. Some providers issue opaque access tokens by default, which the hub cannot check. The hub never needs to know anyone's password |
+| Sign-in gateway (Keycloak is the one tried) | The service your organisation already runs to sign people in, put in front of the hub | Optional, and only a gate: nginx asks it whether the browser is signed in before letting it through to the hub, whose own sign-in then follows. The hub never talks to it and takes no identity from it |
 | PBKDF2 | A deliberately slow way to store a password | The passwords of the hub's users |
 | TLS termination | The encryption endpoint | Done by a load balancer in front of the hub; inside the network the hub speaks plain HTTP. `X-Forwarded-For` and similar headers carry the real client address through the balancer |
 | CORS | The rule a browser applies before one site may call another | Only matters when the dashboard is hosted on a different address from the hub |
@@ -283,7 +281,6 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 - Virtual threads (JEP 444): https://openjdk.org/jeps/444
 - SQLite: https://www.sqlite.org/ and the Java driver https://github.com/xerial/sqlite-jdbc
 - Flyway: https://flywaydb.org and https://github.com/flyway/flyway
-- Nimbus JOSE+JWT: https://connect2id.com/products/nimbus-jose-jwt
 - Angus Mail (Jakarta Mail): https://eclipse-ee4j.github.io/angus-mail/
 - Maven: https://maven.apache.org/
 
@@ -314,11 +311,9 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 
 **Security and web standards**
 
-- OpenID Connect: https://openid.net/connect/
-- JSON Web Token, RFC 7519: https://www.rfc-editor.org/rfc/rfc7519
 - PBKDF2, RFC 8018: https://www.rfc-editor.org/rfc/rfc8018
 - WebSocket, RFC 6455: https://www.rfc-editor.org/rfc/rfc6455
-- Keycloak, the identity provider tried with the hub (any OpenID Connect provider can be configured instead): https://www.keycloak.org
+- Keycloak, the identity provider tried as a gateway in front of the hub: https://www.keycloak.org
 - CORS: https://developer.mozilla.org/docs/Web/HTTP/CORS
 - `X-Forwarded-For`: https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Forwarded-For
 - Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0

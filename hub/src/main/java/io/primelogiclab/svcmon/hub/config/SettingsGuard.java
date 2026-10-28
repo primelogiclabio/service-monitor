@@ -23,8 +23,9 @@ import org.springframework.stereotype.Component;
  * without this a typo, or a setting that was renamed, would be ignored without a word. It runs before any other bean
  * is made, so nothing happens (not even the database migration) with a mistyped file.
  * <p>
- * Settings from files, the command line and -D system properties are checked. Environment variables are not: the
- * CLI's SVCMON_HUB and SVCMON_TOKEN may be set on the same machine and would read as svcmon.hub and svcmon.token.
+ * Settings from files, the command line and -D system properties are checked. Environment variables are checked only
+ * for removed settings (SVCMON_JWT_ISSUER, say), not for unknown ones: the CLI's SVCMON_HUB and SVCMON_TOKEN may be
+ * set on the same machine and would read as svcmon.hub and svcmon.token.
  */
 @Component
 public class SettingsGuard implements BeanFactoryPostProcessor {
@@ -45,7 +46,12 @@ public class SettingsGuard implements BeanFactoryPostProcessor {
     static final Map<String, String> REMOVED = Map.of(
             "local-admin", "people now sign in as users; use svcmon.users.enabled, svcmon.users.initial-admin-username"
                     + " and svcmon.users.initial-admin-password, and svcmon.sessions.max-hours for session-hours"
-                    + " (an existing local admin keeps its password as user 'admin', or the initial-admin-username)");
+                    + " (an existing local admin keeps its password as user 'admin', or the initial-admin-username)",
+            "jwt", "the hub no longer accepts a sign-in provider's tokens; people sign in with their hub account, and a"
+                    + " gateway in front of the hub (Keycloak through nginx, say) is only a gate: see 'Behind a sign-in"
+                    + " gateway' in docs/service-monitor-reference.md",
+            "ui.proxy", "the dashboard always signs in with the hub's own accounts, also behind a sign-in gateway: see"
+                    + " 'Behind a sign-in gateway' in docs/service-monitor-reference.md");
 
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) {
@@ -63,7 +69,11 @@ public class SettingsGuard implements BeanFactoryPostProcessor {
         Set<String> seen = new LinkedHashSet<>();
         List<String> problems = new ArrayList<>();
         for (PropertySource<?> source : env.getPropertySources()) {
-            if (!(source instanceof EnumerablePropertySource<?> names) || source instanceof SystemEnvironmentPropertySource) {
+            if (source instanceof SystemEnvironmentPropertySource variables) {
+                removedVariables(variables, removed, seen, problems);
+                continue;
+            }
+            if (!(source instanceof EnumerablePropertySource<?> names)) {
                 continue;
             }
             for (String name : names.getPropertyNames()) {
@@ -79,6 +89,26 @@ public class SettingsGuard implements BeanFactoryPostProcessor {
             }
         }
         return problems;
+    }
+
+    /**
+     * Environment variables for removed settings, such as SVCMON_JWT_ISSUER or SVCMON_LOCALADMIN_PASSWORD. Spring
+     * reads a variable with its underscores as dots or dropped, so the name is compared with neither.
+     */
+    private static void removedVariables(SystemEnvironmentPropertySource variables, Map<String, String> removed,
+                                         Set<String> seen, List<String> problems) {
+        for (String variable : variables.getPropertyNames()) {
+            if (!variable.toUpperCase(Locale.ROOT).startsWith("SVCMON_")) {
+                continue;
+            }
+            String name = uniform(variable.substring("SVCMON_".length()));
+            for (Map.Entry<String, String> e : removed.entrySet()) {
+                if (name.startsWith(uniform(e.getKey()).replace(".", "")) && seen.add("env:" + variable)) {
+                    problems.add("Setting svcmon." + e.getKey() + " (environment variable " + variable + ") was removed: "
+                            + e.getValue());
+                }
+            }
+        }
     }
 
     /** Every name HubProperties binds, walked through its nested records; a map takes any key below its name. */

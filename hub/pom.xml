@@ -20,7 +20,6 @@
   <properties>
     <java.version>21</java.version>
     <sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
-    <nimbus-jose-jwt.version>10.9.1</nimbus-jose-jwt.version>
   </properties>
 
   <dependencies>
@@ -50,13 +49,6 @@
     <dependency>
       <groupId>org.eclipse.angus</groupId>
       <artifactId>angus-mail</artifactId>
-    </dependency>
-
-    <!-- Checks the signature and claims of OIDC access tokens (optional single sign-on through Keycloak etc.). -->
-    <dependency>
-      <groupId>com.nimbusds</groupId>
-      <artifactId>nimbus-jose-jwt</artifactId>
-      <version>${nimbus-jose-jwt.version}</version>
     </dependency>
 
     <dependency>

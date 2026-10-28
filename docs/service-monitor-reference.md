@@ -71,82 +71,67 @@ powershell -ExecutionPolicy Bypass -File hub\service\windows\install.ps1
 
 The dashboard lives in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui). Choose one of:
 
-1. **Inside the hub jar.** A jar built with the dashboard serves it at the hub's address with no setting at all: open the address in a browser and sign in with a user name and password (see "Users and sign-in"). Nothing in it needs editing; what the page needs to know is set in `application.yml` (below). To build such a jar yourself: build the dashboard (`npm run build` in its repository), copy its `dist` folder to `hub/src/main/resources/ui`, then `cd hub; mvn package` (that folder is ignored by git). `svcmon.ui-enabled: false` makes the hub serve no dashboard, only the API.
-2. **From a folder.** Start the hub with `--svcmon.ui-dir=/path/to/service-monitor-ui/dist` to serve that build instead of, or without, the one inside the jar. The folder then has its own `config.json`. The files are public; the API still needs a sign-in or a token.
+1. **Inside the hub jar.** A jar built with the dashboard serves it at the hub's address with no setting at all: open the address in a browser and sign in with a user name and password (see "Users and sign-in"). Nothing in it needs editing. To build such a jar yourself: build the dashboard (`npm run build` in its repository), copy its `dist` folder to `hub/src/main/resources/ui`, then `cd hub; mvn package` (that folder is ignored by git). `svcmon.ui-enabled: false` makes the hub serve no dashboard, only the API.
+2. **From a folder.** Start the hub with `--svcmon.ui-dir=/path/to/service-monitor-ui/dist` to serve that build instead of, or without, the one inside the jar. The folder's own `config.json` is read too; it holds no settings now (see the dashboard's README). The files are public; the API still needs a sign-in or a token.
 3. **Host it elsewhere**, for example a static file server: the dashboard then has to reach the hub under its own address, so put both behind one site and send `/api/` to the hub (a reverse proxy rule). The sign-in cookie never works across sites, which is deliberate. `svcmon.cors-allowed-origins` (exact origins such as `https://dashboard.example.com`; `*`, paths and trailing slashes are refused and stop the hub from starting) only lets other sites' scripts call the API with a token.
-
-**Sign-in through a reverse proxy.** Where nginx and a gateway sign people in and the hub accepts the token the proxy adds (see the Keycloak section below), the dashboard inside the jar is switched to that mode in `application.yml`; the hub builds the page's `config.json` from it:
-
-```yaml
-svcmon:
-  ui:
-    proxy:
-      enabled: true
-      api-base: /web-api            # the proxy's path to the hub's /api
-      headers:
-        X-Web-Client: "1"           # sent on every call; the proxy must require it before it turns the session into a token
-      sign-in-url: /oauth2/start
-      sign-out-url: /oauth2/sign_out
-```
-
-Only `enabled` is needed; the other values shown are the defaults. `api-base` must be a path on the same site, the sign-in and sign-out addresses a path or an http(s) address, and `headers` cannot set `Authorization`; anything else stops the hub at start-up. With `ui-dir` the folder's own `config.json` is used instead (see the dashboard's README).
 
 CORS is off unless origins are listed. When on, only those origins may call `/api/` from a browser, with the `Authorization`, `Content-Type` and `Accept` headers, never with cookies; requests without an `Origin` header (the CLI, agents, scripts) are unaffected. Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`.
 
-## Sign in with Keycloak or another OpenID Connect provider
+## Behind a sign-in gateway
 
-Off by default. The hub can accept an OpenID Connect access token (a JWT) sent as `Authorization: Bearer <JWT>` and checks it itself: the signature against the keys the provider publishes (found through the issuer's discovery document), the issuer, the audience and the expiry. Nothing is trusted because of where a request came from, so it does not matter who can reach the hub's port. A token whose role claim holds the admin role gets the access of an ADMIN token (except the `/agent/` calls); any other valid token gets 403. The hub's own tokens (join keys, ADMIN and READ API tokens) work unchanged for agents, the CLI and setups without a provider; the two are told apart by shape, since a JWT is three dot-separated parts that start with `eyJ`.
+A gateway in front of the hub, such as Keycloak with nginx and a small session service, is a gate and nothing more. It lets a browser through to the hub, and the person then signs in with their account on the hub. The hub never takes an identity from the gateway, neither a token nor a header, so a gate that is misconfigured or bypassed still leaves the hub's own sign-in in place. People outside the internal network also need `svcmon.access.allow-outside: true` (see "Access from outside the internal network").
 
-```yaml
-svcmon:
-  jwt:
-    issuer: https://auth.example.com/realms/main    # setting this turns it on
-    audience: https://monitor.example.com/api       # the token's aud must contain this
-    admin-role: platform-admin                      # the role that makes a user an administrator
-    # roles-claim: realm_access.roles               # Keycloak's default location; dots walk into objects
-    # jwks-uri: https://...                         # only if you do not want the discovery document's
-```
+What the gate must do (nginx with `auth_request`):
 
-At the provider, give the hub an API client whose audience is the `audience` value, and have the token carry the admin role (in Keycloak a realm role is in `realm_access.roles` by default). The issuer must be https; `http` is accepted only for `localhost` while developing. The hub refuses to start if the audience or admin role is missing. If the provider cannot be reached the first time the hub needs its keys, callers get 503 (not 401) and the hub tries again after a few seconds; once fetched, the keys are cached and keep working through a provider outage, and a key the hub has not seen triggers a refresh.
+- **Leave agents and probes alone:** never gate `/api/v1/agent/` and `/api/v1/health`, so servers keep reporting while the sign-in provider is down.
+- **Gate everything else:** pages, `/api/` and the live view. A page without a gateway sign-in is sent to the gateway's sign-in page. An API call gets 401 with `{"error":"gateway_sign_in"}` (any 401 without one of the hub's own error codes does), and the dashboard then reloads once so the gateway can ask again.
+- **Pass on no identity:** add no `Authorization` header and no user headers. The hub would ignore them anyway.
+- **Forward the client:** send `X-Forwarded-For` and `X-Forwarded-Proto` in every location, and check the live view's `Origin`, since a browser cannot add a header of its own to a WebSocket.
 
-Typically a browser never holds the token: the dashboard calls a path on its own site, nginx asks a gateway or session service which checks the session and the role and exchanges it for a token with the hub's audience, and nginx forwards the call to the hub with that token:
+This shape was run locally against the hub, with a stand-in for the gateway:
 
 ```nginx
-location /web-api/ {
-    if ($http_x_web_client != "1") { return 403; }       # see the note on forged requests below
-    auth_request     /oauth2/auth-api;                   # your gateway: session -> token for this hub
-    auth_request_set $api_token $upstream_http_x_access_token;
-    proxy_set_header Authorization "Bearer $api_token";
-    # rewrite /web-api/ to /api/ and proxy_pass to the hub
+absolute_redirect off;                                   # keep the address and port the browser used
+
+location /oauth2/ { proxy_pass http://gateway; }         # the gateway's sign-in and sign-out pages
+location = /_gate {                                      # what auth_request asks: 2xx signed in, 401 not
+    internal;
+    proxy_pass              http://gateway/internal/auth;
+    proxy_pass_request_body off;
+    proxy_set_header        Content-Length "";
 }
-location = /api/v1/live {                                # the live view: the same check on the upgrade request
-    auth_request     /oauth2/auth-api;
-    auth_request_set $api_token $upstream_http_x_access_token;
-    proxy_set_header Authorization "Bearer $api_token";
-    proxy_set_header Host              $host;
-    proxy_set_header X-Forwarded-Host  $http_host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Upgrade $http_upgrade;
+
+location /api/v1/agent/   { proxy_pass http://hub:8080; }   # never gated
+location = /api/v1/health { proxy_pass http://hub:8080; }
+
+location = /api/v1/live {
+    if ($http_origin != "https://monitor.example.com") { return 403; }
+    auth_request /_gate;
+    error_page 401 = @api_401;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_pass http://hub:8080;
 }
-location /api/ { proxy_pass http://hub:8080; }           # agents, the CLI: their own tokens, no sign-in
-# In every location also: proxy_set_header X-Forwarded-For $remote_addr; and X-Forwarded-Proto $scheme;
-# without them the hub cannot tell people outside from people inside (see "Access from outside the internal network").
+location /api/ { auth_request /_gate; error_page 401 = @api_401; proxy_pass http://hub:8080; }
+location /     { auth_request /_gate; error_page 401 = @signin;  proxy_pass http://hub:8080; }
+
+location @api_401 { default_type application/json; return 401 '{"error":"gateway_sign_in","message":"Sign in at the gateway first"}'; }
+location @signin  { return 302 /oauth2/start?rd=$scheme://$http_host$request_uri; }
+
+# In every location that proxies to the hub:
+#   proxy_set_header Host              $host;
+#   proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+#   proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
-How this is kept safe:
-- The session cookie is sent by the browser on any request, including one a foreign page makes it send, so the proxy must only exchange a session for a token when the request carries a custom header that only your dashboard adds (the example's `X-Web-Client`); a page on another site cannot add it without a CORS preflight, which you never approve.
-- A browser cannot add that header to a WebSocket, so for a JWT on the live view's upgrade request the hub checks that the page is on its own site, as the browser itself says: `Sec-Fetch-Site` when the browser sends it (Chrome does not on WebSocket requests), otherwise the `Origin` must be this hub's address as the proxy passed it (`X-Forwarded-Host` and `X-Forwarded-Proto`, or else `Host`) or be listed in `svcmon.cors-allowed-origins`. A request with neither header, such as a script, is not affected. Pass those headers in the live location, as in the example; a refused connection is logged with what was compared.
-- Only asymmetric signatures are accepted, so an unsigned token or one signed with the public key as an HMAC secret is refused. Tokens and secrets are never logged or echoed; the user's name is logged when a valid user is refused.
-- Agents never go through the sign-in, so nothing is needed from the provider for them and the provider being down does not affect them.
-- A signed-in user cannot call the `/agent/` endpoints.
-
-The live connection ends with close code 1001 when its JWT expires; the dashboard reconnects and the proxy adds a fresh token to the new request.
+- **Who gets past the gate** is the gateway's choice. The hub's users and roles decide the rest. Any signed-in user of the provider is enough, so a read-only hub user needs no administrator role at the provider; require a role at the gateway if you want fewer people to see the sign-in page.
+- **A first or temporary password** works only from inside the network, behind the gateway too. A new user signs in the first time from inside: over the VPN, or an SSH tunnel to the hub's port.
+- **Sign out** ends the hub sign-in only. The gateway's own session lasts until its sign-out page (`/oauth2/sign_out` above) or until it expires.
 
 ## Users and sign-in
 
-People sign in to the dashboard with a user name and password. Each user is an **administrator** (`ADMIN`, may change anything) or **read-only** (`READ`, may look at everything but the user list, tokens and alert channels, and change only their own password). API tokens stay for the CLI and scripts; agents keep their own credentials. Turn user sign-in off with `svcmon.users.enabled: false` (then only the proxy sign-in and tokens work).
+People sign in to the dashboard with a user name and password. Each user is an **administrator** (`ADMIN`, may change anything) or **read-only** (`READ`, may look at everything but the user list, tokens and alert channels, and change only their own password). API tokens stay for the CLI and scripts; agents keep their own credentials. Turn user sign-in off with `svcmon.users.enabled: false` (then only API tokens work).
 
 - **First start:** a hub without users creates the administrator `admin` (`svcmon.users.initial-admin-username`) with the password `admin` (`svcmon.users.initial-admin-password`). Both settings are used only to create that account. That password, and any temporary one an administrator gives out, works **only from the internal network** and must be changed at the first sign-in: until then the hub answers everything else with 403 `password_change_required`. The log says so at every start while an administrator still has one. A hub upgraded from the local admin account keeps that account's password, as user `admin` (or `svcmon.users.initial-admin-username`); the old `svcmon.local-admin.*` settings stop the hub with a message that names their replacements.
 - **Passwords:** 12 to 128 characters, not the user name; no composition rules. Only a salted PBKDF2-HMAC-SHA256 hash (600,000 rounds) is stored; a password is never logged or returned.
@@ -166,7 +151,6 @@ By default only people on the internal network may use the hub. From anywhere el
 | A signed-in user | Yes | No | Over HTTPS only, otherwise 403 `insecure_transport` |
 | The initial password, or a temporary one | Yes | No | No (403 `initial_password_inside_only`) |
 | An API token (the CLI, scripts) | Yes | No | No |
-| A JWT from a sign-in proxy (see above) | Yes | No | Yes |
 | Agents (`/api/v1/agent/*`) | Yes | Yes | Yes |
 
 The live view's upgrade request is refused like any other request. `GET /api/v1/health` and the dashboard's own files are served to anyone, since they hold nothing secret.
@@ -208,7 +192,7 @@ The hub keeps a record of who signed in and who changed what. Administrators rea
 
 | Part | Kept | What is in it |
 |---|---|---|
-| Sign-ins | 30 days (`svcmon.audit.sign-in-days`) | Signing in, with the reason a failure failed (`unknown_user`, `wrong_password`, `account_disabled`, `initial_password_inside_only`); too many attempts; refused for where it came from (`outside_not_allowed`, `insecure_transport`); signing out; a sign-in ended by its owner or an administrator; password changes (and wrong current passwords); resets, by an administrator or with `users reset`; the first use of each JWT |
+| Sign-ins | 30 days (`svcmon.audit.sign-in-days`) | Signing in, with the reason a failure failed (`unknown_user`, `wrong_password`, `account_disabled`, `initial_password_inside_only`); too many attempts; refused for where it came from (`outside_not_allowed`, `insecure_transport`); signing out; a sign-in ended by its owner or an administrator; password changes (and wrong current passwords); resets, by an administrator or with `users reset` |
 | Changes | 365 days (`svcmon.audit.change-days`) | Every POST, PUT, PATCH and DELETE a person sends under `/api/`, whether it worked or not (except those that are sign-in events: signing in and out, password changes and resets, ending a sign-in), as its route (`DELETE /api/v1/checks/{id}`), the id or user name it was about and the outcome (`ok` or the hub's error code); each agent that registers, with the name of the enrollment token or join key it used |
 
 Each event also has the time, who it was (a user name, an API token's name, or `unknown`), the client address and whether that is inside or outside.
@@ -316,6 +300,8 @@ An upgrade keeps everything that identifies the installation: the hub's database
 
 **From a hub with the local admin account (0.1).** People now sign in as users. The local admin becomes the administrator `admin` with its password, and its old sign-ins end. Settings under `svcmon.local-admin` stop the hub with a message: remove them, or move `username` to `svcmon.users.initial-admin-username` before the upgrade (it names the account the old one turns into) and `session-hours` to `svcmon.sessions.max-hours`. API tokens and agents are unchanged.
 
+**From a hub that used a provider's sign-in or the dashboard's proxy mode.** The hub no longer accepts a provider's tokens, and the dashboard always signs in with the hub's own accounts. Settings under `svcmon.jwt` and `svcmon.ui.proxy` stop the hub with a message, also when they come from environment variables (`SVCMON_JWT_ISSUER` and the like), and so do leftover `SVCMON_LOCALADMIN_*` variables. Remove them. Make the gateway a gate (see "Behind a sign-in gateway"): nginx stops adding the token and gates `/` and `/api/` instead, leaving `/api/v1/agent/` and `/api/v1/health` alone. Remove `"proxy"` from the dashboard's `config.json` if it is served from a folder. People then sign in with a hub account: an administrator who signed in only through the provider needs one (the old local admin became the user `admin`), made from inside with `users reset` or by another administrator.
+
 **A hub that people reach from outside the internal network.** A hub with internal-only access refuses everyone outside until `svcmon.access.allow-outside: true` is set, and then only over HTTPS. Before upgrading such a hub, check that the proxy in front of it sends `X-Forwarded-For` and `X-Forwarded-Proto` (see "Access from outside the internal network"); a proxy on the same machine that does not send them makes every request look inside. Agents are not affected either way.
 
 **The hub.** Build or unpack the new jar and run the installer again, with `--dry-run` / `-DryRun` first: the plan says "upgrade" and lists what is kept (see [hub/service](../hub/service/README.md); on Windows run `install.ps1` from the new [package](../hub/service/README.md#windows-package-no-download) or pass `-JarPath`). It stops the service, replaces the jar and starts it again; the database is migrated when the hub starts. Copy the data folder first if you want a way back. Without the installer, stop the hub and start it with the new jar. One change to know about: a hub built after the agent-declared checks work accepts them by default, so set `svcmon.agent-declared-checks: false` if only the admin should list checks.
@@ -391,7 +377,7 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 | `PUT /me/password` | a user | Change your own password: `{"currentPassword", "newPassword"}` |
 | `GET /sessions`, `DELETE /sessions/{id}` | a user | Your sign-ins (an administrator sees and ends everyone's) |
 | `GET/POST /users`, `PATCH/DELETE /users/{id}`, `POST /users/{id}/password-reset` | admin | Users; new and reset passwords appear once in the answer |
-| `GET /me` | read | Who is calling: `method` (`session`, `token` or `jwt`), `name` and `scope`; lets a dashboard that holds no token show who is signed in |
+| `GET /me` | read | Who is calling: `method` (`session` or `token`), `name` and `scope`; lets a dashboard that holds no token show who is signed in |
 | `GET /status` | read | Roll-up: summary, clusters, servers, checks |
 | `GET /live` (WebSocket) | read, sent in the first frame | Pushes the same roll-up whenever it changes, for the dashboard's Live switch; see below |
 | `GET /servers/{id}/status` | read | One server with its checks |
@@ -410,7 +396,7 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 
 Polling `GET /status` is how every client works by default. For a dashboard someone is watching, `GET /api/v1/live` upgrades to a WebSocket that pushes the roll-up as it changes, so there is no refresh delay and no repeated requests. The web UI has a **Live** switch for it and turns it off again after 5 minutes without activity.
 
-A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the credential, within 5 seconds: a signed-in user's page sends `{"type":"auth","ticket":"..."}` with a ticket from `POST /session/live-ticket` (one use, 30 seconds; the connection closes when that sign-in ends), and a client with a READ or ADMIN token sends `{"type":"auth","token":"..."}`. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. The socket never reads cookies, so any origin may open it and the CORS list does not apply to it. With JWT sign-in on, a JWT works in place of a hub token: in the first frame, or as `Authorization: Bearer` on the upgrade request when a proxy adds it (then no first frame is needed, the page must be on the hub's own address, and the connection closes with code 1001 when the token expires). `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
+A browser cannot set an `Authorization` header on a WebSocket, and a token in the address would end up in access logs, so the first frame carries the credential, within 5 seconds: a signed-in user's page sends `{"type":"auth","ticket":"..."}` with a ticket from `POST /session/live-ticket` (one use, 30 seconds; the connection closes when that sign-in ends), and a client with a READ or ADMIN token sends `{"type":"auth","token":"..."}`. The hub then sends `{"type":"status","data":{...}}` (the body of `GET /status`) at once and again after each change, checked once a second; a client that sends `{"type":"ping"}` gets `{"type":"pong"}` (the dashboard does so every 25 seconds, which keeps the link open through load balancers that drop quiet connections). A wrong or unsuitable token, an invalid frame, a revoked or expired token and 90 seconds of silence close the connection; the token is never echoed or logged. The socket never reads cookies, so any origin may open it and the CORS list does not apply to it. `svcmon.live-max-sessions` caps how many may be open (more are refused with close code 1013).
 
 Behind a load balancer it must pass WebSocket upgrades (`Upgrade` and `Connection` headers) to the hub and allow idle connections for at least 30 seconds. If it does not, the Live switch tells the user it is unavailable and the dashboard keeps polling.
 
@@ -429,18 +415,12 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 | `svcmon.agent-stale-seconds` | 90 | Silence after which a server shows as offline |
 | `svcmon.ui-enabled` | true | Serve the dashboard (from `ui-dir`, else from inside the jar if it has one). false makes the hub headless |
 | `svcmon.ui-dir` | unset | Folder with the built web UI, served at `/` instead of the one inside the jar. A missing folder only logs a warning and serves none |
-| `svcmon.ui.proxy.*` | off | Sign-in through a reverse proxy for the dashboard inside the jar: `enabled`, `api-base`, `headers`, `sign-in-url`, `sign-out-url` (see "Host the web UI") |
 | `svcmon.embedded-ui` | `classpath:/ui/` | Where inside the jar the dashboard sits. Only tests change it |
 | `svcmon.cors-allowed-origins` | empty | Exact origins allowed to call the API from a browser; empty turns CORS off |
 | `svcmon.live-max-sessions` | 50 | Most dashboards that may hold the live WebSocket open at once; more are refused (close code 1013) and keep polling |
 | `svcmon.public-url` | unset | The address people open the dashboard at (`https://monitor.example.com`, a path is fine, no query or fragment). Alert emails then get an "Open in dashboard" button; unset means no button. A wrong value stops the start-up |
 | `svcmon.agent-declared-checks` | true | Lets agents declare their own checks from a `checks.json` beside their config (see "Checks declared by the agent"). Set to false and the hub refuses declarations, so only the admin lists what is monitored |
 | `svcmon.agent-declared-checks-limit` | 200 | Most checks one server may declare (1 to 1000); more is refused. A value outside the range stops the start-up |
-| `svcmon.jwt.issuer` | unset | Issuer address of an OpenID Connect provider (https; http only for localhost). Setting it turns on sign-in with JWT access tokens; see above |
-| `svcmon.jwt.audience` | unset | The audience (`aud`) a token must contain; required with the issuer |
-| `svcmon.jwt.admin-role` | unset | The role that makes a user an administrator of the hub, who is the only kind let in; required with the issuer |
-| `svcmon.jwt.roles-claim` | `realm_access.roles` | Where the roles are in the token; dots walk into nested objects |
-| `svcmon.jwt.jwks-uri` | from discovery | Where the provider's signing keys are, if not the address in its discovery document |
 | `svcmon.users.enabled` | true | Sign-in with a user name and password; see "Users and sign-in" |
 | `svcmon.users.initial-admin-username` | `admin` | Name of the first administrator, created on a hub without users |
 | `svcmon.users.initial-admin-password` | `admin` | Its password, which works only from the internal network and must be changed at the first sign-in |

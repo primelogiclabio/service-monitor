@@ -111,11 +111,6 @@ public class NetworkPolicy {
         return inside ? null : Refusal.OUTSIDE_NOT_ALLOWED;
     }
 
-    /** For an OpenID Connect token from a sign-in proxy: from outside when allowed, as the proxy carries it. */
-    public Refusal forJwt(boolean inside) {
-        return inside || cfg.allowOutside() ? null : Refusal.OUTSIDE_NOT_ALLOWED;
-    }
-
     /** One line for the start-up summary. */
     public String describe() {
         return (cfg.allowOutside() ? "people may sign in from outside over HTTPS (svcmon.access.allow-outside: true)"

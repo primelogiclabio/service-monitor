@@ -37,10 +37,6 @@ class EmbeddedUiTest {
         registry.add("svcmon.data-dir", () -> root.resolve("data").toString());
         registry.add("svcmon.bootstrap-admin-token", () -> ADMIN);
         registry.add("svcmon.embedded-ui", () -> "classpath:/test-ui/");
-        registry.add("svcmon.ui.proxy.enabled", () -> "true");
-        registry.add("svcmon.ui.proxy.api-base", () -> "/monitor-api/");
-        registry.add("svcmon.ui.proxy.headers[X-Dashboard]", () -> "yes");
-        registry.add("svcmon.ui.proxy.sign-in-url", () -> "https://login.example.test/start");
     }
 
     @Value("${local.server.port}")
@@ -99,15 +95,11 @@ class EmbeddedUiTest {
     }
 
     @Test
-    void configJsonIsBuiltFromTheHubsSettings() throws Exception {
+    void configJsonIsEmptySinceTheDashboardAlwaysSignsInWithHubAccounts() throws Exception {
         HttpResponse<String> r = get("/config.json", Map.of());
         assertEquals(200, r.statusCode());
         assertTrue(r.headers().firstValue("Content-Type").orElse("").startsWith("application/json"));
         assertTrue(r.headers().firstValue("Cache-Control").orElse("").contains("no-cache"));
-        Map<?, ?> proxy = (Map<?, ?>) json.readValue(r.body(), Map.class).get("proxy");
-        assertEquals("/monitor-api", proxy.get("apiBase"), "a trailing slash is dropped, as the page does");
-        assertEquals(Map.of("X-Dashboard", "yes"), proxy.get("headers"));
-        assertEquals("https://login.example.test/start", proxy.get("signInUrl"));
-        assertEquals("/oauth2/sign_out", proxy.get("signOutUrl"), "an unset value keeps its default");
+        assertEquals(Map.of(), json.readValue(r.body(), Map.class));
     }
 }
