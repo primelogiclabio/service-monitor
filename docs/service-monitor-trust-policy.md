@@ -15,7 +15,7 @@ This document is for anyone deciding whether to run Service Monitor, or who has 
 | Does it download anything when you install it? | One case: the Windows hub installer fetches the service wrapper WinSW from GitHub only when you have not supplied a copy, and refuses it unless it matches a pinned SHA-256 (section 6). Nothing else |
 | What does it install on a server? | The agent registers itself as a service when an admin runs `svcmon agent install`; the hub installers register the hub the same way. No package manager is used and no other software is added |
 | What data does it keep? | Names and settings of what you chose to monitor, and the results of those checks for 30 days (section 4). About the people who use it: their user name and role, and an audit of sign-ins (30 days) and changes (365 days) with user names and network addresses. Nothing more |
-| Who receives data from it? | Only the alert channels and sign-in provider you configure (section 5) |
+| Who receives data from it? | Only the alert channels you configure (section 5) |
 | Does a monitored server open a port for it? | No. Agents only connect out |
 | Has it been independently audited? | No |
 
@@ -26,17 +26,17 @@ This document is for anyone deciding whether to run Service Monitor, or who has 
 | The hub | Java 21, Spring Boot 4.1.2, Maven. SQLite for storage, Flyway for database changes | A jar of about 37 MB that runs on any Java 21 or newer runtime. It serves the API, the optional dashboard files and a live WebSocket |
 | The agent and the CLI | Go 1.27.3. One program, `svcmon`, about 12 MB | No runtime needed on the monitored server. Builds for Windows, Linux and macOS |
 | The dashboard | Svelte 5, Vite 6, uPlot, Node.js 20 or newer to build | Plain static files once built. Node is not needed to run it |
-| Optional | An OpenID Connect identity provider of your choice for sign-in (Keycloak is the one tried; the hub is configured with the provider's address, so nothing is tied to it); a load balancer for TLS | Not part of this project; you run them yourself if you want them |
+| Optional | A sign-in gateway in front of the hub, such as Keycloak with nginx, used as a gate only (the hub never talks to it); a load balancer for TLS | Not part of this project; you run them yourself if you want them |
 
 ## 3. Licences
 
 **The project itself** is licensed under the Apache License 2.0 (`LICENSE`), for the hub, agent and dashboard repositories alike.
 
-**Nothing needs a paid licence.** The hub jar contains 52 libraries. Their licences, read from each library's own build file:
+**Nothing needs a paid licence.** The hub jar contains 51 libraries. Their licences, read from each library's own build file:
 
 | Licence | Count | Examples |
 |---|---|---|
-| Apache License 2.0 | 42 | Spring Boot and Spring Framework, Tomcat, Jackson, Flyway, `sqlite-jdbc`, Nimbus JOSE+JWT |
+| Apache License 2.0 | 41 | Spring Boot and Spring Framework, Tomcat, Jackson, Flyway, `sqlite-jdbc` |
 | MIT | 2 | SLF4J and its JUL bridge |
 | Eclipse Public License 2.0 (Logback also offers LGPL 2.1) | 2 | Logback |
 | EPL 2.0 or GPL 2 with the Classpath Exception, and the Eclipse Distribution License (BSD-style) | 5 | Jakarta Mail and Angus Mail, Jakarta Activation and its Angus implementation, Jakarta Annotations |
@@ -130,7 +130,6 @@ The hub's log records start-up facts (address, database path, the names and type
 | Agent | The local Docker or Podman, through a local socket or Windows named pipe | Container checks. Nothing leaves the machine |
 | Hub | The addresses of hub-run HTTP, TCP and ping checks you listed (ping uses the operating system's `ping` command) | To run those checks |
 | Hub | The alert channels you set up: webhook, Slack and Discord addresses, or your SMTP server | To send alerts. The text sent includes the check name, status, message, server name and the check's target address |
-| Hub | Your sign-in provider's discovery address and key list, only if you turn on OpenID Connect | To verify the signature of sign-in tokens |
 | Browser | The hub | The dashboard's data and live updates |
 
 Nothing else was found. In particular there is no connection to the project's authors, to a licence service, to an update server or to an analytics service.
@@ -164,7 +163,7 @@ Protected:
 - API tokens are stored only as SHA-256 fingerprints, shown once when created.
 - Alert channel secrets are masked in every API answer, and an update that sends the masked value back keeps the stored one.
 - Users' passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes. Sign-in attempts are throttled per address, per account and in total, separately for the internal network and the outside. A sign-in ends after a set time, when unused, and at once on a password change, reset, role change or disabled account.
-- Sign-in with an OpenID Connect provider checks the token's signature, issuer, audience and expiry in the hub; nothing is trusted because of where a request came from.
+- A sign-in gateway in front of the hub is a gate only: the hub takes no identity from it, neither a token nor a header, so a gate that is bypassed or misconfigured still leaves the hub's own sign-in in place.
 - By default only people on the internal network may use the hub. From outside, the command line's API tokens and the initial password never work, and signed-in users only when you set `svcmon.access.allow-outside: true`, and then over HTTPS only. Where a request comes from can refuse it, never let it in. Agents are not affected.
 - Names and messages from agents are treated as untrusted: Slack markup is escaped, Discord mentions are off, mail headers cannot be injected, and the HTML in alert emails has no scripts, images or tracking.
 - Strict settings: an unknown setting is an error, so a typo does not silently weaken something.
@@ -190,7 +189,7 @@ Things to know and handle yourself:
 
 | To see | Do this |
 |---|---|
-| Every outbound connection in the hub | Search `hub/src/main/java` for `HttpClient`, `Socket`, `URL` and `ProcessBuilder`. They are the alert senders, the check runners, the mail sender, the JWT key fetch and the `ping` command |
+| Every outbound connection in the hub | Search `hub/src/main/java` for `HttpClient`, `Socket`, `URL` and `ProcessBuilder`. They are the alert senders, the check runners, the mail sender and the `ping` command |
 | Every outbound connection in the agent | Search `agent` for `http.Client`, `net.Dial` and `exec.Command`. They are the hub client, the check runners, the local container socket and the service tools |
 | Telemetry | Search for `telemetry`, `analytics`, `tracking` and `beacon`; the only hit is a comment saying alert emails have none |
 | What the dashboard requests | Open the browser's network panel while using it: every request goes to the hub. Or search `dist/` for `http`; only error-message links to svelte.dev appear, as text |
@@ -224,7 +223,6 @@ Things to know and handle yourself:
 - Spring Boot: https://spring.io/projects/spring-boot
 - SQLite JDBC driver: https://github.com/xerial/sqlite-jdbc
 - Flyway: https://github.com/flyway/flyway
-- Nimbus JOSE+JWT: https://connect2id.com/products/nimbus-jose-jwt
 - Angus Mail: https://eclipse-ee4j.github.io/angus-mail/
 - gopsutil: https://github.com/shirou/gopsutil
 - pro-bing: https://github.com/prometheus-community/pro-bing
@@ -234,4 +232,4 @@ Things to know and handle yourself:
 - uPlot: https://github.com/leeoniya/uPlot
 - WinSW (the one thing the installer may download): https://github.com/winsw/winsw
 - Eclipse Temurin, one free Java runtime: https://adoptium.net/
-- Keycloak, the sign-in provider tried with the hub (any OpenID Connect provider that issues JWT access tokens can be configured instead): https://www.keycloak.org
+- Keycloak, the sign-in provider tried as a gateway in front of the hub: https://www.keycloak.org

@@ -108,7 +108,7 @@ public class UserController {
         return name;
     }
 
-    /** The administrator's own user id, or null when an ADMIN API token or JWT is calling. */
+    /** The administrator's own user id, or null when an ADMIN API token is calling. */
     private static String actor(HttpServletRequest req) {
         return req.getAttribute(TokenAuthFilter.USER_ATTR) instanceof SessionService.Signed who ? who.user().id() : null;
     }

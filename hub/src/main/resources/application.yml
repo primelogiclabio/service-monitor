@@ -41,15 +41,6 @@ svcmon:
   # ui-dir: ./ui
   # Optional: false makes the hub serve no dashboard at all, only the API.
   # ui-enabled: true
-  # Optional: sign-in through a reverse proxy for the dashboard inside the jar (see docs/service-monitor-reference.md, "Host the web UI").
-  # ui:
-  #   proxy:
-  #     enabled: false
-  #     api-base: /web-api
-  #     headers:
-  #       X-Web-Client: "1"
-  #     sign-in-url: /oauth2/start
-  #     sign-out-url: /oauth2/sign_out
   # Optional: exact origins that may call the API from a browser, for a dashboard hosted on another
   # address (list entries like https://monitor.example.com, no path, no '*'). Empty means CORS is off.
   # cors-allowed-origins:
@@ -58,19 +49,9 @@ svcmon:
   # bootstrap-admin-token:
   # Set true to print an additional new admin token at startup (token recovery).
   new-admin-token: false
-  # Optional: accept OpenID Connect access tokens (JWTs) from Keycloak or another provider as Authorization:
-  # Bearer values, checked here: signature (keys found through the issuer's discovery document), issuer, audience
-  # and expiry. A token holding admin-role in roles-claim gets the access of an ADMIN token; the hub's own API
-  # tokens keep working either way. Setting issuer turns it on; audience and admin-role are then required.
-  # jwt:
-  #   issuer: https://auth.example.com/realms/main
-  #   audience: https://monitor.example.com/api
-  #   admin-role: platform-admin
-  #   roles-claim: realm_access.roles
-  #   jwks-uri: https://auth.example.com/realms/main/protocol/openid-connect/certs
   # Optional: people sign in with a user name and password (POST /api/v1/session sets a cookie). A new hub has one
   # administrator with the initial password, which works only from the internal network and must be changed at the
-  # first sign-in. Only salted hashes are stored. false leaves only the proxy sign-in (jwt) and API tokens.
+  # first sign-in. Only salted hashes are stored. false means nobody signs in; only API tokens use the hub.
   # users:
   #   enabled: true
   #   initial-admin-username: admin   # only used to create the account

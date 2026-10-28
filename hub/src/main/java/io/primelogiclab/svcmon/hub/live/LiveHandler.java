@@ -9,7 +9,6 @@ import io.primelogiclab.svcmon.hub.core.StatusService;
 import io.primelogiclab.svcmon.hub.core.StatusViews.StatusResponse;
 import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
-import io.primelogiclab.svcmon.hub.security.JwtAuth;
 import io.primelogiclab.svcmon.hub.security.NetworkPolicy;
 import io.primelogiclab.svcmon.hub.security.SessionService;
 import io.primelogiclab.svcmon.hub.security.TokenService;
@@ -33,8 +32,8 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>JSON text frames:
  * <ul>
  *   <li>client to hub {@code {"type":"auth","ticket":"..."}} or {@code {"type":"auth","token":"..."}}: must be the
- *       first frame, within {@value #AUTH_TIMEOUT_MS} ms, unless the upgrade request already carried a JWT (see
- *       {@link LiveHandshake}). A signed-in user's page gets the ticket from POST /api/v1/session/live-ticket.</li>
+ *       first frame, within {@value #AUTH_TIMEOUT_MS} ms. A signed-in user's page gets the ticket from
+ *       POST /api/v1/session/live-ticket.</li>
  *   <li>client to hub {@code {"type":"ping"}}: keeps the link open through proxies; answered with {@code {"type":"pong"}}</li>
  *   <li>hub to client {@code {"type":"status","data":{...}}}: right after authenticating, then after every change</li>
  * </ul>
@@ -43,10 +42,8 @@ import tools.jackson.databind.json.JsonMapper;
  * logs, so the token travels in the first frame instead. It needs a READ or ADMIN token, is never logged, and the
  * connection is closed within a second if the token is revoked or expires. A signed-in user sends a one-time ticket
  * instead, so the socket never relies on the session cookie, which the browser would send for any page that opens
- * it; the connection closes when that sign-in ends. An OIDC access token (JWT) works in
- * place of a hub token, in the first frame or on the upgrade request, and ends the connection when it expires; a
- * dashboard reconnects and gets a fresh one. Because nothing but that frame authenticates, the browser's Origin
- * does not matter and is not checked (see {@link LiveConfig} for the one exception). Where the connection comes from
+ * it; the connection closes when that sign-in ends. Because nothing but that frame authenticates, the browser's
+ * Origin does not matter and is not checked. Where the connection comes from
  * limits the first frame as it limits any other request (see {@link NetworkPolicy}): from outside the internal
  * network a token is refused, and a ticket works only over HTTPS while svcmon.access.allow-outside is true.
  *
@@ -78,9 +75,6 @@ public class LiveHandler extends TextWebSocketHandler {
         final long connectedAt = System.currentTimeMillis();
         volatile long lastFrameAt = connectedAt;
         volatile TokenRecord token;
-        /** Set instead of the token when an administrator signed in with a JWT, which also says when it ends. */
-        volatile String jwtUser;
-        volatile long jwtExpiresAt;
         /** Set instead when a signed-in user's page sent a live ticket. */
         volatile String sessionId;
         /** Where the connection comes from, as LiveHandshake saw it; unknown counts as outside over plain HTTP. */
@@ -94,12 +88,11 @@ public class LiveHandler extends TextWebSocketHandler {
         }
 
         boolean authenticated() {
-            return token != null || jwtUser != null || sessionId != null;
+            return token != null || sessionId != null;
         }
     }
 
     private final TokenService tokens;
-    private final JwtAuth jwt;
     private final SessionService sessions;
     private final NetworkPolicy network;
     private final StatusService status;
@@ -107,10 +100,9 @@ public class LiveHandler extends TextWebSocketHandler {
     private final JsonMapper json;
     private final Map<String, Client> clients = new ConcurrentHashMap<>();
 
-    public LiveHandler(TokenService tokens, JwtAuth jwt, SessionService sessions, NetworkPolicy network,
-                       StatusService status, HubProperties props, JsonMapper json) {
+    public LiveHandler(TokenService tokens, SessionService sessions, NetworkPolicy network, StatusService status,
+                       HubProperties props, JsonMapper json) {
         this.tokens = tokens;
-        this.jwt = jwt;
         this.sessions = sessions;
         this.network = network;
         this.status = status;
@@ -131,12 +123,6 @@ public class LiveHandler extends TextWebSocketHandler {
         client.inside = Boolean.TRUE.equals(raw.getAttributes().get(LiveHandshake.INSIDE));
         client.secure = Boolean.TRUE.equals(raw.getAttributes().get(LiveHandshake.SECURE));
         clients.put(raw.getId(), client);
-        // A JWT on the upgrade request was already checked by LiveHandshake: no first frame is needed.
-        if (raw.getAttributes().get(LiveHandshake.USER) instanceof String user) {
-            client.jwtUser = user;
-            client.jwtExpiresAt = (Long) raw.getAttributes().get(LiveHandshake.EXPIRES_AT);
-            push(client, status.status());
-        }
     }
 
     @Override
@@ -174,10 +160,6 @@ public class LiveHandler extends TextWebSocketHandler {
     }
 
     private void authenticate(Client client, String raw) {
-        if (jwt.handles(raw)) {
-            authenticateJwt(client, raw);
-            return;
-        }
         if (refused(client, network.forToken(client.inside))) {
             return;
         }
@@ -208,24 +190,6 @@ public class LiveHandler extends TextWebSocketHandler {
             return;
         }
         client.sessionId = sessionId;
-        push(client, status.status());
-    }
-
-    private void authenticateJwt(Client client, String raw) {
-        if (refused(client, network.forJwt(client.inside))) {
-            return;
-        }
-        JwtAuth.Result who = jwt.verify(raw);
-        if (who.kind() != JwtAuth.Kind.ADMIN) {
-            log.warn("Rejected live connection from {}: JWT: {}", client.session.getRemoteAddress(),
-                    who.kind() == JwtAuth.Kind.FORBIDDEN ? "user '" + who.user() + "' " + who.reason() : who.reason());
-            close(client, CloseStatus.POLICY_VIOLATION.withReason(
-                    who.kind() == JwtAuth.Kind.UNAVAILABLE ? "unavailable"
-                            : who.kind() == JwtAuth.Kind.FORBIDDEN ? "forbidden" : "unauthorized"));
-            return;
-        }
-        client.jwtUser = who.user();
-        client.jwtExpiresAt = who.expiresAtMillis();
         push(client, status.status());
     }
 
@@ -270,9 +234,6 @@ public class LiveHandler extends TextWebSocketHandler {
                 close(c, CloseStatus.POLICY_VIOLATION.withReason("token no longer valid"));
             } else if (c.sessionId != null && !sessions.isActive(c.sessionId)) {
                 close(c, CloseStatus.POLICY_VIOLATION.withReason("signed out"));
-            } else if (c.jwtUser != null && now >= c.jwtExpiresAt) {
-                // Not a refusal: the dashboard reconnects and the proxy adds a fresh token to the new request.
-                close(c, CloseStatus.GOING_AWAY.withReason("sign-in expired"));
             }
         }
         if (clients.values().stream().noneMatch(Client::authenticated)) {

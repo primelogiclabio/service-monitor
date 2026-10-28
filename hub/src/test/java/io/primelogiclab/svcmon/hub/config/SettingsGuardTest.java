@@ -39,8 +39,8 @@ class SettingsGuardTest {
                 .withProperty("svcmon.retentionDays", "10")
                 .withProperty("svcmon.agent_stale_seconds", "60")
                 .withProperty("svcmon.cors-allowed-origins[0]", "https://monitor.example.com")
-                .withProperty("svcmon.ui.proxy.headers.X-Web-Client", "1")
-                .withProperty("svcmon.jwt.issuer", "https://auth.example.com")
+                .withProperty("svcmon.access.internal-networks[0]", "10.0.0.0/8")
+                .withProperty("svcmon.audit.sign-in-days", "7")
                 .withProperty("svcmon.sessions.max-hours", "4")
                 .withProperty("svcmon.users.initialAdminUsername", "root")
                 .withProperty("svcmon.version", "1.2.3")
@@ -54,22 +54,49 @@ class SettingsGuardTest {
     void aTypoIsNamedWithWhereItCameFrom() {
         MockEnvironment env = new MockEnvironment()
                 .withProperty("svcmon.retention-dayz", "10")
-                .withProperty("svcmon.jwt.isuer", "https://auth.example.com")
-                .withProperty("svcmon.ui.proxy.header.X-Web-Client", "1");
+                .withProperty("svcmon.access.allow-outsde", "true")
+                .withProperty("svcmon.sessions.idle-minute", "5");
         List<String> problems = SettingsGuard.problems(env, Map.of());
         assertEquals(3, problems.size(), problems.toString());
-        assertTrue(problems.get(0).startsWith("Unknown setting svcmon.retention-dayz (mockProperties)"), problems.get(0));
-        assertTrue(problems.stream().anyMatch(p -> p.contains("svcmon.jwt.isuer")), problems.toString());
-        assertTrue(problems.stream().anyMatch(p -> p.contains("svcmon.ui.proxy.header.X-Web-Client")), problems.toString());
+        assertTrue(problems.contains("Unknown setting svcmon.retention-dayz (mockProperties)"), problems.toString());
+        assertTrue(problems.stream().anyMatch(p -> p.contains("svcmon.access.allow-outsde")), problems.toString());
+        assertTrue(problems.stream().anyMatch(p -> p.contains("svcmon.sessions.idle-minute")), problems.toString());
     }
 
     @Test
-    void environmentVariablesAreNotChecked() {
+    void environmentVariablesAreCheckedForRemovedSettingsOnly() {
         MockEnvironment env = new MockEnvironment();
-        // The CLI's own variables, which the binder would read as svcmon.token and svcmon.hub.
+        // The CLI's own variables, which the binder would read as svcmon.token and svcmon.hub, and a typo: not checked.
         env.getPropertySources().addLast(new SystemEnvironmentPropertySource("systemEnvironment",
-                Map.of("SVCMON_TOKEN", "x", "SVCMON_HUB", "http://localhost:8080")));
-        assertEquals(List.of(), SettingsGuard.problems(env, Map.of()));
+                Map.of("SVCMON_TOKEN", "x", "SVCMON_HUB", "http://localhost:8080", "SVCMON_RETENTION_DAYZ", "3")));
+        assertEquals(List.of(), SettingsGuard.problems(env, SettingsGuard.REMOVED));
+
+        // What a compose file from before the gateway became a gate sets: each one stops the hub, with the advice.
+        env.getPropertySources().addLast(new SystemEnvironmentPropertySource("oldCompose", Map.of(
+                "SVCMON_JWT_ISSUER", "https://auth.example.com/realms/main",
+                "SVCMON_UI_PROXY_ENABLED", "true",
+                "SVCMON_LOCALADMIN_PASSWORD", "x",
+                "SVCMON_LOCAL_ADMIN_USERNAME", "root")));
+        List<String> problems = SettingsGuard.problems(env, SettingsGuard.REMOVED);
+        assertEquals(4, problems.size(), problems.toString());
+        assertTrue(problems.stream().anyMatch(p -> p.startsWith("Setting svcmon.jwt (environment variable SVCMON_JWT_ISSUER)"
+                + " was removed: ") && p.contains("Behind a sign-in gateway")), problems.toString());
+        assertTrue(problems.stream().anyMatch(p -> p.contains("SVCMON_UI_PROXY_ENABLED")), problems.toString());
+        assertTrue(problems.stream().anyMatch(p -> p.contains("SVCMON_LOCALADMIN_PASSWORD")), problems.toString());
+        assertTrue(problems.stream().anyMatch(p -> p.contains("SVCMON_LOCAL_ADMIN_USERNAME")), problems.toString());
+        assertFalse(problems.toString().contains("realms/main"), "a value is never repeated, it may be a secret");
+    }
+
+    /** A provider's tokens and the dashboard's proxy sign-in are gone: a leftover setting is not ignored. */
+    @Test
+    void theOldGatewaySignInSettingsSayWhatReplacedThem() {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("svcmon.jwt.issuer", "https://auth.example.com")
+                .withProperty("svcmon.ui.proxy.enabled", "true");
+        List<String> problems = SettingsGuard.problems(env, SettingsGuard.REMOVED);
+        assertEquals(2, problems.size(), problems.toString());
+        assertTrue(problems.stream().allMatch(p -> p.contains("was removed") && p.contains("Behind a sign-in gateway")),
+                problems.toString());
     }
 
     @Test

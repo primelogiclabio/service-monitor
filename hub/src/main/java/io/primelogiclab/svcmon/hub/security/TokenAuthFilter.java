@@ -27,10 +27,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * Reads need READ or ADMIN, writes need ADMIN, /agent/register needs an ENROLL token or a join key and the other
  * /agent/ calls need the agent's own token.
  * <p>
- * A request with an Authorization header is checked by its bearer token, and any cookie is ignored. With JWT
- * sign-in on, a bearer value shaped like a JWT is checked as an OpenID Connect access token (see {@link JwtAuth})
- * instead of one of the hub's own tokens, and an administrator's is treated like an ADMIN token on everything except
- * the /agent/ calls.
+ * A request with an Authorization header is checked by its bearer token, one of the hub's own, and any cookie is
+ * ignored. Nothing else names a person: an identity header from a proxy, or a provider's token, is never trusted.
  * <p>
  * Without one, the session cookie of a signed-in user is checked (see {@link SessionService}); the user's role counts
  * as the token scope of the same name. Because a browser sends that cookie by itself, a request that changes
@@ -40,7 +38,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <p>
  * Where a person's request comes from can refuse it before any of that (see {@link NetworkPolicy}): from outside the
  * internal network an API token never works, a user only when svcmon.access.allow-outside is true and the request
- * came over HTTPS, a JWT only while allow-outside is true. The /agent/ calls are never refused for where they come
+ * came over HTTPS. The /agent/ calls are never refused for where they come
  * from: agents connect out to the hub from wherever their servers are.
  * <p>
  * Each change a person makes (a POST, PUT, PATCH or DELETE that got past the sign-in) goes to the audit once it has
@@ -51,9 +49,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class TokenAuthFilter extends OncePerRequestFilter {
 
     public static final String ATTR = "svcmon.token";
-
-    /** Set to the user's name when an administrator signed in with a JWT (see {@link JwtAuth}). */
-    public static final String JWT_USER_ATTR = "svcmon.jwt-user";
 
     /** Set to the {@link SessionService.Signed} of a user signed in with the session cookie. */
     public static final String USER_ATTR = "svcmon.user";
@@ -66,15 +61,12 @@ public class TokenAuthFilter extends OncePerRequestFilter {
     static final String SESSION = "/api/v1/session";
 
     private final TokenService tokens;
-    private final JwtAuth jwt;
     private final SessionService sessions;
     private final NetworkPolicy network;
     private final AuditService audit;
 
-    public TokenAuthFilter(TokenService tokens, JwtAuth jwt, SessionService sessions, NetworkPolicy network,
-                           AuditService audit) {
+    public TokenAuthFilter(TokenService tokens, SessionService sessions, NetworkPolicy network, AuditService audit) {
         this.tokens = tokens;
-        this.jwt = jwt;
         this.sessions = sessions;
         this.network = network;
         this.audit = audit;
@@ -124,15 +116,6 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         }
         String raw = header != null && header.regionMatches(true, 0, "Bearer ", 0, 7) ? header.substring(7).trim() : null;
         boolean inside = network.isInside(req);
-        if (jwt.handles(raw)) {
-            NetworkPolicy.Refusal refusal = network.forJwt(inside);
-            if (refusal != null) {
-                refuse(req, resp, path, refusal);
-                return;
-            }
-            viaJwt(req, resp, chain, path, raw, jwt.verify(raw));
-            return;
-        }
         // A person's API token works from inside only; without any credential, say what would help from there.
         if (!inside && !path.startsWith(AGENT) && (raw != null || !network.allowOutside())) {
             refuse(req, resp, path, network.forToken(false));
@@ -241,45 +224,6 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         }
         String site = req.getHeader("Sec-Fetch-Site");
         return site == null || site.equals("same-origin") || site.equals("none");
-    }
-
-    /** A JWT: only an administrator's is accepted, and only where an ADMIN token would do. */
-    private void viaJwt(HttpServletRequest req, HttpServletResponse resp, FilterChain chain, String path, String raw,
-                        JwtAuth.Result who) throws IOException, ServletException {
-        switch (who.kind()) {
-            case INVALID -> {
-                log.warn("Rejected {} {} from {}: JWT not accepted: {}", req.getMethod(), path, req.getRemoteAddr(),
-                        who.reason());
-                resp.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
-                reject(resp, 401, "unauthorized", "The token is invalid, expired or not meant for this hub");
-                return;
-            }
-            case UNAVAILABLE -> {
-                log.warn("Could not check a JWT for {} {} from {}: {}", req.getMethod(), path, req.getRemoteAddr(),
-                        who.reason());
-                reject(resp, 503, "unavailable", "The sign-in provider's keys could not be fetched; try again shortly");
-                return;
-            }
-            case FORBIDDEN -> {
-                log.warn("Rejected {} {} from {}: user '{}' {}", req.getMethod(), path, req.getRemoteAddr(), who.user(),
-                        who.reason());
-                audit.jwtUsed(raw, who.user(), "forbidden", req.getRemoteAddr());
-                reject(resp, 403, "forbidden", "Only administrators may use the hub");
-                return;
-            }
-            default -> {
-                if (!required(req.getMethod(), path).contains(Scope.ADMIN)) {
-                    log.warn("Rejected {} {} from {}: user '{}' is not an agent", req.getMethod(), path,
-                            req.getRemoteAddr(), who.user());
-                    rejectChange(req, resp, new Actor(who.user(), "jwt"), "forbidden",
-                            "A signed-in user may not call " + req.getMethod() + " " + path);
-                    return;
-                }
-                audit.jwtUsed(raw, who.user(), "ok", req.getRemoteAddr());
-                req.setAttribute(JWT_USER_ATTR, who.user());
-                proceed(req, resp, chain, new Actor(who.user(), "jwt"));
-            }
-        }
     }
 
     /**

@@ -20,7 +20,7 @@ sudo ./install.sh --dry-run
 sudo ./install.sh         # --java, --port
 ```
 
-The installer registers a service that starts at boot, waits until the hub answers, and prints the **admin token once**: keep it. Open <http://localhost:8080> (the port you chose) and sign in with the token; the hub's own `admin` account has a random password in the first start's log (`%ProgramData%\svcmon-hub\logs`, `journalctl -u svcmon-hub`). Settings are in `application.yml`; restart the service after changing it. Just trying it? `java -jar svcmon-hub-@VERSION@.jar` runs the hub without a service, and `... init` writes an `application.yml` with every setting commented out.
+The installer registers a service that starts at boot, waits until the hub answers, and prints an **admin token once**, for the command line: keep it. Open <http://localhost:8080> (the port you chose) from the same network and sign in as `admin` with the password `admin`; the hub then asks you to choose a new password before anything else. That first password works only from the internal network. Settings are in `application.yml`; restart the service after changing it. Just trying it? `java -jar svcmon-hub-@VERSION@.jar` runs the hub without a service, and `... init` writes an `application.yml` with every setting commented out.
 
 **2. An agent on each server.** In the dashboard open *Add server* to get an enrollment token. Download the agent for the server's platform, check it, rename it to `svcmon` (`svcmon.exe` on Windows), put it where it will stay (the service runs it from there), run `chmod +x` on Linux and macOS, then as Administrator or root:
 
@@ -41,6 +41,8 @@ svcmon agent check add disk / --warn 80 --crit 90
 An upgrade keeps the hub's database, settings and tokens, and each agent's `agent.json`, `checks.json` and `assigned.json`; nothing is enrolled again. Do the hub first, then the agents. Copy the hub's data folder first if you want a way back.
 
 **The hub.** Unpack the new package and run the installer again with the same options as the first time (`-InstallDir`, `-DataDir`, `--port` when you set them). The dry run says "upgrade" and lists what is kept; the real run stops the service, replaces the jar and starts it again, and the database is migrated at start. The dashboard is inside the jar, so it is upgraded too; if your `application.yml` still has a `ui-dir:` line the hub serves that older folder instead, so remove the line. Check with `svcmon hub` or `GET /api/v1/hub`.
+
+**From 0.1 (people signed in with a token or the local admin account).** People now sign in as users. The local admin account becomes the user `admin` with the same password, and its old sign-ins end. Old settings stop the hub with a message naming what replaced them, also when they come from environment variables: `svcmon.local-admin.*`, `svcmon.jwt.*` (a sign-in provider's tokens are no longer accepted) and `svcmon.ui.proxy.*` (the dashboard always signs in with hub accounts). Remove them. A sign-in gateway in front of the hub becomes a gate only: see "Behind a sign-in gateway" in the reference. The hub now keeps an audit of sign-ins (30 days) and changes (365 days), which administrators read in Settings > Activity.
 
 **A hub that people reach from outside the internal network** refuses them until `svcmon.access.allow-outside: true` is set in `application.yml`, and then lets them sign in over HTTPS only. The proxy in front of it must send `X-Forwarded-For` and `X-Forwarded-Proto`. The command line's API tokens work from inside only. Agents are not affected.
 
