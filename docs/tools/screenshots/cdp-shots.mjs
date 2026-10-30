@@ -1,6 +1,7 @@
 // Takes screenshots of the demo dashboard through a headless Edge's DevTools port, with a minimal WebSocket client.
 // Usage: node cdp-shots.mjs <debugPort> <outDir> <baseUrl> <adminToken> <serverIdDocker> <serverIdWeb02>
-// Only for a THROWAWAY demo hub (see README.md in this folder): it stores the token in the browser profile.
+// Only for a THROWAWAY demo hub (see README.md in this folder): the admin token makes (or resets) an administrator
+// named "demo", and the browser signs in as that user.
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -84,10 +85,45 @@ async function go(url, wait = 2500) {
   await cdp.send('Page.navigate', { url });
   await sleep(wait);
 }
-// Signs the demo session in and picks the theme by writing what the dashboard itself stores (keys sm-auth, sm-theme).
+async function hubCall(method, path, body) {
+  const res = await fetch(`${base}/api/v1${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
+}
+// The temporary password of the user "demo": a new user, or a reset when an earlier run made it.
+async function demoPassword() {
+  const made = await hubCall('POST', '/users', { username: 'demo', role: 'ADMIN' });
+  if (made.ok) return made.data.temporaryPassword;
+  const demo = (await hubCall('GET', '/users')).data?.find((u) => u.username === 'demo');
+  const reset = demo && (await hubCall('POST', `/users/${demo.id}/password-reset`));
+  if (!reset?.ok) throw new Error(`could not make the demo user: ${made.status} ${made.data?.message ?? ''}`);
+  return reset.data.temporaryPassword;
+}
+// The dashboard takes a user name and password, not a token: sign in from the page itself, so the browser keeps the
+// session cookie, and replace the temporary password, which allows nothing else until it is changed.
+async function signIn() {
+  const temporary = await demoPassword();
+  const chosen = crypto.randomBytes(18).toString('base64url');
+  await go(`${base}/`, 1500);
+  const result = await cdp.eval(`(async () => {
+    const headers = { 'Content-Type': 'application/json', 'X-Svcmon-Request': '1' };
+    const a = await fetch('/api/v1/session', { method: 'POST', headers, body: JSON.stringify({ username: 'demo', password: ${JSON.stringify(temporary)} }) });
+    if (!a.ok) return 'sign-in ' + a.status;
+    const b = await fetch('/api/v1/me/password', { method: 'PUT', headers, body: JSON.stringify({ currentPassword: ${JSON.stringify(temporary)}, newPassword: ${JSON.stringify(chosen)} }) });
+    return b.ok ? 'ok' : 'password change ' + b.status;
+  })()`);
+  if (result !== 'ok') throw new Error(`demo sign-in failed: ${result}`);
+}
+// Picks the theme by writing what the dashboard itself stores (key sm-theme). The page reads it only when it loads,
+// and moving to another #/ page does not load it again, so reload.
 async function theme(t) {
   await go(`${base}/`, 1500);
-  await cdp.eval(`localStorage.setItem('sm-auth', JSON.stringify({ hubUrl: location.origin, token: ${JSON.stringify(token)} })); localStorage.setItem('sm-theme', ${JSON.stringify(t)}); true`);
+  await cdp.eval(`localStorage.setItem('sm-theme', ${JSON.stringify(t)}); true`);
+  await cdp.send('Page.reload');
+  await sleep(1500);
 }
 const clickText = (text, selector = 'button') =>
   cdp.eval(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(selector)})].find(x => x.textContent.trim().replace(/^[^A-Za-z0-9]+/, '').toLowerCase().startsWith(${JSON.stringify(text.toLowerCase())})); if (!b) return false; b.click(); return true; })()`);
@@ -104,6 +140,7 @@ async function shot(name, { fullPage = false } = {}) {
 const setField = (id, value, event) =>
   cdp.eval(`(() => { const e = document.getElementById(${JSON.stringify(id)}); if (!e) return false; e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event(${JSON.stringify(event)}, { bubbles: true })); return true; })()`);
 
+await signIn();
 for (const t of ['light', 'dark']) {
   await theme(t);
   await setView(1280, 1000, 1.5);
