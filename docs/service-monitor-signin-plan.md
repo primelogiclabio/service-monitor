@@ -11,11 +11,12 @@ The hub is the central dashboard for every connected agent and the only place al
 - **Sign-in is a user name and password.** No API token and no hub address on the sign-in page: the dashboard is served by the hub it talks to.
 - **A new hub has `admin` / `admin`.** That password, and any temporary one an administrator gives out, works only from the internal network and allows nothing but choosing a new password.
 - **A Settings screen replaces Tokens:** your own password and sign-ins, users (read-only or administrator), revoking agent credentials, and listing and revoking the CLI's tokens. Making them there came later (https://github.com/primelogiclabio/service-monitor-ui/pull/21); a token belongs to no account, so the help says to revoke a leaver's tokens.
-- **Internal only by default.** `svcmon.access.allow-outside` (in `application.yml`, false by default) refuses people outside the internal network; the sign-in page says it is not allowed. Opened, the intended public set-up is a gateway that signs people in first (Keycloak, Oracle OAM or another), then the hub's own sign-in.
+- **Internal only by default.** `svcmon.access.allow-outside` (in `application.yml`, false by default) refuses people outside the internal network; the sign-in page says it is not allowed. Opened, the set-up until phase 5 is a gateway that signs people in first (Keycloak, Oracle OAM or another), then the hub's own sign-in; from phase 5, people outside sign in with an identity provider that the hub talks to itself.
 - **No one-time codes for now.** Behind a gateway they were judged more than needed; they stay on the list for a hub reachable without one.
 - **The CLI keeps API tokens.** It is not exposed publicly, so those tokens work from the internal network only. Agents keep their own credentials and are never affected by where they connect from.
 - **Audit:** sign-ins kept 30 days, changes 365 days.
 - **Identity providers:** the hub never trusts an identity header (such as OAM's `OAM_REMOTE_USER`), because anyone who reaches the hub's port without the gateway could set one. A gateway is a gate only, and the hub's own sign-in always follows.
+- **Phase 5 (agreed 2026-10-31):** the hub signs people in with an identity provider itself, so it works with any provider and needs no one's gateway. It is for internal people with the right roles, not for public use. Provider roles map to the hub's roles, the settings are properties with a read-only screen, and the hub proves who it is to the provider with a key it makes, so there is no client secret at rest. A token handed on by a gateway or a proxy is still never accepted.
 
 ## Phases
 
@@ -28,8 +29,9 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 | 2 | Internal-only access | Done, https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
 | 3 | Audit of sign-ins and changes | Done, https://github.com/primelogiclabio/service-monitor/pull/41 and https://github.com/primelogiclabio/service-monitor-ui/pull/18 |
 | 4 | The gateway as a gate only | Done, https://github.com/primelogiclabio/service-monitor/pull/42 and https://github.com/primelogiclabio/service-monitor-ui/pull/19 |
+| 5 | Sign-in with an identity provider, run by the hub: provider roles mapped, no client secret | Planned |
 
-Every phase is in the 0.1.0 release. With phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
+Phases 0 to 4 are in the 0.1.0 release. With phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
 ### Phase 1, as built
 
@@ -100,6 +102,24 @@ As planned above, plus:
 - **The dashboard:** proxy mode and its gate page are gone. A 401 the hub did not send (no hub error code, or `gateway_sign_in`) makes the page reload once, so the gateway can sign the person in again; a second one within 30 seconds is reported instead. A `config.json` that still says `"proxy"` is reported on the sign-in page, and the form still works.
 - **Tested locally:** nginx (Docker) with the gate configuration from the reference, a stand-in for the gateway, and the hub. That run also showed that nginx needs `absolute_redirect off`, and that a first or temporary password cannot be used through the gate (it works from inside only), so a new user's first sign-in is from inside.
 
+### Phase 5: sign-in with an identity provider (planned)
+
+Why: behind a gate, a person signs in twice, a new user's first sign-in needs the internal network, and the gate is one deployment's own set-up rather than part of the hub. With phase 5 the hub talks to the provider itself (OpenID Connect), so any organisation can point its hub at its own provider.
+
+- **The flow:** the authorization code flow with PKCE (S256), run by the hub. The hub checks `state` and `nonce`, and the ID token's signature (from the provider's published keys), issuer, audience and expiry. The redirect URI is `<svcmon.public-url>/api/v1/oidc/callback`, built from the setting and never from the request's `Host`, so `public-url` is required. One provider per hub.
+- **Where it works:** from inside, the sign-in page offers the password form and "Sign in with <provider>"; from outside (with `allow-outside` true and over HTTPS), only the provider. Passwords, first and temporary passwords and API tokens stay inside only. Agents are not affected.
+- **Roles:** `admin-role` and `read-role` name the provider roles that make someone a hub `ADMIN` or `READ` user, read from the ID token at `roles-claim` (a dotted path such as `realm_access.roles`). Someone with neither is refused, and the refusal is recorded. Someone with both is an administrator.
+- **Users:** the first sign-in makes a hub user with no password, linked to the provider's issuer and subject, never matched by name. The role is taken from the provider again at every sign-in, so a role removed there ends access at the next sign-in, and a sign-in lasts at most `svcmon.sessions.max-hours`. An administrator can disable such a user in the hub, which wins over the provider; such a user cannot be given a password. Users shows where each account signs in.
+- **The session:** the same cookie session as a password sign-in, with the same limits and CSRF rules. The hub keeps no provider token. Signing out ends the hub's sign-in and, when the provider has an end-session endpoint, the provider's.
+- **No client secret at rest:** the hub authenticates to the provider with `private_key_jwt`. At its first start with phase 5 configured, it makes an EC P-256 key pair and keeps the private key in its data folder, readable only by the hub; it never leaves the hub. The public key is served at `GET /api/v1/oidc/jwks` (open to anyone, as a public key is not a secret), for the provider to fetch or to be pasted into it. `java -jar svcmon-hub.jar oidc rotate-key`, run on the server, makes a new key and keeps the old one published for a while. A provider that only takes a client secret gets `client-secret-file`: the path of a file (a Docker or Kubernetes secret, a systemd credential), never the secret itself in a setting or environment variable.
+- **Settings:** `svcmon.oidc.issuer`, `client-id`, `roles-claim`, `admin-role`, `read-role`, `button-label`, `scopes` (`openid profile email`), `client-auth` (`private-key-jwt`, or `client-secret` with `client-secret-file`). In `application.yml` or environment variables, strictly checked; off unless `issuer` is set, and with `issuer` set a missing role setting stops the start-up.
+- **Screens:** nothing about the provider can be changed from the dashboard. Settings gets a read-only Sign-in section for administrators: the provider, the client id, how the hub authenticates (private key, with its key id), the redirect URI and the key URL to give the provider, and whether the provider answered. The start-up summary gets a `Sign-in:` line.
+- **Without the provider:** the hub starts while the provider is down and keeps trying to reach it; until then the provider button says it is unavailable, and password sign-in from inside keeps working.
+- **Audit:** provider sign-ins that succeeded, failed or were refused for having no role, by name; never a token or a code.
+- **Trust policy, in the same pull request:** a new outbound connection (the hub to the provider, for its discovery document, its keys and its token endpoint), new stored data (provider users' issuer, subject and name; the hub's key pair) and a new library (Spring Security's OAuth 2.0 client, Apache-2.0).
+- **The droplet afterwards (the owner applies it):** a Keycloak client for the hub (client authentication "Signed JWT" with the hub's key URL, the redirect URI, realm roles in the ID token), `SVCMON_OIDC_*` in the compose service, and nginx's `monitor.conf` back to a plain proxy without the gate.
+- **To settle when it is built:** the hub name of a provider user whose name is taken by another user; how long an old key stays published after rotation; whether `read-role` may be left empty for a hub with administrators only.
+
 ## Later
 
 - One-time codes (TOTP), for a hub that is reachable without a gateway.
@@ -108,7 +128,4 @@ As planned above, plus:
 - Re-enrolling a server whose agent credential was revoked under its old name (today the server has to be removed first).
 - Auditing changes to the checks an agent declares.
 - Noting when an API or agent token was last used (today the Settings screen shows when each server last reported instead).
-
-## Pending idea
-
-- Rename "checks" to "watchdogs" where people see them: dashboard, CLI (`svcmon check ...`), `checks.json`, API and docs. It needs its own plan: the hub already uses "watchdog" for the alert when an agent goes silent (`svcmon.watchdog-*` settings), and existing agents and scripts use the old names.
+- The hub's private key protected by the machine (a TPM through systemd credentials on Linux, DPAPI on Windows, the Keychain on macOS) rather than only by the data folder's permissions.
