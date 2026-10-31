@@ -44,6 +44,8 @@ An upgrade keeps the hub's database, settings and tokens, and each agent's `agen
 
 **From 0.1 (people signed in with a token or the local admin account).** People now sign in as users. The local admin account becomes the user `admin` with the same password, and its old sign-ins end. Old settings stop the hub with a message naming what replaced them, also when they come from environment variables: `svcmon.local-admin.*`, `svcmon.jwt.*` (a sign-in provider's tokens are no longer accepted) and `svcmon.ui.proxy.*` (the dashboard always signs in with hub accounts). Remove them. A sign-in gateway in front of the hub becomes a gate only: see "Behind a sign-in gateway" in the reference. The hub now keeps an audit of sign-ins (30 days) and changes (365 days), which administrators read in Settings > Activity.
 
+**From 0.1.0.** Nothing to do. The hub can now sign people in with an identity provider (OpenID Connect: Keycloak, Entra ID, Okta, Auth0 and others), with its own key pair instead of a client secret; it stays off until `svcmon.oidc.issuer` is set, and the database gains its columns at start (migration V7). With a provider, people outside the internal network sign in with it only. See "Sign-in with an identity provider" in the reference.
+
 **A hub that people reach from outside the internal network** refuses them until `svcmon.access.allow-outside: true` is set in `application.yml`, and then lets them sign in over HTTPS only. The proxy in front of it must send `X-Forwarded-For` and `X-Forwarded-Proto`. The command line's API tokens work from inside only. Agents are not affected.
 
 **An agent.** Do not run `agent install` again. Stop the service, replace the program file with the new one (renamed to `svcmon`), start it:
