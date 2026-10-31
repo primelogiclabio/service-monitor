@@ -364,11 +364,18 @@ class ProviderSignInTest {
     void fromOutsideOnlyTheProvidersSignInWorks() throws Exception {
         String[] outside = {"X-Forwarded-For", OUTSIDE, HTTPS[0], HTTPS[1]};
         Map<String, Object> state = map(send("GET", "/api/v1/session", null, outside));
-        assertEquals(Boolean.FALSE, state.get("passwordSignIn"));
-        assertEquals(Boolean.TRUE, state.get("signInAllowed"));
-        assertEquals(Map.of("label", "Sign in with Test", "allowed", true, "startUrl", PUBLIC_URL + "/api/v1/oidc/start"),
-                state.get("provider"));
-        assertEquals(Boolean.TRUE, map(send("GET", "/api/v1/session", null)).get("passwordSignIn"), "inside it may");
+        Map<String, Object> button = Map.of("label", "Sign in with Test", "startUrl", PUBLIC_URL + "/api/v1/oidc/start");
+        assertEquals(Map.of("signedIn", false, "passwordSignIn", false, "provider", button), state,
+                "the button only, without saying why");
+        assertEquals(Map.of("signedIn", false, "passwordSignIn", true, "provider", button),
+                map(send("GET", "/api/v1/session", null)), "inside, the form too");
+        assertEquals(Map.of("signedIn", false, "passwordSignIn", true, "provider", button),
+                map(send("GET", "/api/v1/session", null, "X-Forwarded-For", OUTSIDE)),
+                "over plain HTTP the page is the same as inside, and trying to sign in tells");
+        HttpResponse<String> plain = send("GET", "/api/v1/oidc/start", null, "X-Forwarded-For", OUTSIDE);
+        assertEquals(302, plain.statusCode(), plain.body());
+        assertEquals(PUBLIC_URL + "/?signin_error=insecure_transport", plain.headers().firstValue("Location").orElseThrow(),
+                "the button leads back to the sign-in page, which says what went wrong");
 
         HttpResponse<String> password = send("POST", "/api/v1/session",
                 "{\"username\":\"admin\",\"password\":\"" + NEW_PASSWORD + "\"}", outside);

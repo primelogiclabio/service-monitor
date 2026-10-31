@@ -52,20 +52,19 @@ public class SessionController {
     public record Who(String id, String name, Role role, boolean provider) {
     }
 
-    /** The identity provider's sign-in: the button's text, whether it may be used from here, and where it starts. */
-    public record ProviderOption(String label, boolean allowed, String startUrl) {
+    /** The identity provider's sign-in: the button's text and where it starts. */
+    public record ProviderOption(String label, String startUrl) {
     }
 
     /**
-     * {@code user}, {@code mustChangePassword} and {@code expiresAt} are there only when signed in. {@code network}
-     * (inside or outside) and {@code address} say how the hub sees this browser. {@code passwordSignIn} says whether
-     * the password form may be used from here, {@code provider} (only on a hub with one) the same for the identity
-     * provider; {@code signInAllowed} is false when neither may, and {@code signInRefusal} then names the network's
-     * reason.
+     * {@code user}, {@code mustChangePassword} and {@code expiresAt} are there only when signed in, and so are
+     * {@code network} (inside or outside) and {@code address}, how the hub sees this browser. Anyone gets what the
+     * sign-in page draws: {@code passwordSignIn}, whether it shows the password form, and {@code provider}, the identity
+     * provider's button on a hub with one. Neither says whether a sign-in from here would be refused; trying it tells,
+     * as on any sign-in page.
      */
     public record State(boolean signedIn, Who user, Boolean mustChangePassword, Long expiresAt, String network,
-                        String address, boolean signInAllowed, String signInRefusal, boolean passwordSignIn,
-                        ProviderOption provider) {
+                        String address, boolean passwordSignIn, ProviderOption provider) {
     }
 
     /** {@code providerSignOut}: where to send the browser to sign out at the identity provider too. */
@@ -96,7 +95,7 @@ public class SessionController {
 
     @GetMapping("/session")
     public ResponseEntity<State> state(HttpServletRequest req) {
-        // A sign-in that may not be used from here is not reported, so the page shows the refusal instead.
+        // A sign-in that may not be used from here is not reported, so the page shows the sign-in page instead.
         SessionService.Signed who = network.forUser(req) == null ? sessions.authenticate(req).orElse(null) : null;
         if (who != null && network.forSession(req, who.session().viaProvider()) != null) {
             who = null;
@@ -219,19 +218,19 @@ public class SessionController {
     }
 
     private State state(SessionService.Signed who, HttpServletRequest req) {
-        NetworkPolicy.Refusal refusal = network.forUser(req);
-        String where = network.isInside(req) ? "inside" : "outside";
-        boolean password = users.enabled() && network.forPassword(req) == null;
+        // The form is left out only where the provider's button is the way in. Any other refusal for where the browser
+        // is shows when someone tries to sign in, with the 403 every request from there gets.
+        boolean password = users.enabled()
+                && network.forPassword(req) != NetworkPolicy.Refusal.PASSWORD_INSIDE_ONLY;
         ProviderOption option = provider.enabled() ? new ProviderOption(provider.settings().buttonLabel(),
-                refusal == null, provider.settings().publicUrl() + OidcSettings.START) : null;
-        boolean allowed = password || option != null && option.allowed();
-        String reason = refusal == null ? null : refusal.code;
+                provider.settings().publicUrl() + OidcSettings.START) : null;
         if (who == null) {
-            return new State(false, null, null, null, where, req.getRemoteAddr(), allowed, reason, password, option);
+            return new State(false, null, null, null, null, null, password, option);
         }
         UserRecord u = who.user();
+        String where = network.isInside(req) ? "inside" : "outside";
         return new State(true, new Who(u.id(), u.username(), u.role(), u.viaProvider()), u.mustChangePassword(),
-                who.session().expiresAt(), where, req.getRemoteAddr(), allowed, reason, password, option);
+                who.session().expiresAt(), where, req.getRemoteAddr(), password, option);
     }
 
     private static Map<String, String> error(String code, String message) {

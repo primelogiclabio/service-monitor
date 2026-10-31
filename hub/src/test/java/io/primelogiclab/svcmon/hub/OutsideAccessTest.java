@@ -106,12 +106,10 @@ class OutsideAccessTest {
     @Test
     @Order(2)
     void fromOutsideSigningInWorksOverHttpsOnly() throws Exception {
-        Map<String, Object> plain = map(send("GET", "/api/v1/session", OUTSIDE, null));
-        assertEquals(Boolean.FALSE, plain.get("signInAllowed"));
-        assertEquals("insecure_transport", plain.get("signInRefusal"));
+        // The page is the same either way; trying to sign in tells.
+        assertEquals(Map.of("signedIn", false, "passwordSignIn", true), map(send("GET", "/api/v1/session", OUTSIDE, null)));
         refused(signIn(NEW_PASSWORD, OUTSIDE), "insecure_transport");
 
-        assertEquals(Boolean.TRUE, map(send("GET", "/api/v1/session", OUTSIDE, null, HTTPS)).get("signInAllowed"));
         HttpResponse<String> r = signIn(NEW_PASSWORD, OUTSIDE, HTTPS);
         assertEquals(200, r.statusCode(), r.body());
         outsideCookie = cookieOf(r, "__Host-svcmon");
