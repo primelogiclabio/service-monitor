@@ -219,7 +219,7 @@ Keeping it safe:
 - **macOS ping:** unprivileged ICMP on macOS is not confirmed by the sources used.
 - **Beszel on Windows services:** not confirmed either way from the pages read.
 - **Resource figures** (RAM, disk, agent size) are estimates, not measurements.
-- **Sign-in:** users, sessions, internal-only access, the audit and the gateway as a gate are in the 0.1.0 release and run on a Linux server. Sign-in with an identity provider is tested against a stand-in provider only, not yet against a real one. The hub makes no certificate for its own key (plain Java cannot sign one); for a provider that wants one, such as Entra ID, it takes a pair made with signing-keys-tool.
+- **Sign-in:** users, sessions, internal-only access, the audit and the gateway as a gate are in the 0.1.0 release and run on a Linux server. Sign-in with an identity provider is tested against a stand-in provider and against Keycloak 26.8.1 on the same machine, not yet against Entra ID or other providers. The hub makes no certificate for its own key (plain Java cannot sign one); for a provider that wants one, such as Entra ID, it takes a pair made with signing-keys-tool.
 - **Not covered:** high availability for the hub, long-term metric retention rules, and a public status page.
 
 ## References

@@ -136,8 +136,9 @@ public final class FakeProvider implements AutoCloseable {
             send(ex, 400, Map.of("error", "invalid_grant", "error_description", "PKCE"));
             return;
         }
-        if (!clientAssertionOk(form, grant.clientId())) {
-            send(ex, 401, Map.of("error", "invalid_client"));
+        String refused = clientAssertionRefused(form, grant.clientId());
+        if (refused != null) {
+            send(ex, 400, Map.of("error", "invalid_client", "error_description", refused));
             return;
         }
         try {
@@ -159,28 +160,54 @@ public final class FakeProvider implements AutoCloseable {
         }
     }
 
-    /** The hub's private_key_jwt: signed by a key the hub publishes, about itself, for this token endpoint, fresh. */
-    private boolean clientAssertionOk(Map<String, String> form, String clientId) {
+    /**
+     * The hub's private_key_jwt: signed by a key the hub publishes, about itself, for this token endpoint, fresh.
+     * Null when it is good, else why not. Its lifetime is checked as Keycloak checks it (without iat no more than a
+     * minute, with iat used within a minute of it) and iat and nbf must be there, as Entra ID wants.
+     */
+    private String clientAssertionRefused(Map<String, String> form, String clientId) {
         if (!"urn:ietf:params:oauth:client-assertion-type:jwt-bearer".equals(form.get("client_assertion_type"))
-                || form.get("client_assertion") == null || hubJwks == null) {
-            return false;
+                || form.get("client_assertion") == null) {
+            return "client_assertion missing";
         }
         try {
             SignedJWT assertion = SignedJWT.parse(form.get("client_assertion"));
-            JWK hubKey = JWKSet.load(new URL(hubJwks)).getKeyByKeyId(assertion.getHeader().getKeyID());
+            JWK hubKey;
+            try {
+                hubKey = JWKSet.load(new URL(hubJwks)).getKeyByKeyId(assertion.getHeader().getKeyID());
+            } catch (Exception e) {
+                return "Unable to load the client's keys";
+            }
             if (hubKey == null || !assertion.verify(new RSASSAVerifier(hubKey.toRSAKey()))) {
-                return false;
+                return "Signature on the client assertion failed validation";
             }
             JWTClaimsSet c = assertion.getJWTClaimsSet();
             lastAssertionKeyId = assertion.getHeader().getKeyID();
             lastAssertionThumbprint = assertion.getHeader().getX509CertSHA256Thumbprint() == null ? null
                     : assertion.getHeader().getX509CertSHA256Thumbprint().toString();
             lastAssertionAudience = c.getAudience();
-            return clientId.equals(c.getIssuer()) && clientId.equals(c.getSubject())
-                    && c.getAudience().contains(issuer + "/token") && c.getJWTID() != null
-                    && c.getExpirationTime() != null && c.getExpirationTime().after(new Date());
+            if (!clientId.equals(c.getIssuer()) || !clientId.equals(c.getSubject())
+                    || !c.getAudience().contains(issuer + "/token") || c.getJWTID() == null) {
+                return "Invalid client assertion";
+            }
+            long now = System.currentTimeMillis();
+            Date exp = c.getExpirationTime();
+            Date iat = c.getIssueTime();
+            if (exp == null || !exp.after(new Date(now))) {
+                return "Token is not active";
+            }
+            if (iat == null && exp.getTime() - now > 60_000) {
+                return "Token expiration is too far in the future and iat claim not present in token";
+            }
+            if (iat == null || c.getNotBeforeTime() == null) {
+                return "The client assertion has no iat or nbf";
+            }
+            if (now > iat.getTime() + 60_000) {
+                return "Token was issued too far in the past to be used now";
+            }
+            return null;
         } catch (Exception e) {
-            return false;
+            return "Invalid client assertion";
         }
     }
 

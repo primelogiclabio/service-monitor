@@ -32,8 +32,11 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.json.JsonMapper;
@@ -45,6 +48,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@ExtendWith(OutputCaptureExtension.class)
 class ProviderSignInTest {
 
     private static final FakeProvider PROVIDER = FakeProvider.start();
@@ -300,7 +304,7 @@ class ProviderSignInTest {
 
     @Test
     @Order(7)
-    void theProviderSayingNoEndsTheSignIn() throws Exception {
+    void theProviderSayingNoEndsTheSignIn(CapturedOutput output) throws Exception {
         HttpResponse<String> start = send("GET", "/api/v1/oidc/start", null);
         String to = start.headers().firstValue("Location").orElseThrow();
         String state = FakeProvider.query(URI.create(to).getRawQuery()).get("state");
@@ -309,6 +313,9 @@ class ProviderSignInTest {
 
         PROVIDER.hubJwks("http://127.0.0.1:1/nowhere"); // the provider cannot check the hub's proof
         assertEquals("provider_refused", signIn(person("sub-gina", "gina", "platform-admin")).error());
+        // The provider's reason is the only place that says why; Keycloak logs none.
+        assertTrue(output.getOut().contains("the token endpoint answered 400 invalid_client: Unable to load the"
+                + " client's keys"), "the provider's description is logged");
     }
 
     @Test

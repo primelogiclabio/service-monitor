@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
+import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,7 @@ import com.nimbusds.oauth2.sdk.http.HTTPRequest;
 import com.nimbusds.oauth2.sdk.id.Audience;
 import com.nimbusds.oauth2.sdk.id.ClientID;
 import com.nimbusds.oauth2.sdk.id.Issuer;
+import com.nimbusds.oauth2.sdk.id.JWTID;
 import com.nimbusds.oauth2.sdk.id.State;
 import com.nimbusds.oauth2.sdk.id.Subject;
 import com.nimbusds.oauth2.sdk.pkce.CodeChallengeMethod;
@@ -62,7 +64,8 @@ import org.slf4j.LoggerFactory;
  * The hub's side of OpenID Connect with one provider: its discovery document, the address a browser is sent to, and
  * turning the code that comes back into a checked ID token. The ID token's signature (with the provider's published
  * keys), issuer, audience, expiry and nonce are all checked; a symmetric signature (HS256), which would need a shared
- * secret, is never accepted. Nothing the provider sends back is logged beyond its error code.
+ * secret, is never accepted. Nothing the provider sends back is logged beyond its error code and description, made
+ * one line and shortened.
  */
 public class ProviderClient {
 
@@ -86,6 +89,8 @@ public class ProviderClient {
     static final int TIMEOUT_MS = 10_000;
     private static final int MAX_DOCUMENT_BYTES = 512 * 1024;
     private static final long RETRY_MS = 10_000;
+    /** How long the hub's proof is good for; it is sent at once, and Keycloak's default limit is a minute. */
+    private static final int ASSERTION_SECONDS = 60;
     /** Signatures an ID token may carry. */
     private static final Set<JWSAlgorithm> ID_TOKEN_ALGORITHMS = Set.of(JWSAlgorithm.RS256, JWSAlgorithm.RS384,
             JWSAlgorithm.RS512, JWSAlgorithm.PS256, JWSAlgorithm.PS384, JWSAlgorithm.PS512, JWSAlgorithm.ES256,
@@ -157,8 +162,10 @@ public class ProviderClient {
         }
         if (!response.indicatesSuccess()) {
             ErrorObject error = response.toErrorResponse().getErrorObject();
+            // The provider's own description is the only place it says why (Keycloak logs no reason), so it is kept.
+            String why = clean(error.getDescription());
             throw new ProviderException("provider_refused", "the token endpoint answered " + error.getHTTPStatusCode()
-                    + " " + clean(error.getCode()));
+                    + " " + clean(error.getCode()) + (why.isEmpty() ? "" : ": " + why));
         }
         if (!(response.toSuccessResponse() instanceof OIDCTokenResponse tokens)
                 || tokens.getOIDCTokens().getIDToken() == null) {
@@ -204,7 +211,9 @@ public class ProviderClient {
 
     /**
      * The hub's proof: a JWT about itself (iss and sub its client id) for the token endpoint only (its audience),
-     * good for a few minutes and used once (jti), signed with its private key. The header names the key by its id and,
+     * good for {@value #ASSERTION_SECONDS} seconds from when it was made (iat and nbf, which Entra ID requires) and
+     * used once (jti), signed with its private key. Keycloak refuses one without iat that lasts longer than that
+     * ("Token expiration is too far in the future"). The header names the key by its id and,
      * when the key has a certificate, by the certificate's thumbprints (x5t#S256, and the older x5t that some
      * providers, Entra ID among them, match an uploaded certificate by).
      */
@@ -218,8 +227,10 @@ public class ProviderClient {
             header.x509CertSHA256Thumbprint(FileKey.thumbprint(cert, "SHA-256"))
                     .x509CertThumbprint(FileKey.thumbprint(cert, "SHA-1"));
         }
+        Date now = new Date();
         JWTClaimsSet claims = new JWTAssertionDetails(new Issuer(clientId), new Subject(clientId.getValue()),
-                new Audience(tokenEndpoint)).toJWTClaimsSet();
+                List.of(new Audience(tokenEndpoint)), new Date(now.getTime() + ASSERTION_SECONDS * 1000L), now, now,
+                new JWTID(), null).toJWTClaimsSet();
         SignedJWT jwt = new SignedJWT(header.build(), claims);
         jwt.sign(new RSASSASigner(k));
         return jwt;

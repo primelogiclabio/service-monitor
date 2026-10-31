@@ -64,7 +64,11 @@ class FileKeyTest {
         assertEquals("service-monitor", proof.getJWTClaimsSet().getSubject());
         assertEquals(List.of(TOKEN.toString()), proof.getJWTClaimsSet().getAudience());
         assertNotNull(proof.getJWTClaimsSet().getJWTID());
-        assertTrue(proof.getJWTClaimsSet().getExpirationTime().toInstant().isBefore(Instant.now().plus(10, ChronoUnit.MINUTES)));
+        // Keycloak refuses a proof without iat that lasts longer than a minute; Entra ID wants nbf.
+        Instant issued = proof.getJWTClaimsSet().getIssueTime().toInstant();
+        assertTrue(Math.abs(Instant.now().getEpochSecond() - issued.getEpochSecond()) < 10, "made now: " + issued);
+        assertEquals(issued, proof.getJWTClaimsSet().getNotBeforeTime().toInstant());
+        assertEquals(issued.plus(60, ChronoUnit.SECONDS), proof.getJWTClaimsSet().getExpirationTime().toInstant());
 
         SignedJWT own = ProviderClient.clientAssertion(new ClientID("service-monitor"), TOKEN, JWSAlgorithm.PS256,
                 new HubKey(dir.resolve("own")));
