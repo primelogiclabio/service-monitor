@@ -29,9 +29,9 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 | 2 | Internal-only access | Done, https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
 | 3 | Audit of sign-ins and changes | Done, https://github.com/primelogiclabio/service-monitor/pull/41 and https://github.com/primelogiclabio/service-monitor-ui/pull/18 |
 | 4 | The gateway as a gate only | Done, https://github.com/primelogiclabio/service-monitor/pull/42 and https://github.com/primelogiclabio/service-monitor-ui/pull/19 |
-| 5 | Sign-in with an identity provider, run by the hub: provider roles mapped, no client secret | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/47 and https://github.com/primelogiclabio/service-monitor-ui/pull/23 |
+| 5 | Sign-in with an identity provider, run by the hub: provider roles mapped, no client secret | Done, https://github.com/primelogiclabio/service-monitor/pull/47 and https://github.com/primelogiclabio/service-monitor-ui/pull/23 |
 
-Phases 0 to 4 are in the 0.1.0 release. With phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
+Phases 0 to 4 are in the 0.1.0 release, phase 5 in 0.2.0. With phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
 ### Phase 1, as built
 
@@ -102,7 +102,7 @@ As planned above, plus:
 - **The dashboard:** proxy mode and its gate page are gone. A 401 the hub did not send (no hub error code, or `gateway_sign_in`) makes the page reload once, so the gateway can sign the person in again; a second one within 30 seconds is reported instead. A `config.json` that still says `"proxy"` is reported on the sign-in page, and the form still works.
 - **Tested locally:** nginx (Docker) with the gate configuration from the reference, a stand-in for the gateway, and the hub. That run also showed that nginx needs `absolute_redirect off`, and that a first or temporary password cannot be used through the gate (it works from inside only), so a new user's first sign-in is from inside.
 
-### Phase 5: sign-in with an identity provider (planned)
+### Phase 5: sign-in with an identity provider
 
 Why: behind a gate, a person signs in twice, a new user's first sign-in needs the internal network, and the gate is one deployment's own set-up rather than part of the hub. With phase 5 the hub talks to the provider itself (OpenID Connect), so any organisation can point its hub at its own provider.
 
