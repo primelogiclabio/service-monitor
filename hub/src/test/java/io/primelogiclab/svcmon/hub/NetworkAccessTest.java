@@ -2,7 +2,6 @@ package io.primelogiclab.svcmon.hub;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -101,19 +100,11 @@ class NetworkAccessTest {
     }
 
     @Test
-    void theSignInPageIsRefusedFromOutsideAndSigningInIsToo() throws Exception {
+    void theSignInPageLooksTheSameFromOutsideAndSigningInIsRefused() throws Exception {
         Map<String, Object> outside = map(send("GET", "/api/v1/session", OUTSIDE, null));
-        assertEquals(Boolean.FALSE, outside.get("signedIn"));
-        assertEquals(Boolean.FALSE, outside.get("signInAllowed"));
-        assertEquals("outside_not_allowed", outside.get("signInRefusal"));
-        assertFalse(outside.containsKey("network"), "a visitor is not told where the hub places them: " + outside);
-        assertFalse(outside.containsKey("address"), outside.toString());
-
-        Map<String, Object> inside = map(send("GET", "/api/v1/session", null, null));
-        assertEquals(Boolean.TRUE, inside.get("signInAllowed"));
-        assertNull(inside.get("signInRefusal"));
-        assertFalse(inside.containsKey("network"), inside.toString());
-        assertFalse(inside.containsKey("address"), inside.toString());
+        assertEquals(Map.of("signedIn", false, "passwordSignIn", true), outside,
+                "a visitor gets the sign-in form, not where the hub places them");
+        assertEquals(outside, map(send("GET", "/api/v1/session", null, null)), "the same page inside");
 
         Map<String, Object> signedIn = map(withCookie("/api/v1/session", null, insideCookie()));
         assertEquals(Boolean.TRUE, signedIn.get("signedIn"));
@@ -158,19 +149,17 @@ class NetworkAccessTest {
     @Test
     void aForgedAddressCanOnlyMakeARequestLookOutside() throws Exception {
         // A person outside who sends X-Forwarded-For: 10.0.0.1 through a load balancer that appends their address.
-        Map<String, Object> forged = map(send("GET", "/api/v1/session", "10.0.0.1, " + OUTSIDE, null));
-        assertEquals("outside_not_allowed", forged.get("signInRefusal"));
+        refused(send("GET", "/api/v1/status", "10.0.0.1, " + OUTSIDE, null), "outside_not_allowed");
         // Someone inside who claims to be outside is believed, and only refuses themselves.
-        assertEquals("outside_not_allowed", map(send("GET", "/api/v1/session", OUTSIDE, null)).get("signInRefusal"));
+        refused(send("GET", "/api/v1/status", OUTSIDE, null), "outside_not_allowed");
     }
 
     @Test
     void aRequestThatShowsUpAsThePublicProxyIsOutside() throws Exception {
-        Map<String, Object> viaProxy = map(send("GET", "/api/v1/session", "10.0.0.5", null));
-        assertEquals("outside_not_allowed", viaProxy.get("signInRefusal"),
-                "a gateway that forgot X-Forwarded-For is refused, not let in");
+        // A gateway that forgot X-Forwarded-For is refused, not let in.
+        refused(send("GET", "/api/v1/status", "10.0.0.5", null), "outside_not_allowed");
         refused(withCookie("/api/v1/status", "10.0.0.5", insideCookie()), "outside_not_allowed");
-        assertEquals(Boolean.TRUE, map(send("GET", "/api/v1/session", "10.0.0.6", null)).get("signInAllowed"));
+        assertEquals(401, send("GET", "/api/v1/status", "10.0.0.6", null).statusCode(), "inside, only a sign-in is missing");
     }
 
     @Test

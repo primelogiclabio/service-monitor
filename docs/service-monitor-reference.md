@@ -199,7 +199,7 @@ Entra ID takes the certificate uploaded (Certificates & secrets, upload `signing
 
 ## Access from outside the internal network
 
-By default only people on the internal network may use the hub. From anywhere else the API answers 403 `outside_not_allowed`, and the sign-in page says the hub cannot be used from there instead of showing the form. Where a request comes from never grants anything; it can only refuse. Someone who is not signed in is not told whether the hub counts them as inside or outside, nor the address it sees: the sign-in page only shows the ways in that work from there. Signed-in people see both in Settings > Access.
+By default only people on the internal network may use the hub. From anywhere else the API answers 403 `outside_not_allowed`. Where a request comes from never grants anything; it can only refuse. The sign-in page looks the same from everywhere and does not say beforehand whether a sign-in will be refused: someone who tries from where it is not allowed gets "Sign-in was refused. Ask an administrator if you need access.", as they would a wrong password, and over plain HTTP from outside, to open the https:// address. The page never says whether the hub counts the browser as inside or outside, nor the address it sees; signed-in people see both in Settings > Access.
 
 | Who | From inside | From outside, `allow-outside: false` (default) | From outside, `allow-outside: true` |
 |---|---|---|---|
@@ -428,7 +428,7 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 |---|---|---|
 | `GET /health` | none | Liveness probe |
 | `GET /hub` | read | Hub ID, version, Java runtime age and warning |
-| `GET /session`, `POST /session`, `DELETE /session` | none | Who is signed in (`user.provider` is true for the identity provider's users) and, only then, how the hub sees the browser (`network` inside or outside, `address`); for anyone, which ways in the page offers (`signInAllowed`, and `signInRefusal` when it is not; `passwordSignIn`, and `provider` with its `label`, `allowed` and `startUrl` on a hub with one); sign in with a user name and password (sets the cookie; wrong attempts are throttled); sign out, which answers `{"providerSignOut": "<address>"}` for a sign-in made with the provider when it has an end-session endpoint, and 204 otherwise |
+| `GET /session`, `POST /session`, `DELETE /session` | none | Who is signed in (`user.provider` is true for the identity provider's users) and, only then, how the hub sees the browser (`network` inside or outside, `address`); for anyone, what the sign-in page shows (`passwordSignIn`, false where only the provider's sign-in works, and `provider` with its `label` and `startUrl` on a hub with one), never whether a sign-in from there would be refused; sign in with a user name and password (sets the cookie; wrong attempts are throttled); sign out, which answers `{"providerSignOut": "<address>"}` for a sign-in made with the provider when it has an end-session endpoint, and 204 otherwise |
 | `GET /oidc/start`, `GET /oidc/callback` | none | Where the browser goes to sign in with the identity provider and comes back; both answer with redirects, and with `?signin_error=<code>` on the dashboard when it did not work |
 | `GET /oidc/jwks` | none | The hub's public key, for the identity provider (404 without one) |
 | `GET /oidc` | admin | How sign-in with the identity provider is set up; nothing secret |
