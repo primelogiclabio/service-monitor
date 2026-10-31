@@ -1,5 +1,6 @@
 package io.primelogiclab.svcmon.hub.api;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -12,6 +13,8 @@ import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.SessionRecord;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.model.UserRecord;
+import io.primelogiclab.svcmon.hub.oidc.OidcSettings;
+import io.primelogiclab.svcmon.hub.oidc.ProviderSignIn;
 import io.primelogiclab.svcmon.hub.security.NetworkPolicy;
 import io.primelogiclab.svcmon.hub.security.SessionService;
 import io.primelogiclab.svcmon.hub.security.TokenAuthFilter;
@@ -45,16 +48,28 @@ public class SessionController {
     public record PasswordRequest(String currentPassword, String newPassword) {
     }
 
-    public record Who(String id, String name, Role role) {
+    /** {@code provider}: the user signs in with the identity provider and has no password on the hub. */
+    public record Who(String id, String name, Role role, boolean provider) {
+    }
+
+    /** The identity provider's sign-in: the button's text, whether it may be used from here, and where it starts. */
+    public record ProviderOption(String label, boolean allowed, String startUrl) {
     }
 
     /**
      * {@code user}, {@code mustChangePassword} and {@code expiresAt} are there only when signed in. {@code network}
-     * (inside or outside) and {@code address} say how the hub sees this browser; {@code signInAllowed} is false when
-     * a password sign-in from here would be refused, and {@code signInRefusal} then names the network's reason.
+     * (inside or outside) and {@code address} say how the hub sees this browser. {@code passwordSignIn} says whether
+     * the password form may be used from here, {@code provider} (only on a hub with one) the same for the identity
+     * provider; {@code signInAllowed} is false when neither may, and {@code signInRefusal} then names the network's
+     * reason.
      */
     public record State(boolean signedIn, Who user, Boolean mustChangePassword, Long expiresAt, String network,
-                        String address, boolean signInAllowed, String signInRefusal) {
+                        String address, boolean signInAllowed, String signInRefusal, boolean passwordSignIn,
+                        ProviderOption provider) {
+    }
+
+    /** {@code providerSignOut}: where to send the browser to sign out at the identity provider too. */
+    public record SignedOut(String providerSignOut) {
     }
 
     public record SessionView(String id, String user, long createdAt, long lastSeenAt, long expiresAt,
@@ -68,18 +83,24 @@ public class SessionController {
     private final SessionService sessions;
     private final NetworkPolicy network;
     private final AuditService audit;
+    private final ProviderSignIn provider;
 
-    public SessionController(UserService users, SessionService sessions, NetworkPolicy network, AuditService audit) {
+    public SessionController(UserService users, SessionService sessions, NetworkPolicy network, AuditService audit,
+                             ProviderSignIn provider) {
         this.users = users;
         this.sessions = sessions;
         this.network = network;
         this.audit = audit;
+        this.provider = provider;
     }
 
     @GetMapping("/session")
     public ResponseEntity<State> state(HttpServletRequest req) {
         // A sign-in that may not be used from here is not reported, so the page shows the refusal instead.
         SessionService.Signed who = network.forUser(req) == null ? sessions.authenticate(req).orElse(null) : null;
+        if (who != null && network.forSession(req, who.session().viaProvider()) != null) {
+            who = null;
+        }
         return ResponseEntity.ok().header("Cache-Control", "no-store").body(state(who, req));
     }
 
@@ -111,15 +132,23 @@ public class SessionController {
         };
     }
 
+    /**
+     * Ends this sign-in. One made with the identity provider answers with the provider's sign-out address, when it
+     * has one, so the page can end the provider's sign-in too; otherwise there is nothing to say (204).
+     */
     @DeleteMapping("/session")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void signOut(HttpServletRequest req, HttpServletResponse resp) {
-        sessions.authenticate(req).ifPresent(who -> {
+    public ResponseEntity<SignedOut> signOut(HttpServletRequest req, HttpServletResponse resp) {
+        SessionService.Signed who = sessions.authenticate(req).orElse(null);
+        URI providerSignOut = null;
+        if (who != null) {
             sessions.end(who.session().id());
             audit.signIn("sign_out", "ok", AuditService.Actor.user(who.user().username()), req.getRemoteAddr(), null,
                     null);
-        });
+            providerSignOut = who.session().viaProvider() ? provider.endSessionUri() : null;
+        }
         sessions.clearCookie(req, resp);
+        return providerSignOut == null ? ResponseEntity.noContent().build()
+                : ResponseEntity.ok().header("Cache-Control", "no-store").body(new SignedOut(providerSignOut.toString()));
     }
 
     /** A one-time ticket for the first frame of the live view (see LiveHandler). */
@@ -192,14 +221,17 @@ public class SessionController {
     private State state(SessionService.Signed who, HttpServletRequest req) {
         NetworkPolicy.Refusal refusal = network.forUser(req);
         String where = network.isInside(req) ? "inside" : "outside";
-        boolean allowed = refusal == null && users.enabled();
+        boolean password = users.enabled() && network.forPassword(req) == null;
+        ProviderOption option = provider.enabled() ? new ProviderOption(provider.settings().buttonLabel(),
+                refusal == null, provider.settings().publicUrl() + OidcSettings.START) : null;
+        boolean allowed = password || option != null && option.allowed();
         String reason = refusal == null ? null : refusal.code;
         if (who == null) {
-            return new State(false, null, null, null, where, req.getRemoteAddr(), allowed, reason);
+            return new State(false, null, null, null, where, req.getRemoteAddr(), allowed, reason, password, option);
         }
         UserRecord u = who.user();
-        return new State(true, new Who(u.id(), u.username(), u.role()), u.mustChangePassword(), who.session().expiresAt(),
-                where, req.getRemoteAddr(), allowed, reason);
+        return new State(true, new Who(u.id(), u.username(), u.role(), u.viaProvider()), u.mustChangePassword(),
+                who.session().expiresAt(), where, req.getRemoteAddr(), allowed, reason, password, option);
     }
 
     private static Map<String, String> error(String code, String message) {

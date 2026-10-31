@@ -19,7 +19,8 @@ public class SessionRepo {
             rs.getLong("last_seen_at"),
             rs.getLong("expires_at"),
             rs.getString("client_address"),
-            rs.getString("user_agent"));
+            rs.getString("user_agent"),
+            rs.getString("method"));
 
     private final JdbcClient jdbc;
 
@@ -29,7 +30,8 @@ public class SessionRepo {
 
     public void insert(SessionRecord s) {
         jdbc.sql("INSERT INTO sessions (id, user_id, token_hash, created_at, last_seen_at, expires_at, client_address, "
-                        + "user_agent) VALUES (:id, :userId, :hash, :createdAt, :lastSeenAt, :expiresAt, :address, :agent)")
+                        + "user_agent, method) VALUES (:id, :userId, :hash, :createdAt, :lastSeenAt, :expiresAt, :address, "
+                        + ":agent, :method)")
                 .param("id", s.id())
                 .param("userId", s.userId())
                 .param("hash", s.tokenHash())
@@ -38,6 +40,7 @@ public class SessionRepo {
                 .param("expiresAt", s.expiresAt())
                 .param("address", s.clientAddress())
                 .param("agent", s.userAgent())
+                .param("method", s.method() == null ? SessionRecord.PASSWORD : s.method())
                 .update();
     }
 

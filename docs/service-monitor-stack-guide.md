@@ -34,7 +34,8 @@ Monitored servers (they only call OUT)
      Dashboard (Svelte)   CLI (svcmon)     Alert channels
      served by the hub    same Go program  Slack, Discord, email, webhook
 
-   Sign-in gateway (optional): Keycloak with nginx, a gate in front of the hub
+   Identity provider (optional): Keycloak, Entra ID and the like, which the hub signs people in with
+   Sign-in gateway (optional, for a hub without one): Keycloak with nginx, a gate in front of the hub
 ```
 
 Three programs live in two repositories:
@@ -77,12 +78,13 @@ These pictures come from a throwaway demo hub filled with made-up servers (the d
 | Virtual threads (Java 21, JEP 444) | Very cheap threads managed by the JVM; blocking in one costs almost nothing | `spring.threads.virtual.enabled` is on. One ordinary thread keeps time in `CheckScheduler`; every check run executes on its own virtual thread, so hundreds of slow checks do not need a big pool |
 | JdbcClient | Spring's plain-SQL helper (no JPA, no Hibernate) | The `store/` package writes SQL by hand and maps rows into Java records |
 | SQLite and `sqlite-jdbc` 3.53.4.0 | A database that is just a file | Lives in `svcmon.data-dir`. Opened in WAL mode (readers do not block the writer), with a 10 second busy timeout and foreign keys on. The jar carries the native libraries for every platform |
-| Flyway | Applies numbered SQL scripts to the database on start | `src/main/resources/db/migration/V1` to `V6`. An applied migration is never edited; a change is a new file |
+| Flyway | Applies numbered SQL scripts to the database on start | `src/main/resources/db/migration/V1` to `V7`. An applied migration is never edited; a change is a new file |
 | Spring WebSocket | A long-lived two-way connection to the browser | `/api/v1/live` pushes the status to a dashboard when it changes |
 | Angus Mail 2.0.5 | The implementation of Jakarta Mail | Sends alert emails over SMTP |
+| Nimbus OAuth 2.0 SDK 11.38 and Nimbus JOSE+JWT 10.9 | The OpenID Connect and JSON Web Token libraries that Spring Security itself uses underneath | Sign-in with an identity provider (`oidc/`): the provider's discovery document, the sign-in request with PKCE, the hub's signed proof (`private_key_jwt`) and every check on the ID token |
 | Maven | Your build tool | `mvn -B -ntp test` runs the tests, which start the real hub on random ports with temporary data folders |
 
-All of these were checked in the build files and the local Maven cache; their licences are Apache-2.0 for Flyway and `sqlite-jdbc`, and EPL-2.0 or GPL-2.0 with the Classpath Exception for Angus Mail.
+All of these were checked in the build files and the local Maven cache; their licences are Apache-2.0 for Flyway, `sqlite-jdbc` and the Nimbus libraries, and EPL-2.0 or GPL-2.0 with the Classpath Exception for Angus Mail.
 
 ### 4.2 The agent and the CLI (the Go side)
 
@@ -179,7 +181,9 @@ A "service" is a program the operating system starts at boot and restarts if it 
 | Bearer token | A secret string sent in the `Authorization` header | Every call to the hub carries one. The hub stores only a SHA-256 fingerprint of each token, never the token |
 | Scopes | What a token may do | `ADMIN`, `READ`, `ENROLL`, `JOIN` and `AGENT` |
 | Enrollment token and join key | How a server proves it may register | An enrollment token works once; a join key registers many servers until it is revoked. Each server then receives its own `AGENT` token |
-| Sign-in gateway (Keycloak is the one tried) | The service your organisation already runs to sign people in, put in front of the hub | Optional, and only a gate: nginx asks it whether the browser is signed in before letting it through to the hub, whose own sign-in then follows. The hub never talks to it and takes no identity from it |
+| Identity provider and OpenID Connect | The service your organisation already runs to sign people in (Keycloak, Entra ID, Okta, Auth0), and the standard way an application asks it who someone is | Optional. The hub sends the browser to the provider and gets back an ID token, a signed statement of who the person is and which roles they have, which it checks itself. Like Spring Security's `oauth2Login`, done with the same library |
+| PKCE and `private_key_jwt` | Two additions to that sign-in: a one-time secret that ties the code to the request that asked for it, and the application proving who it is with a signature from its own key instead of a shared password | Both used: the hub's key pair sits in its data folder, and the provider is given only the public key |
+| Sign-in gateway (Keycloak is the one tried) | The same kind of service, put in front of the hub instead | Optional, for a hub without its own provider sign-in, and only a gate: nginx asks it whether the browser is signed in before letting it through to the hub, whose own sign-in then follows. The hub never talks to it and takes no identity from it |
 | PBKDF2 | A deliberately slow way to store a password | The passwords of the hub's users |
 | TLS termination | The encryption endpoint | Done by a load balancer in front of the hub; inside the network the hub speaks plain HTTP. `X-Forwarded-For` and similar headers carry the real client address through the balancer |
 | CORS | The rule a browser applies before one site may call another | Only matters when the dashboard is hosted on a different address from the hub |
@@ -236,7 +240,7 @@ The agent keeps up to 5,000 results in memory and sends them when the hub is bac
 
 | Path | What is there |
 |---|---|
-| `hub/src/main/java/io/primelogiclab/svcmon/hub/` | `api` (REST controllers), `core` (scheduler, services), `checks` (HTTP, TCP and ping runners), `alerts` (senders), `security` (tokens, sign-in), `store` (SQL), `live` (WebSocket), `model`, `config` |
+| `hub/src/main/java/io/primelogiclab/svcmon/hub/` | `api` (REST controllers), `core` (scheduler, services), `checks` (HTTP, TCP and ping runners), `alerts` (senders), `security` (tokens, sign-in), `oidc` (sign-in with an identity provider), `store` (SQL), `live` (WebSocket), `model`, `config` |
 | `hub/src/main/resources/` | `application.yml` and the Flyway migrations |
 | `hub/service/` | Install and uninstall scripts for the hub as a service, with their tests |
 | `agent/cmd/svcmon/` | The program's entry point |

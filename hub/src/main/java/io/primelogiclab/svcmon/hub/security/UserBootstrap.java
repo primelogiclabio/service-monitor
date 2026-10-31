@@ -60,13 +60,13 @@ public class UserBootstrap implements ApplicationRunner {
         long now = System.currentTimeMillis();
         String legacy = meta.get(LEGACY_META_KEY).orElse(null);
         if (legacy != null) {
-            users.insert(new UserRecord(UUID.randomUUID().toString(), name, Role.ADMIN, legacy, false, false, now, now,
-                    null));
+            users.insert(UserRecord.withPassword(UUID.randomUUID().toString(), name, Role.ADMIN, legacy, false, false,
+                    now, now, null));
             meta.delete(LEGACY_META_KEY);
             log.info("The local admin account is now user '{}', an administrator, with the same password", name);
             return;
         }
-        users.insert(new UserRecord(UUID.randomUUID().toString(), name, Role.ADMIN,
+        users.insert(UserRecord.withPassword(UUID.randomUUID().toString(), name, Role.ADMIN,
                 hasher.hash(cfg.initialAdminPassword()), true, false, now, null, null));
         log.warn("Created administrator '{}' with the initial password (svcmon.users.initial-admin-password): sign in"
                 + " from the internal network and choose a new one", name);

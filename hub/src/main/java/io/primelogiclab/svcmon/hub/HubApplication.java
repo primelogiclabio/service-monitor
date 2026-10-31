@@ -19,6 +19,10 @@ public class HubApplication {
         if (args.length > 0 && args[0].equals("users")) {
             System.exit(UsersCommand.run(args, System.out, System.err));
         }
+        // "oidc key|rotate-key" reaches only the hub's key file, for setting up the identity provider.
+        if (args.length > 0 && args[0].equals("oidc")) {
+            System.exit(OidcCommand.run(args, System.out, System.err));
+        }
         SpringApplication.run(HubApplication.class, args);
     }
 }

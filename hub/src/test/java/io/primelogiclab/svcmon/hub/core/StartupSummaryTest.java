@@ -30,10 +30,12 @@ class StartupSummaryTest {
 
     private static StartupSummary.Facts facts(List<CheckDef> checks, List<ServerInfo> servers,
                                               List<AlertChannel> channels) {
-        return new StartupSummary.Facts("0.1.0", URLS, DB, NOT_SERVED, List.of(), ACCESS, checks, servers, channels);
+        return new StartupSummary.Facts("0.1.0", URLS, DB, NOT_SERVED, List.of(), ACCESS, SIGN_IN, checks, servers,
+                channels);
     }
 
     private static final String ACCESS = new NetworkPolicy(HubProperties.Access.DEFAULT).describe();
+    private static final String SIGN_IN = "user name and password (svcmon.oidc is not set)";
 
     private static CheckDef check(String name, CheckType type, RunFrom from, String serverId, boolean enabled) {
         return new CheckDef("id-" + name, name, type, "https://user:hunter2@internal.example/hook?token=abc123",
@@ -130,7 +132,7 @@ class StartupSummaryTest {
     @Test
     void servedDashboardAndCorsOriginsAreShown() {
         String text = StartupSummary.render(new StartupSummary.Facts("0.1.0", URLS, DB, "served from " + Path.of("/srv/ui"),
-                List.of("https://monitor.example.com"), ACCESS, List.of(), List.of(), List.of()));
+                List.of("https://monitor.example.com"), ACCESS, SIGN_IN, List.of(), List.of(), List.of()));
 
         assertTrue(text.contains("served from " + Path.of("/srv/ui")), text);
         assertTrue(text.contains("browser access allowed from https://monitor.example.com"), text);
@@ -147,5 +149,11 @@ class StartupSummaryTest {
                 .describe();
         assertEquals("people may sign in from outside over HTTPS (svcmon.access.allow-outside: true); internal networks"
                 + " 10.0.0.0/8; public proxies 10.0.0.5", open);
+
+        String provider = new NetworkPolicy(new HubProperties.Access(true, List.of("10.0.0.0/8"), List.of()), true)
+                .describe();
+        assertTrue(provider.startsWith("people may sign in from outside over HTTPS, with the identity provider only"),
+                provider);
+        assertTrue(text.contains("Sign-in:   user name and password (svcmon.oidc is not set)"), text);
     }
 }

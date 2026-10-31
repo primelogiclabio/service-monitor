@@ -26,7 +26,9 @@ public class NetworkPolicy {
     /** Why a person's request is refused because of where it comes from; the code is the API's error code. */
     public enum Refusal {
         OUTSIDE_NOT_ALLOWED("outside_not_allowed", "Access from outside the internal network is not allowed"),
-        INSECURE_TRANSPORT("insecure_transport", "From outside the internal network the hub works over HTTPS only");
+        INSECURE_TRANSPORT("insecure_transport", "From outside the internal network the hub works over HTTPS only"),
+        PASSWORD_INSIDE_ONLY("password_inside_only",
+                "From outside the internal network, sign in with the identity provider");
 
         public final String code;
         public final String message;
@@ -40,16 +42,23 @@ public class NetworkPolicy {
     private static final Pattern LITERAL = Pattern.compile("[0-9.]+|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*");
 
     private final HubProperties.Access cfg;
+    private final boolean providerSignIn;
     private final List<Cidr> internal;
     private final List<Cidr> publicProxies;
 
     @Autowired
     public NetworkPolicy(HubProperties props) {
-        this(props.access());
+        this(props.access(), props.oidc() != null && props.oidc().enabled());
     }
 
     public NetworkPolicy(HubProperties.Access access) {
+        this(access, false);
+    }
+
+    /** {@code providerSignIn}: the hub has an identity provider, so from outside a password is never enough. */
+    public NetworkPolicy(HubProperties.Access access, boolean providerSignIn) {
         this.cfg = access == null ? HubProperties.Access.DEFAULT : access;
+        this.providerSignIn = providerSignIn;
         this.internal = parse("svcmon.access.internal-networks", cfg.internalNetworks());
         this.publicProxies = parse("svcmon.access.public-proxies", cfg.publicProxies());
     }
@@ -91,7 +100,10 @@ public class NetworkPolicy {
         return !cfg.allowOutside() && !isInside(req);
     }
 
-    /** For a user signed in with a password, or signing in: from outside only when allowed, and only over HTTPS. */
+    /**
+     * For a person, however they signed in, or signing in with the identity provider: from outside only when
+     * allowed, and only over HTTPS.
+     */
     public Refusal forUser(HttpServletRequest req) {
         return forUser(isInside(req), req.isSecure());
     }
@@ -106,6 +118,32 @@ public class NetworkPolicy {
         return secure ? null : Refusal.INSECURE_TRANSPORT;
     }
 
+    /**
+     * For signing in with a password, or a sign-in made with one: as {@link #forUser}, and on a hub with an identity
+     * provider never from outside, where the provider's sign-in is the only way in.
+     */
+    public Refusal forPassword(HttpServletRequest req) {
+        return forPassword(isInside(req), req.isSecure());
+    }
+
+    public Refusal forPassword(boolean inside, boolean secure) {
+        Refusal refusal = forUser(inside, secure);
+        return refusal == null && !inside && providerSignIn ? Refusal.PASSWORD_INSIDE_ONLY : refusal;
+    }
+
+    /** For a sign-in made with {@code viaProvider} true (the identity provider) or false (a password). */
+    public Refusal forSession(HttpServletRequest req, boolean viaProvider) {
+        return viaProvider ? forUser(req) : forPassword(req);
+    }
+
+    public Refusal forSession(boolean inside, boolean secure, boolean viaProvider) {
+        return viaProvider ? forUser(inside, secure) : forPassword(inside, secure);
+    }
+
+    public boolean providerSignIn() {
+        return providerSignIn;
+    }
+
     /** For a person's API token (READ or ADMIN, the CLI's): from inside only. */
     public Refusal forToken(boolean inside) {
         return inside ? null : Refusal.OUTSIDE_NOT_ALLOWED;
@@ -113,7 +151,9 @@ public class NetworkPolicy {
 
     /** One line for the start-up summary. */
     public String describe() {
-        return (cfg.allowOutside() ? "people may sign in from outside over HTTPS (svcmon.access.allow-outside: true)"
+        return (cfg.allowOutside()
+                ? "people may sign in from outside over HTTPS" + (providerSignIn ? ", with the identity provider only" : "")
+                + " (svcmon.access.allow-outside: true)"
                 : "internal network only (svcmon.access.allow-outside: false)")
                 + "; internal networks " + (internalNetworks().isEmpty() ? "none" : String.join(", ", internalNetworks()))
                 + "; public proxies " + (publicProxies().isEmpty() ? "none" : String.join(", ", publicProxies()));

@@ -71,6 +71,31 @@
 #       - "fc00::/7"
 #     public-proxies:
 #       - 127.0.0.2
+##   Sign-in with an identity provider (OpenID Connect: Keycloak, Entra ID, Okta, Auth0 and others), besides
+##   passwords. Off unless issuer is set; needs public-url, where the provider sends people back. From inside, people
+##   may use a password or the provider; from outside (with allow-outside) only the provider. Provider roles, read
+##   from the ID token at roles-claim (realm_access.roles for Keycloak), decide the hub role: admin-role makes an
+##   administrator, read-role a read-only user (leave it unset for administrators only), neither is refused. The
+##   first sign-in makes the hub user, linked to the provider's account, with no password. The hub proves who it is
+##   with a key pair it makes in data-dir (private-key-jwt, signed with RS256 or PS256), so there is no secret: give
+##   the provider <public-url>/api/v1/oidc/jwks, or the public key from  java -jar svcmon-hub.jar oidc key.
+##   Or give it a pair made with signing-keys-tool (generate --bits 3072): private-key-file and certificate-file,
+##   used instead of its own; the certificate is what Entra ID wants uploaded, and the hub warns before it expires.
+##   client-secret is only for a provider that takes nothing else, with the secret in a file, never in this one.
+#   oidc:
+#     issuer: https://auth.example.com/realms/main
+#     client-id: service-monitor
+#     client-auth: private-key-jwt
+#     private-key-file: ./keys/prod/service-monitor/signing-private.pem
+#     certificate-file: ./keys/prod/service-monitor/signing-cert.pem
+#     client-secret-file: ./oidc-client-secret
+#     signing-algorithm: RS256
+#     scopes: [openid, profile, email]
+#     roles-claim: roles
+#     admin-role: monitor-admin
+#     read-role: monitor-viewer
+#     username-claim: preferred_username
+#     button-label: Sign in with single sign-on
 ##   The audit: who signed in (or was refused) and who changed what, with names and addresses but never a request
 ##   body, a password or a token. Administrators read it in Settings > Activity. Days to keep each part, 1 to 3650.
 #   audit:

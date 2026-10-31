@@ -8,6 +8,7 @@ import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.core.StatusService;
 import io.primelogiclab.svcmon.hub.core.StatusViews.StatusResponse;
 import io.primelogiclab.svcmon.hub.model.Scope;
+import io.primelogiclab.svcmon.hub.model.SessionRecord;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.security.NetworkPolicy;
 import io.primelogiclab.svcmon.hub.security.SessionService;
@@ -187,6 +188,10 @@ public class LiveHandler extends TextWebSocketHandler {
         if (sessionId == null) {
             log.warn("Rejected live connection from {}: unknown, used or expired ticket", client.session.getRemoteAddress());
             close(client, CloseStatus.POLICY_VIOLATION.withReason("unauthorized"));
+            return;
+        }
+        boolean viaProvider = sessions.find(sessionId).map(SessionRecord::viaProvider).orElse(false);
+        if (refused(client, network.forSession(client.inside, client.secure, viaProvider))) {
             return;
         }
         client.sessionId = sessionId;

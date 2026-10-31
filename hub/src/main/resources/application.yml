@@ -71,6 +71,26 @@ svcmon:
   #   allow-outside: false
   #   internal-networks: [127.0.0.0/8, "::1/128", 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, "fc00::/7"]
   #   public-proxies: []
+  # Optional: sign-in with an identity provider (OpenID Connect), run by the hub, besides passwords. Off unless issuer
+  # is set; needs public-url. From inside, a password or the provider; from outside (allow-outside), only the
+  # provider. admin-role and read-role name the provider roles (read from the ID token at roles-claim) that make a
+  # hub ADMIN or READ user; neither is refused. The hub proves who it is with a key pair it makes in data-dir
+  # (private-key-jwt; public key at /api/v1/oidc/jwks), so there is no secret, or uses a pair from signing-keys-tool
+  # (private-key-file and certificate-file; the certificate is for providers such as Entra ID); client-secret, with the
+  # secret in client-secret-file, only for a provider that takes nothing else.
+  # oidc:
+  #   issuer: https://auth.example.com/realms/main
+  #   client-id: service-monitor
+  #   client-auth: private-key-jwt
+  #   private-key-file: ./keys/prod/service-monitor/signing-private.pem   # PKCS#8 PEM, no password
+  #   certificate-file: ./keys/prod/service-monitor/signing-cert.pem
+  #   signing-algorithm: RS256          # or PS256
+  #   scopes: [openid, profile, email]
+  #   roles-claim: realm_access.roles   # Keycloak; the default is roles
+  #   admin-role: platform-admin
+  #   read-role: monitor-viewer         # unset: administrators only
+  #   username-claim: preferred_username
+  #   button-label: Sign in with single sign-on
   # Optional: days the audit keeps sign-ins (signing in and out, refusals, password changes) and changes (every
   # person's POST, PUT, PATCH or DELETE), 1 to 3650 each. It holds names, addresses and what was called, never a
   # request body, a password or a token. Administrators read it at GET /api/v1/audit and in Settings > Activity.
