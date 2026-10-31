@@ -211,7 +211,7 @@ Keeping it safe:
 ## 10. Open questions and limits
 
 - **Untested on real targets:** the agent was run end to end on Windows 11 (service installed from an elevated prompt) and on Ubuntu 26.04 (systemd unit installed as root; HTTP, CPU, memory, disk and service checks ran). The macOS (launchd) service installer and service checks compile and pass `go vet` but have not been run on that system.
-- **Agent-declared checks:** built (section 3). Run against a throwaway hub and Docker Desktop on Windows, not yet on an installed service; the dashboard does not show where a check comes from.
+- **Agent-declared checks:** built (section 3). Run against a throwaway hub and Docker Desktop on Windows, not yet on an installed service; the dashboard tags such a check "Agent file" and only lets it be switched off.
 - **Container checks:** tested against a stand-in for the runtime's API; run by hand against Docker Desktop on Windows (the lister), but not yet as an installed service, on Linux or against Podman. Not built: per-container CPU and memory.
 - **Hub service installers:** CI only dry-runs them. The real install, upgrade, port change and uninstall were run on GitHub's Ubuntu and Windows runners (the manually started "Installer smoke test"), not on a long-lived server; its last install runs from the Windows hub package. There is no macOS installer.
 - **Java version:** the machine has Java 21, so v1 targets 21. This doc assumes 25 is a long-term-support release but that could not be confirmed from Oracle's roadmap page (it returned HTTP 403).
