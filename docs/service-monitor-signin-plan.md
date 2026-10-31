@@ -46,7 +46,7 @@ Phases 0 to 4 are in the 0.1.0 release, phase 5 in 0.2.0. With phase 2, a hub re
 
 As planned below, plus:
 
-- `GET /api/v1/session` answers `network`, `address`, `signInAllowed` and, when sign-in is refused, `signInRefusal` (`outside_not_allowed` or `insecure_transport`). It does not report a sign-in that may not be used from where the browser is, so the page shows the refusal instead of a dashboard that cannot load.
+- `GET /api/v1/session` answers `signInAllowed` and, when sign-in is refused, `signInRefusal` (`outside_not_allowed` or `insecure_transport`); `network` and `address` only to someone signed in (until 0.2.1 to anyone). It does not report a sign-in that may not be used from where the browser is, so the page shows the refusal instead of a dashboard that cannot load.
 - `GET /api/v1/access` (any signed-in user) returns the setting, both lists and how the hub sees the caller, for the Settings screen's Access section.
 - A JWT from outside is refused before it is checked, so the provider is not asked about it.
 - With `allow-outside` true, a request from outside with no credential at all gets 401 (sign in), not 403.
@@ -65,7 +65,7 @@ As planned below, plus:
 | A JWT through the gateway | While `allow-outside` is true, as today, until phase 4 |
 | Agents, enrollment tokens, join keys | Not affected |
 
-- **Refusal:** 403 `outside_not_allowed`, the live view included. `GET /api/v1/session` adds the network, the address and whether sign-in is allowed, so the sign-in page says "Access from outside the internal network is not allowed" instead of showing the form.
+- **Refusal:** 403 `outside_not_allowed`, the live view included. `GET /api/v1/session` adds whether sign-in is allowed, so the sign-in page says the hub cannot be used from there instead of showing the form, without saying where the hub places the browser.
 - **Checking it:** the start-up log states the policy; Settings gets a read-only Access section showing the setting and "this browser is seen as outside (address)", to check from a phone on mobile data.
 - **Deployment notes for the docs:** narrow `server.tomcat.remoteip.internal-proxies` to the load balancers; a proxy must set or append `X-Forwarded-For` and send `X-Forwarded-Proto`; for nginx on the hub's own machine, bind it to `127.0.0.2` and list that in `public-proxies`, so an SSH tunnel from `127.0.0.1` stays inside.
 - **Upgrade:** a hub that is public today (such as one behind a public nginx) refuses everyone from outside until `allow-outside: true` is set.

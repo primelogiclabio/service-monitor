@@ -57,8 +57,9 @@ public class SessionController {
     }
 
     /**
-     * {@code user}, {@code mustChangePassword} and {@code expiresAt} are there only when signed in. {@code network}
-     * (inside or outside) and {@code address} say how the hub sees this browser. {@code passwordSignIn} says whether
+     * {@code user}, {@code mustChangePassword} and {@code expiresAt} are there only when signed in, and so are
+     * {@code network} (inside or outside) and {@code address}, how the hub sees this browser: someone not signed in
+     * learns which ways in the page should offer, not where the hub places them. {@code passwordSignIn} says whether
      * the password form may be used from here, {@code provider} (only on a hub with one) the same for the identity
      * provider; {@code signInAllowed} is false when neither may, and {@code signInRefusal} then names the network's
      * reason.
@@ -220,16 +221,16 @@ public class SessionController {
 
     private State state(SessionService.Signed who, HttpServletRequest req) {
         NetworkPolicy.Refusal refusal = network.forUser(req);
-        String where = network.isInside(req) ? "inside" : "outside";
         boolean password = users.enabled() && network.forPassword(req) == null;
         ProviderOption option = provider.enabled() ? new ProviderOption(provider.settings().buttonLabel(),
                 refusal == null, provider.settings().publicUrl() + OidcSettings.START) : null;
         boolean allowed = password || option != null && option.allowed();
         String reason = refusal == null ? null : refusal.code;
         if (who == null) {
-            return new State(false, null, null, null, where, req.getRemoteAddr(), allowed, reason, password, option);
+            return new State(false, null, null, null, null, null, allowed, reason, password, option);
         }
         UserRecord u = who.user();
+        String where = network.isInside(req) ? "inside" : "outside";
         return new State(true, new Who(u.id(), u.username(), u.role(), u.viaProvider()), u.mustChangePassword(),
                 who.session().expiresAt(), where, req.getRemoteAddr(), allowed, reason, password, option);
     }

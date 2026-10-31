@@ -368,6 +368,8 @@ class ProviderSignInTest {
         assertEquals(Boolean.TRUE, state.get("signInAllowed"));
         assertEquals(Map.of("label", "Sign in with Test", "allowed", true, "startUrl", PUBLIC_URL + "/api/v1/oidc/start"),
                 state.get("provider"));
+        assertFalse(state.containsKey("network"), "the page offers the button without saying why: " + state);
+        assertFalse(state.containsKey("address"), state.toString());
         assertEquals(Boolean.TRUE, map(send("GET", "/api/v1/session", null)).get("passwordSignIn"), "inside it may");
 
         HttpResponse<String> password = send("POST", "/api/v1/session",
