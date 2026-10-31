@@ -79,7 +79,7 @@ public class TokenService {
         return "svm_" + scope.code() + "_" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    static String hash(String raw) {
+    public static String hash(String raw) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(raw.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);

@@ -86,13 +86,23 @@ public class SessionService {
         this.maxMs = TimeUnit.HOURS.toMillis(cfg.maxHours());
     }
 
+    /** A sign-in with a password. */
     public Issued create(UserRecord user, String clientAddress, String userAgent) {
+        return create(user, clientAddress, userAgent, SessionRecord.PASSWORD);
+    }
+
+    /** {@code method} is {@link SessionRecord#PASSWORD} or {@link SessionRecord#PROVIDER}. */
+    public Issued create(UserRecord user, String clientAddress, String userAgent, String method) {
         long now = clock.getAsLong();
         String raw = generate();
         SessionRecord s = new SessionRecord(UUID.randomUUID().toString(), user.id(), TokenService.hash(raw), now, now,
-                now + maxMs, clientAddress, clip(userAgent));
+                now + maxMs, clientAddress, clip(userAgent), method);
         sessions.insert(s);
         return new Issued(s, raw);
+    }
+
+    public Optional<SessionRecord> find(String sessionId) {
+        return sessions.findById(sessionId);
     }
 
     /** The session behind the request's cookie, if it is still going; {@code touch} counts the request as use. */
@@ -190,11 +200,20 @@ public class SessionService {
     }
 
     private static ResponseCookie cookieFor(HttpServletRequest req, String value, long maxAgeSeconds) {
+        return cookie(req, SECURE_COOKIE, PLAIN_COOKIE, "Strict", value, maxAgeSeconds);
+    }
+
+    /**
+     * An HttpOnly cookie for the whole hub: {@code secureName} (a __Host- name) with Secure over HTTPS, {@code
+     * plainName} otherwise. {@code maxAgeSeconds} -1 lasts until the browser closes, 0 deletes it.
+     */
+    public static ResponseCookie cookie(HttpServletRequest req, String secureName, String plainName, String sameSite,
+                                        String value, long maxAgeSeconds) {
         boolean secure = req.isSecure();
-        ResponseCookie.ResponseCookieBuilder b = ResponseCookie.from(secure ? SECURE_COOKIE : PLAIN_COOKIE, value)
+        ResponseCookie.ResponseCookieBuilder b = ResponseCookie.from(secure ? secureName : plainName, value)
                 .httpOnly(true)
                 .secure(secure)
-                .sameSite("Strict")
+                .sameSite(sameSite)
                 .path("/");
         if (maxAgeSeconds >= 0) {
             b.maxAge(maxAgeSeconds); // only to delete it: otherwise it lasts until the browser closes, or the hub ends it
@@ -203,7 +222,12 @@ public class SessionService {
     }
 
     static String cookie(HttpServletRequest req) {
-        String name = req.isSecure() ? SECURE_COOKIE : PLAIN_COOKIE;
+        return cookie(req, SECURE_COOKIE, PLAIN_COOKIE);
+    }
+
+    /** The value of the cookie of that name pair that fits the request (HTTPS or not), or null. */
+    public static String cookie(HttpServletRequest req, String secureName, String plainName) {
+        String name = req.isSecure() ? secureName : plainName;
         Cookie[] cookies = req.getCookies();
         if (cookies == null) {
             return null;

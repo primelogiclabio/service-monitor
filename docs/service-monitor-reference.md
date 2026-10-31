@@ -14,6 +14,7 @@ Everything the [README](../README.md) leaves out: what is built and how far it h
 | Hub service install (`hub/service/`: WinSW on Windows, systemd on Linux), with `--dry-run` | Built. CI dry-runs it on every pull request; a manually started workflow does the real install, upgrade and uninstall on Ubuntu and Windows runners; every release also publishes a Windows package with the jar and WinSW, so the install needs no download, and a Linux tarball. No macOS installer |
 | Alert channels | Webhook (optionally signed), Slack, Discord and email (HTML with a plain-text part, or plain text only), plus an alert when an agent goes silent; managed through the API and `svcmon alert` |
 | People's sign-in: users (administrator or read-only), cookie sessions, forced change of a first password, Settings screen, `users reset` | Built: hub and dashboard tests, and a run of both together on a throwaway hub. In the 0.1.0 release and running on a Linux server (in Docker); a sign-in gateway in front is only a gate. See the [sign-in and access plan](https://github.com/primelogiclabio/service-monitor/blob/main/docs/service-monitor-signin-plan.md) |
+| Sign-in with an identity provider (`svcmon.oidc.*`): OpenID Connect run by the hub, provider roles mapped to hub roles, no client secret | Built: hub tests against a stand-in provider on the same machine. Not yet tried with a real provider (Keycloak, Entra ID, ...) and not in a release |
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub serves it from inside its jar when built with it, or from a folder (`svcmon.ui-dir`), or it is allowed from another address (`svcmon.cors-allowed-origins`) |
 | Internal-only access (`svcmon.access.*`): people outside the internal network refused by default, or let in over HTTPS only | Built: hub and dashboard tests, and a run against a throwaway hub. In 0.1.0 and running on a Linux server, where visitors from outside over IPv4 and IPv6 were refused |
 | Audit of sign-ins and changes (Settings > Activity, `GET /api/v1/audit`) | Built: hub and dashboard tests, and a run against a throwaway hub. In 0.1.0 and running on a Linux server |
@@ -79,7 +80,7 @@ CORS is off unless origins are listed. When on, only those origins may call `/ap
 
 ## Behind a sign-in gateway
 
-A gateway in front of the hub, such as Keycloak with nginx and a small session service, is a gate and nothing more. It lets a browser through to the hub, and the person then signs in with their account on the hub. The hub never takes an identity from the gateway, neither a token nor a header, so a gate that is misconfigured or bypassed still leaves the hub's own sign-in in place. People outside the internal network also need `svcmon.access.allow-outside: true` (see "Access from outside the internal network").
+A hub that signs people in with an identity provider itself (see "Sign-in with an identity provider") needs no gateway; this section is for a hub without one. A gateway in front of the hub, such as Keycloak with nginx and a small session service, is a gate and nothing more. It lets a browser through to the hub, and the person then signs in with their account on the hub. The hub never takes an identity from the gateway, neither a token nor a header, so a gate that is misconfigured or bypassed still leaves the hub's own sign-in in place. People outside the internal network also need `svcmon.access.allow-outside: true` (see "Access from outside the internal network").
 
 What the gate must do (nginx with `auth_request`):
 
@@ -142,13 +143,68 @@ People sign in to the dashboard with a user name and password. Each user is an *
 - **Guessing:** each client address may get a password wrong 5 times in 15 minutes, each account 10 times, and all addresses together 20 times; the account and total counts are kept apart for the internal network and the outside, so guessing from outside cannot lock out the people inside. After that every attempt, even with the right password, is refused with 429 and a `Retry-After` until the oldest failure ages out. Behind a load balancer the client address is the one it forwards (see "Access from outside the internal network").
 - **Lost every administrator password:** `java -jar svcmon-hub.jar users reset <name>`, run from the hub's folder (or with the hub's `--svcmon.data-dir`) as someone who may write its data folder, prints a temporary password once, turns the account back on, makes it an administrator if none is left and ends its sign-ins.
 
+## Sign-in with an identity provider
+
+Besides passwords, the hub can sign people in with an OpenID Connect provider: Keycloak, Microsoft Entra ID, Okta, Auth0, ZITADEL and others. The hub runs the sign-in itself, so no gateway is needed. It is meant for an organisation's own people with the right roles, not for public sign-up.
+
+- **How it goes:** the sign-in page shows a button (`svcmon.oidc.button-label`). It sends the browser to the provider with the authorization code flow and PKCE, a state tied to this browser by a cookie that lasts 10 minutes, and a nonce; the provider sends it back to `<public-url>/api/v1/oidc/callback`. The hub swaps the code for an ID token and checks the token's signature against the provider's published keys, its issuer, audience, expiry and nonce (a shared-secret signature such as HS256 is never accepted). It then gives the browser the same cookie session as a password sign-in, with the same limits, and keeps no provider token. A sign-in that does not work comes back to the dashboard with `?signin_error=<code>`, which the page explains.
+- **Roles:** `admin-role` names the provider role that makes someone a hub administrator, `read-role` (optional) the one for read-only users; someone with neither is refused, and the audit says so. The roles are read from the ID token at `roles-claim`, a dotted path: `realm_access.roles` for Keycloak's realm roles, `roles` for Entra ID's app roles, a namespaced claim added by an Action for Auth0. The role is taken again at every sign-in, and a person who has lost both roles has their sign-ins ended when they next try.
+- **Users:** the first sign-in makes a hub user named from `username-claim` (`preferred_username`, else `email`, when it fits a hub name), linked to the provider's issuer and subject. It is never matched by name, so nobody becomes an existing user by having the same name at the provider: a name another user already has is refused (`username_taken`). Such a user has no password: a password reset, a password change and a role change are refused for it (409), and an administrator can still disable it, which wins over the provider. Users shows how each account signs in.
+- **Where:** from inside the internal network the sign-in page offers the password form and the provider. From outside (with `svcmon.access.allow-outside: true`, over HTTPS) it offers only the provider: signing in with a password, and using a sign-in made with one, are refused there with 403 `password_inside_only`. Temporary passwords and API tokens stay inside only; agents are not affected.
+- **No client secret:** the hub proves who it is to the provider with a key pair of its own (`private_key_jwt`): RSA, 3072 bits, signing with RS256 (or PS256, `signing-algorithm`). The pair is made at the first start with `svcmon.oidc` set and kept in the data folder as `oidc-key.json`, readable only by the hub's account on Linux and macOS (on Windows the data folder's permissions protect it, as they protect the database). The private key never leaves the hub. The public key is served to anyone at `GET /api/v1/oidc/jwks`: give the provider that address, or paste the key that `java -jar svcmon-hub.jar oidc key` prints. `oidc rotate-key` replaces the pair; the old key stops working at once, a provider that fetches the address picks up the new one by itself, and one that was given the key by hand needs the new one. A pair of your own with a certificate can be used instead (below). A provider that takes nothing but a client secret gets `client-auth: client-secret` with `client-secret-file`, the path of a file that holds the secret (a Docker or Kubernetes secret, a systemd credential); the secret itself is never a setting or an environment variable, and is read from the file at each sign-in.
+- **Signing out** ends the hub's sign-in and, when the provider has an end-session endpoint, sends the browser there too (with `client_id` and `post_logout_redirect_uri` set to `<public-url>/`), which ends the provider's sign-in as well.
+- **Seeing how it is set up:** administrators find under Settings > Sign-in the provider, the client id, how the hub signs in (with the key's id), the redirect URI and key address to give the provider, the public key, and whether the provider answered. Nothing about the provider can be changed from the dashboard. The start-up log has a `Sign-in:` line.
+- **Without the provider:** the hub starts while the provider is down and asks it again when someone signs in; until then the sign-in reports it unavailable, and password sign-in from inside keeps working.
+- **The address:** the provider sends people back to `svcmon.public-url`, which is therefore required. The button always starts the sign-in there, so it also works from a page opened at another address (through an SSH tunnel, say) as long as the public address can be reached.
+
+Setting up the provider, with Keycloak as the example (other providers have the same fields under other names):
+
+1. A client of type OpenID Connect, with client authentication on and only the standard flow (the code flow).
+2. Valid redirect URI `<public-url>/api/v1/oidc/callback`, valid post-logout redirect URI `<public-url>/`.
+3. Credentials: client authenticator "Signed JWT" with RS256. Keys: "Use JWKS URL" with `<public-url>/api/v1/oidc/jwks`, or the hub's internal address where Keycloak can reach it directly.
+4. Advanced: PKCE method S256.
+5. The roles in the ID token: a "User Realm Role" mapper on the client's dedicated scope, claim name `realm_access.roles`, multivalued, added to the ID token.
+
+Then on the hub:
+
+```yaml
+svcmon:
+  public-url: https://monitor.example.com
+  access:
+    allow-outside: true          # people outside sign in with the provider only
+  oidc:
+    issuer: https://auth.example.com/realms/main
+    client-id: service-monitor
+    roles-claim: realm_access.roles
+    admin-role: platform-admin
+    read-role: monitor-viewer    # leave it out for administrators only
+```
+
+**A key pair of your own, with a certificate.** Instead of the pair it makes, the hub can be given one made with [signing-keys-tool](https://github.com/primelogiclabio/signing-keys-tool), which writes a PKCS#8 private key and a self-signed certificate that records when the pair expires:
+
+```bash
+java -jar signing-keys-tool.jar generate --env prod --client service-monitor --bits 3072 --out keys
+```
+
+```yaml
+svcmon:
+  oidc:
+    private-key-file: ./keys/prod/service-monitor/signing-private.pem   # PKCS#8 PEM without a password
+    certificate-file: ./keys/prod/service-monitor/signing-cert.pem
+```
+
+The hub then makes no key of its own. At start-up it checks that the certificate belongs to the key and that the key has at least 2048 bits (a key with a password, or in the older PKCS#1 form, is refused with a way out), and it warns on Linux and macOS when the private key file can be read by other accounts. Its proof names the certificate by its thumbprints (`x5t#S256` and `x5t`), and `GET /api/v1/oidc/jwks` carries the certificate too (`x5c`), so a provider can match the key either way. The certificate's expiry is reported in Settings > Sign-in, in `oidc key` and in the start-up line; from 30 days before it the log warns every day, and the hub keeps working after it, because the provider decides. For a new pair, make one with the tool, put the files in place (or point the settings at them) and give the provider the new certificate; the hub picks up the changed files without a restart and keeps the old pair if the new files do not load. `oidc rotate-key` refuses for such a hub.
+
+Entra ID takes the certificate uploaded (Certificates & secrets, upload `signing-cert.pem`), not a key fetched from an address; Auth0 takes the public key or the certificate uploaded. Keycloak and Okta can do either. Google takes only a client secret.
+
 ## Access from outside the internal network
 
 By default only people on the internal network may use the hub. From anywhere else the API answers 403 `outside_not_allowed`, and the sign-in page says that access from outside is not allowed instead of showing the form. Where a request comes from never grants anything; it can only refuse.
 
 | Who | From inside | From outside, `allow-outside: false` (default) | From outside, `allow-outside: true` |
 |---|---|---|---|
-| A signed-in user | Yes | No | Over HTTPS only, otherwise 403 `insecure_transport` |
+| A user signed in with a password | Yes | No | Over HTTPS only (otherwise 403 `insecure_transport`), and not on a hub with an identity provider (403 `password_inside_only`) |
+| A user signed in with the identity provider | Yes | No | Over HTTPS only, otherwise 403 `insecure_transport` |
 | The initial password, or a temporary one | Yes | No | No (403 `initial_password_inside_only`) |
 | An API token (the CLI, scripts) | Yes | No | No |
 | Agents (`/api/v1/agent/*`) | Yes | Yes | Yes |
@@ -157,7 +213,7 @@ The live view's upgrade request is refused like any other request. `GET /api/v1/
 
 The settings, in `application.yml` under `svcmon.access`:
 
-- **`allow-outside`** (false): set it to true for a hub that people reach through a gateway's sign-in. They then sign in at the gateway first, and then with the hub's user name and password.
+- **`allow-outside`** (false): set it to true for a hub with an identity provider, whose people outside then sign in with the provider only, or for one that people reach through a gateway's sign-in, where they sign in at the gateway first and then with the hub's user name and password.
 - **`internal-networks`**: IP addresses or ranges such as `10.0.0.0/8`, never names. The default is loopback (`127.0.0.0/8`, `::1/128`), `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `fc00::/7`. Setting it replaces the whole list, loopback included. A range of every address (`/0`) stops the start-up, and an IPv4 address written as IPv6 (`::ffff:10.0.0.1`) counts as IPv4.
 - **`public-proxies`** (none): proxies that people outside come through. A request that shows up with one of these addresses is outside, so a proxy that forgot `X-Forwarded-For` is refused instead of being let in.
 
@@ -302,6 +358,8 @@ An upgrade keeps everything that identifies the installation: the hub's database
 
 **From a hub that used a provider's sign-in or the dashboard's proxy mode.** The hub no longer accepts a provider's tokens, and the dashboard always signs in with the hub's own accounts. Settings under `svcmon.jwt` and `svcmon.ui.proxy` stop the hub with a message, also when they come from environment variables (`SVCMON_JWT_ISSUER` and the like), and so do leftover `SVCMON_LOCALADMIN_*` variables. Remove them. Make the gateway a gate (see "Behind a sign-in gateway"): nginx stops adding the token and gates `/` and `/api/` instead, leaving `/api/v1/agent/` and `/api/v1/health` alone. Remove `"proxy"` from the dashboard's `config.json` if it is served from a folder. People then sign in with a hub account: an administrator who signed in only through the provider needs one (the old local admin became the user `admin`), made from inside with `users reset` or by another administrator.
 
+**To a hub with sign-in with an identity provider.** The database gains the provider's issuer and subject for users and how each sign-in was made (migration V7); there is nothing to do, and sign-in with a provider stays off until `svcmon.oidc.issuer` is set. A hub that people reached through a sign-in gateway can then drop the gateway: see "Sign-in with an identity provider".
+
 **A hub that people reach from outside the internal network.** A hub with internal-only access refuses everyone outside until `svcmon.access.allow-outside: true` is set, and then only over HTTPS. Before upgrading such a hub, check that the proxy in front of it sends `X-Forwarded-For` and `X-Forwarded-Proto` (see "Access from outside the internal network"); a proxy on the same machine that does not send them makes every request look inside. Agents are not affected either way.
 
 **The hub.** Build or unpack the new jar and run the installer again, with `--dry-run` / `-DryRun` first: the plan says "upgrade" and lists what is kept (see [hub/service](../hub/service/README.md); on Windows run `install.ps1` from the new [package](../hub/service/README.md#windows-package-no-download) or pass `-JarPath`). It stops the service, replaces the jar and starts it again; the database is migrated when the hub starts. Copy the data folder first if you want a way back. Without the installer, stop the hub and start it with the new jar. One change to know about: a hub built after the agent-declared checks work accepts them by default, so set `svcmon.agent-declared-checks: false` if only the admin should list checks.
@@ -370,7 +428,10 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 |---|---|---|
 | `GET /health` | none | Liveness probe |
 | `GET /hub` | read | Hub ID, version, Java runtime age and warning |
-| `GET /session`, `POST /session`, `DELETE /session` | none | Who is signed in, and how the hub sees the browser (`network` inside or outside, `address`, `signInAllowed`, and `signInRefusal` when it is not); sign in with a user name and password (sets the cookie; wrong attempts are throttled); sign out |
+| `GET /session`, `POST /session`, `DELETE /session` | none | Who is signed in (`user.provider` is true for the identity provider's users), and how the hub sees the browser (`network` inside or outside, `address`, `signInAllowed`, and `signInRefusal` when it is not; `passwordSignIn`, and `provider` with its `label`, `allowed` and `startUrl` on a hub with one); sign in with a user name and password (sets the cookie; wrong attempts are throttled); sign out, which answers `{"providerSignOut": "<address>"}` for a sign-in made with the provider when it has an end-session endpoint, and 204 otherwise |
+| `GET /oidc/start`, `GET /oidc/callback` | none | Where the browser goes to sign in with the identity provider and comes back; both answer with redirects, and with `?signin_error=<code>` on the dashboard when it did not work |
+| `GET /oidc/jwks` | none | The hub's public key, for the identity provider (404 without one) |
+| `GET /oidc` | admin | How sign-in with the identity provider is set up; nothing secret |
 | `GET /access` | read | Where people may use the hub from (`allowOutside`, `internalNetworks`, `publicProxies`) and how it sees the caller (`network`, `address`, `secure`) |
 | `GET /audit?category=&before=&limit=` | admin | The audit, newest first: `{events, next}`; see "Audit" |
 | `POST /session/live-ticket` | a user | A one-time ticket for the live view, valid 30 seconds |
@@ -426,9 +487,22 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 | `svcmon.users.initial-admin-password` | `admin` | Its password, which works only from the internal network and must be changed at the first sign-in |
 | `svcmon.sessions.idle-minutes` | 60 | A sign-in not used this long ends, 5 to 1440; the dashboard's own refreshing does not count |
 | `svcmon.sessions.max-hours` | 12 | A sign-in ends this long after it began, 1 to 168 |
-| `svcmon.access.allow-outside` | false | Lets people outside the internal network sign in, over HTTPS only; API tokens and the initial password still work from inside only. See "Access from outside the internal network" |
+| `svcmon.access.allow-outside` | false | Lets people outside the internal network sign in, over HTTPS only, and only with the identity provider when the hub has one; API tokens and the initial password still work from inside only. See "Access from outside the internal network" |
 | `svcmon.access.internal-networks` | loopback and the private ranges | The internal network, as IP addresses or ranges (`10.0.0.0/8`); setting it replaces the whole list. A name or a `/0` range stops the start-up |
 | `svcmon.access.public-proxies` | empty | Proxies that people outside come through; a request that shows up as one of them is outside |
+| `svcmon.oidc.issuer` | unset | The identity provider's issuer, exactly as its ID tokens say it (https; plain http only on the same machine). Unset turns sign-in with a provider off. See "Sign-in with an identity provider" |
+| `svcmon.oidc.client-id` | unset | The hub's client id at the provider; required with `issuer` |
+| `svcmon.oidc.client-auth` | `private-key-jwt` | How the hub proves who it is: with its own key pair, or `client-secret` for a provider that takes nothing else |
+| `svcmon.oidc.client-secret-file` | unset | With `client-secret` only: the path of a file that holds the secret |
+| `svcmon.oidc.private-key-file` | unset | A key pair of your own instead of the hub's: its private key, PKCS#8 PEM without a password (signing-keys-tool's `-private.pem`); needs `certificate-file` |
+| `svcmon.oidc.certificate-file` | unset | That key's certificate (`-cert.pem`), which providers such as Entra ID take uploaded; its expiry is reported and warned about |
+| `svcmon.oidc.signing-algorithm` | `RS256` | How the hub signs its proof with its RSA key: `RS256` or `PS256` |
+| `svcmon.oidc.scopes` | `openid, profile, email` | Scopes asked for; `openid` is required |
+| `svcmon.oidc.roles-claim` | `roles` | Where the ID token lists the person's roles, as a dotted path (`realm_access.roles` for Keycloak) |
+| `svcmon.oidc.admin-role` | unset | The provider role that makes someone a hub administrator; required with `issuer` |
+| `svcmon.oidc.read-role` | unset | The provider role that makes someone a read-only user; unset means administrators only |
+| `svcmon.oidc.username-claim` | `preferred_username` | The ID token claim that names the hub user; `email` is tried when it is missing or does not fit a hub name |
+| `svcmon.oidc.button-label` | `Sign in with single sign-on` | The sign-in button's text, at most 60 characters |
 | `server.tomcat.remoteip.internal-proxies` | private and loopback addresses | The proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` the hub believes, as a regular expression; narrow it to your load balancers |
 | `svcmon.audit.sign-in-days` | 30 | Days the audit keeps sign-in events, 1 to 3650 |
 | `svcmon.audit.change-days` | 365 | Days the audit keeps change events, 1 to 3650 |

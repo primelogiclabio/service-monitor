@@ -183,8 +183,9 @@ class TokenAuthFilterTest {
     private static final String COOKIE_VALUE = "c".repeat(43);
 
     private static SessionService.Signed signed(Role role, boolean mustChange) {
-        var user = new UserRecord("u1", "carol", role, "hash", mustChange, false, 0L, null, null);
-        return new SessionService.Signed(new SessionRecord("s1", "u1", "h", 0L, 0L, Long.MAX_VALUE, null, null), user);
+        var user = UserRecord.withPassword("u1", "carol", role, "hash", mustChange, false, 0L, null, null);
+        return new SessionService.Signed(new SessionRecord("s1", "u1", "h", 0L, 0L, Long.MAX_VALUE, null, null,
+                SessionRecord.PASSWORD), user);
     }
 
     private static TokenAuthFilter sessionFilter(SessionService.Signed who) {

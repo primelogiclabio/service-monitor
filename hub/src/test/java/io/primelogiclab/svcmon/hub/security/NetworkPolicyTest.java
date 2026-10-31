@@ -30,6 +30,25 @@ class NetworkPolicyTest {
     }
 
     @Test
+    void withAnIdentityProviderAPasswordWorksFromInsideOnly() {
+        NetworkPolicy open = new NetworkPolicy(new HubProperties.Access(true, List.of("10.0.0.0/8"), List.of()), true);
+        assertNull(open.forPassword(from("10.0.0.1", false)), "inside, a password is fine");
+        assertEquals(Refusal.PASSWORD_INSIDE_ONLY, open.forPassword(from("203.0.113.7", true)));
+        assertEquals(Refusal.INSECURE_TRANSPORT, open.forPassword(from("203.0.113.7", false)), "plain HTTP says so first");
+        assertNull(open.forUser(from("203.0.113.7", true)), "the provider's sign-in works from outside");
+        assertNull(open.forSession(from("203.0.113.7", true), true));
+        assertEquals(Refusal.PASSWORD_INSIDE_ONLY, open.forSession(from("203.0.113.7", true), false));
+        assertEquals(Refusal.PASSWORD_INSIDE_ONLY, open.forSession(false, true, false));
+
+        NetworkPolicy closed = new NetworkPolicy(HubProperties.Access.DEFAULT, true);
+        assertEquals(Refusal.OUTSIDE_NOT_ALLOWED, closed.forSession(from("203.0.113.7", true), true),
+                "with allow-outside false nobody gets in from outside, the provider's users included");
+
+        NetworkPolicy noProvider = new NetworkPolicy(new HubProperties.Access(true, List.of("10.0.0.0/8"), List.of()));
+        assertNull(noProvider.forPassword(from("203.0.113.7", true)), "without a provider a password works outside");
+    }
+
+    @Test
     void theDefaultInternalNetworkIsLoopbackAndThePrivateRanges() {
         for (String inside : List.of("127.0.0.1", "127.9.9.9", "::1", "[::1]", "10.1.2.3", "172.16.0.1", "172.31.255.255",
                 "192.168.1.5", "fd12:3456::1", "fd00::1%eth0")) {

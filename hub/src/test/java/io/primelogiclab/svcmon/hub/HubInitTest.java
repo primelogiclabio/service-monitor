@@ -95,7 +95,7 @@ class HubInitTest {
         Set<String> notForUsers = Set.of("embedded-ui"); // only tests change where the jar's dashboard sits
         List<String> missing = new ArrayList<>();
         for (Class<?> type : new Class<?>[] {HubProperties.class, HubProperties.Users.class, HubProperties.Sessions.class,
-                HubProperties.Access.class, HubProperties.Audit.class}) {
+                HubProperties.Access.class, HubProperties.Audit.class, HubProperties.Oidc.class}) {
             for (RecordComponent c : type.getRecordComponents()) {
                 String name = kebab(c.getName());
                 if (!notForUsers.contains(name) && !text.contains(name + ":")) {
@@ -133,6 +133,12 @@ class HubInitTest {
         assertEquals(HubProperties.Access.DEFAULT.internalNetworks(), p.access().internalNetworks());
         assertEquals(List.of("127.0.0.2"), p.access().publicProxies());
         assertEquals(HubProperties.Audit.DEFAULT, p.audit());
+        assertEquals(HubProperties.Oidc.ClientAuth.PRIVATE_KEY_JWT, p.oidc().clientAuth());
+        assertEquals(HubProperties.Oidc.DEFAULT.scopes(), p.oidc().scopes());
+        assertEquals(HubProperties.Oidc.DEFAULT.signingAlgorithm(), p.oidc().signingAlgorithm());
+        assertEquals(HubProperties.Oidc.DEFAULT.rolesClaim(), p.oidc().rolesClaim());
+        assertEquals(HubProperties.Oidc.DEFAULT.usernameClaim(), p.oidc().usernameClaim());
+        assertEquals(HubProperties.Oidc.DEFAULT.buttonLabel(), p.oidc().buttonLabel());
     }
 
     @Test

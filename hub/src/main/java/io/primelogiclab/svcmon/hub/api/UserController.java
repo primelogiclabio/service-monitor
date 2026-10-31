@@ -32,12 +32,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/users")
 public class UserController {
 
+    /** {@code provider} is true for a user who signs in with the identity provider, and so has no password here. */
     public record UserView(String id, String username, Role role, boolean disabled, boolean mustChangePassword,
-                           long createdAt, Long passwordChangedAt, Long lastSignInAt) {
+                           long createdAt, Long passwordChangedAt, Long lastSignInAt, boolean provider) {
 
         static UserView of(UserRecord u) {
             return new UserView(u.id(), u.username(), u.role(), u.disabled(), u.mustChangePassword(), u.createdAt(),
-                    u.passwordChangedAt(), u.lastSignInAt());
+                    u.passwordChangedAt(), u.lastSignInAt(), u.viaProvider());
         }
     }
 

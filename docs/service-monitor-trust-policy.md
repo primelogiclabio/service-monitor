@@ -2,7 +2,7 @@
 
 This document is for anyone deciding whether to run Service Monitor, or who has been asked to approve it. It says in plain words what the software is built from, whether any of it needs a paid licence, what data it handles, who it talks to, and what it installs or downloads. For how the pieces work together see `service-monitor-stack-guide.md`.
 
-**How to read it.** Everything here comes from reading the source and build files of the hub (`main` at `1630d17`) and the dashboard (`main` at `1ae864d`) on 2026-10-25, and from running the programs. Where it says "none found", that means a search of the source found none; the code is open, so you can repeat the search (section 9). This is a description of the software, not a legal opinion and not an independent audit.
+**How to read it.** Everything here comes from reading the source and build files of the hub (`main` at `1630d17`) and the dashboard (`main` at `1ae864d`) on 2026-10-25, and from running the programs; the parts about sign-in with an identity provider were added on 2026-10-31 from the change that built it. Where it says "none found", that means a search of the source found none; the code is open, so you can repeat the search (section 9). This is a description of the software, not a legal opinion and not an independent audit.
 
 ## 1. At a glance
 
@@ -14,8 +14,8 @@ This document is for anyone deciding whether to run Service Monitor, or who has 
 | Does it download anything while it runs? | No. The hub and agent make only the connections listed in section 5 |
 | Does it download anything when you install it? | One case: the Windows hub installer fetches the service wrapper WinSW from GitHub only when you have not supplied a copy, and refuses it unless it matches a pinned SHA-256 (section 6). Nothing else |
 | What does it install on a server? | The agent registers itself as a service when an admin runs `svcmon agent install`; the hub installers register the hub the same way. No package manager is used and no other software is added |
-| What data does it keep? | Names and settings of what you chose to monitor, and the results of those checks for 30 days (section 4). About the people who use it: their user name and role, and an audit of sign-ins (30 days) and changes (365 days) with user names and network addresses. Nothing more |
-| Who receives data from it? | Only the alert channels you configure (section 5) |
+| What data does it keep? | Names and settings of what you chose to monitor, and the results of those checks for 30 days (section 4). About the people who use it: their user name and role (and, for those who sign in with an identity provider, which account at the provider they are), and an audit of sign-ins (30 days) and changes (365 days) with user names and network addresses. Nothing more |
+| Who receives data from it? | Only the alert channels you configure, and the identity provider if you set one up (section 5) |
 | Does a monitored server open a port for it? | No. Agents only connect out |
 | Has it been independently audited? | No |
 
@@ -26,18 +26,19 @@ This document is for anyone deciding whether to run Service Monitor, or who has 
 | The hub | Java 21, Spring Boot 4.1.2, Maven. SQLite for storage, Flyway for database changes | A jar of about 37 MB that runs on any Java 21 or newer runtime. It serves the API, the optional dashboard files and a live WebSocket |
 | The agent and the CLI | Go 1.27.3. One program, `svcmon`, about 12 MB | No runtime needed on the monitored server. Builds for Windows, Linux and macOS |
 | The dashboard | Svelte 5, Vite 6, uPlot, Node.js 20 or newer to build | Plain static files once built. Node is not needed to run it |
-| Optional | A sign-in gateway in front of the hub, such as Keycloak with nginx, used as a gate only (the hub never talks to it); a load balancer for TLS | Not part of this project; you run them yourself if you want them |
+| Optional | An identity provider (OpenID Connect: Keycloak, Entra ID, Okta, Auth0 and others) that the hub signs people in with; or a sign-in gateway in front of the hub, such as Keycloak with nginx, used as a gate only (the hub never talks to it); a load balancer for TLS | Not part of this project; you run them yourself if you want them |
 
 ## 3. Licences
 
 **The project itself** is licensed under the Apache License 2.0 (`LICENSE`), for the hub, agent and dashboard repositories alike.
 
-**Nothing needs a paid licence.** The hub jar contains 51 libraries. Their licences, read from each library's own build file:
+**Nothing needs a paid licence.** The hub jar contains 59 libraries. Their licences, read from each library's own build file:
 
 | Licence | Count | Examples |
 |---|---|---|
-| Apache License 2.0 | 41 | Spring Boot and Spring Framework, Tomcat, Jackson, Flyway, `sqlite-jdbc` |
+| Apache License 2.0 | 48 | Spring Boot and Spring Framework, Tomcat, Jackson, Flyway, `sqlite-jdbc`, Nimbus OAuth 2.0 SDK and Nimbus JOSE+JWT (sign-in with an identity provider) and what they bring (`json-smart`, `content-type`, `lang-tag`, `jcip-annotations`) |
 | MIT | 2 | SLF4J and its JUL bridge |
+| BSD 3-clause | 1 | ASM, which `json-smart` uses |
 | Eclipse Public License 2.0 (Logback also offers LGPL 2.1) | 2 | Logback |
 | EPL 2.0 or GPL 2 with the Classpath Exception, and the Eclipse Distribution License (BSD-style) | 5 | Jakarta Mail and Angus Mail, Jakarta Activation and its Angus implementation, Jakarta Annotations |
 
@@ -105,9 +106,11 @@ In one SQLite file in its data folder:
 - every check result for 30 days (`svcmon.retention-days`), then it is deleted;
 - API tokens, as SHA-256 fingerprints only, never the tokens themselves;
 - alert channels, including their secrets: webhook and Slack or Discord addresses, signing secrets and the SMTP password;
-- the users: name, role, password as a salted PBKDF2 hash, when they last signed in and changed their password;
-- while someone is signed in: a SHA-256 fingerprint of their cookie, the client address, the browser's own description of itself (user agent) and the times; deleted when the sign-in ends;
+- the users: name, role, password as a salted PBKDF2 hash, when they last signed in and changed their password; for someone who signs in with an identity provider, no password but the provider's issuer and the person's subject there (an opaque id), which link the hub user to that account;
+- while someone is signed in: a SHA-256 fingerprint of their cookie, how they signed in (password or identity provider), the client address, the browser's own description of itself (user agent) and the times; deleted when the sign-in ends;
 - the audit, which administrators read in Settings > Activity. Sign-ins are kept 30 days (`svcmon.audit.sign-in-days`): signing in and out, failed attempts with the reason, refusals for too many attempts or for coming from outside, and password changes and resets. Changes are kept 365 days (`svcmon.audit.change-days`): every other POST, PUT, PATCH or DELETE a person sends, and each agent that registers. An event holds the time, the user name or API token name (a name nobody has is written as "unknown", since it may be a mistyped password), the client address, inside or outside, what was called (such as `DELETE /api/v1/checks/{id}`), the id or user name it was about, and how it ended. It never holds a request body, a password, a token or a cookie.
+
+Beside the database, not in it, and only when sign-in with an identity provider is set up: `oidc-key.json`, the hub's own key pair, with which it proves who it is to the provider. It is made by the hub, readable only by the hub's account on Linux and macOS (on Windows the data folder's permissions protect it), and its private half never leaves the hub. If you give the hub a pair of your own instead (`svcmon.oidc.private-key-file` and `certificate-file`, as made by signing-keys-tool), it makes no key, reads those two files where you keep them, copies them nowhere, and warns on Linux and macOS when the private key can be read by other accounts. While a sign-in with the provider is under way (at most 10 minutes) the hub also holds that sign-in's random state, nonce and PKCE verifier in memory. It keeps none of the tokens the provider sends.
 
 ### What it does not collect
 
@@ -115,7 +118,7 @@ Files or their contents, documents, passwords or keys of your systems, environme
 
 ### In the browser
 
-The sign-in is one cookie the hub sets (`svcmon`, or `__Host-svcmon` over HTTPS). It is strictly necessary, holds only a random value, cannot be read by the page (HttpOnly), is sent to the hub alone and goes away when the browser closes. The dashboard keeps nothing secret in the browser's own storage, only the theme and which help panels are open. It makes no requests except to the hub it was served from (or the sign-in proxy on the same site) and loads no fonts, scripts or images from other sites.
+The sign-in is one cookie the hub sets (`svcmon`, or `__Host-svcmon` over HTTPS). It is strictly necessary, holds only a random value, cannot be read by the page (HttpOnly), is sent to the hub alone and goes away when the browser closes. While someone signs in with an identity provider there is a second one (`svcmon-oidc`, or `__Host-svcmon-oidc`) with another random value, which ties the sign-in to that browser; it lasts at most 10 minutes and is removed when the provider sends the browser back. The dashboard keeps nothing secret in the browser's own storage, only the theme and which help panels are open. It makes no requests except to the hub it was served from (or the sign-in proxy on the same site) and loads no fonts, scripts or images from other sites; signing in with an identity provider sends the browser to that provider's own sign-in page and back.
 
 ### Logs
 
@@ -130,7 +133,10 @@ The hub's log records start-up facts (address, database path, the names and type
 | Agent | The local Docker or Podman, through a local socket or Windows named pipe | Container checks. Nothing leaves the machine |
 | Hub | The addresses of hub-run HTTP, TCP and ping checks you listed (ping uses the operating system's `ping` command) | To run those checks |
 | Hub | The alert channels you set up: webhook, Slack and Discord addresses, or your SMTP server | To send alerts. The text sent includes the check name, status, message, server name and the check's target address |
+| Hub | Your identity provider, only if you set one up (`svcmon.oidc.issuer`) | To read its discovery document and published keys, and to finish a sign-in at its token endpoint: it sends the code the person came back with, the hub's client id and a short proof signed with the hub's private key (the key itself never leaves the hub), and receives the person's ID token |
 | Browser | The hub | The dashboard's data and live updates |
+| Browser | Your identity provider | Its sign-in page, when the person signs in with it, and its sign-out page |
+| Your identity provider | The hub's `GET /api/v1/oidc/jwks`, if you give it that address | To fetch the hub's public key |
 
 Nothing else was found. In particular there is no connection to the project's authors, to a licence service, to an update server or to an analytics service.
 
@@ -164,13 +170,15 @@ Protected:
 - Alert channel secrets are masked in every API answer, and an update that sends the masked value back keeps the stored one.
 - Users' passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes. Sign-in attempts are throttled per address, per account and in total, separately for the internal network and the outside. A sign-in ends after a set time, when unused, and at once on a password change, reset, role change or disabled account.
 - A sign-in gateway in front of the hub is a gate only: the hub takes no identity from it, neither a token nor a header, so a gate that is bypassed or misconfigured still leaves the hub's own sign-in in place.
-- By default only people on the internal network may use the hub. From outside, the command line's API tokens and the initial password never work, and signed-in users only when you set `svcmon.access.allow-outside: true`, and then over HTTPS only. Where a request comes from can refuse it, never let it in. Agents are not affected.
+- Sign-in with an identity provider is run by the hub itself, with the one provider you configure: the ID token's signature, issuer, audience, expiry and nonce are checked, the sign-in is tied to the browser that started it, and the person's hub account is linked to their account at the provider, never matched by name. The hub proves who it is to the provider with its own key pair rather than a client secret, so no shared secret is stored anywhere; a provider that only takes a secret is given one through a file, which is never a setting.
+- By default only people on the internal network may use the hub. From outside, the command line's API tokens and the initial password never work, and signed-in users only when you set `svcmon.access.allow-outside: true`, and then over HTTPS only; a hub with an identity provider takes only the provider's sign-in from outside. Where a request comes from can refuse it, never let it in. Agents are not affected.
 - Names and messages from agents are treated as untrusted: Slack markup is escaped, Discord mentions are off, mail headers cannot be injected, and the HTML in alert emails has no scripts, images or tracking.
 - Strict settings: an unknown setting is an error, so a typo does not silently weaken something.
 
 Things to know and handle yourself:
 
 - **Secrets in the database are not encrypted at rest.** Alert channel secrets sit in the SQLite file as stored. Keep the data folder and any backup of it readable only by the hub's account and administrators (the installers do this for the folders they create).
+- **The hub's key for the identity provider is not encrypted at rest.** `oidc-key.json` in the data folder, or the private key file you gave it, is protected by file permissions, like the database; the hub needs it without a password. Someone who reads it can act as the hub's client at the provider; with only the code flow allowed for that client, as the reference sets it up, they still need a person's sign-in there to get anyone's identity. If it may have leaked, run `oidc rotate-key`, or make a new pair with signing-keys-tool for a pair of your own, and give the provider the new public key or certificate.
 - **Check settings are not masked.** A check's address and settings, including any HTTP headers you add, are shown to anyone holding a read token and are sent to the agent that runs the check. Do not put passwords or tokens in a check's URL or headers. The check's address also appears in alert messages.
 - **Inside or outside is decided from the address your proxy forwards.** A load balancer or nginx in front of the hub must send `X-Forwarded-For` and `X-Forwarded-Proto`. One that does not makes every request look as if it came from the proxy, which is inside unless you list it in `svcmon.access.public-proxies`. The reference shows how to set this up and how to check it from outside.
 - **Agent to hub traffic is plain HTTP inside your network** by design (TLS ends at your load balancer). Anyone who can read that network can see the bearer tokens. Firewall the hub's port to the load balancer and the internal networks.
@@ -181,6 +189,7 @@ Things to know and handle yourself:
 ## 8. Limits of this statement
 
 - It has not been reviewed by an independent party, and this repository has no separate security-reporting process yet.
+- Sign-in with an identity provider has been tested against a stand-in provider only, not yet against a real one.
 - The macOS agent installer and service checks have never run on a real Mac. Container checks and agent-declared checks have run against Docker Desktop on Windows but not yet as an installed service, on Linux or against Podman.
 - The licence information for libraries comes from their published build files and licence files; check them again when you update a dependency.
 - Counts and versions will change as the code does. The date at the top says when they were checked.
@@ -189,7 +198,7 @@ Things to know and handle yourself:
 
 | To see | Do this |
 |---|---|
-| Every outbound connection in the hub | Search `hub/src/main/java` for `HttpClient`, `Socket`, `URL` and `ProcessBuilder`. They are the alert senders, the check runners, the mail sender and the `ping` command |
+| Every outbound connection in the hub | Search `hub/src/main/java` for `HttpClient`, `Socket`, `URL` and `ProcessBuilder`. They are the alert senders, the check runners, the mail sender and the `ping` command, plus the identity provider client in `oidc/ProviderClient.java`, which connects through the Nimbus library to the provider's addresses only |
 | Every outbound connection in the agent | Search `agent` for `http.Client`, `net.Dial` and `exec.Command`. They are the hub client, the check runners, the local container socket and the service tools |
 | Telemetry | Search for `telemetry`, `analytics`, `tracking` and `beacon`; the only hit is a comment saying alert emails have none |
 | What the dashboard requests | Open the browser's network panel while using it: every request goes to the hub. Or search `dist/` for `http`; only error-message links to svelte.dev appear, as text |

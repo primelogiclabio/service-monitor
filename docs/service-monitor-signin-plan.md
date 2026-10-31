@@ -29,7 +29,7 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 | 2 | Internal-only access | Done, https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
 | 3 | Audit of sign-ins and changes | Done, https://github.com/primelogiclabio/service-monitor/pull/41 and https://github.com/primelogiclabio/service-monitor-ui/pull/18 |
 | 4 | The gateway as a gate only | Done, https://github.com/primelogiclabio/service-monitor/pull/42 and https://github.com/primelogiclabio/service-monitor-ui/pull/19 |
-| 5 | Sign-in with an identity provider, run by the hub: provider roles mapped, no client secret | Planned |
+| 5 | Sign-in with an identity provider, run by the hub: provider roles mapped, no client secret | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/47 and https://github.com/primelogiclabio/service-monitor-ui/pull/23 |
 
 Phases 0 to 4 are in the 0.1.0 release. With phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
@@ -119,6 +119,16 @@ Why: behind a gate, a person signs in twice, a new user's first sign-in needs th
 - **Trust policy, in the same pull request:** a new outbound connection (the hub to the provider, for its discovery document, its keys and its token endpoint), new stored data (provider users' issuer, subject and name; the hub's key pair) and a new library (Spring Security's OAuth 2.0 client, Apache-2.0).
 - **The droplet afterwards (the owner applies it):** a Keycloak client for the hub (client authentication "Signed JWT" with the hub's key URL, the redirect URI, realm roles in the ID token), `SVCMON_OIDC_*` in the compose service, and nginx's `monitor.conf` back to a plain proxy without the gate.
 - **To settle when it is built:** the hub name of a provider user whose name is taken by another user; how long an old key stays published after rotation; whether `read-role` may be left empty for a hub with administrators only.
+
+### Phase 5, as built
+
+As planned above, except:
+
+- **The key:** RSA, 3072 bits, signing with RS256 by default (PS256 with `signing-algorithm`), chosen by the owner as the most widely accepted (Entra ID and Auth0 take RSA for this), in place of the planned EC P-256.
+- **The library:** the Nimbus OAuth 2.0 SDK and Nimbus JOSE+JWT, which Spring Security's own OAuth client is built on, used directly: the hub's sign-in is its own filter and sessions, not Spring Security's filter chain.
+- **Settled:** a provider user whose name another user has is refused (`username_taken`) rather than renamed; `read-role` may be left unset for administrators only; `rotate-key` replaces the key at once, without keeping the old one published, since a provider that fetches the key address looks again when it sees a key id it does not know.
+- **Also:** a sign-in made with a password inside does not work from outside on a hub with a provider (403 `password_inside_only`, the live view included), so "outside means the provider" holds for sessions too, not only for signing in. The name comes from `username-claim` (`preferred_username`), else `email`, when it fits a hub name (`username_unusable` otherwise). The button always starts at `svcmon.public-url`, so it works from a page opened through a tunnel. Signing out sends the provider `client_id` and `post_logout_redirect_uri`, not an ID token (the hub keeps none), so a provider may ask the person to confirm. `java -jar svcmon-hub.jar oidc key` prints the public key as PEM and as a JWK set.
+- **A key pair from files (added by the owner while building):** `private-key-file` and `certificate-file` take a pair made with signing-keys-tool instead of the hub's own. Its certificate is what Entra ID asks for, the proof names it (`x5t#S256`, `x5t`), the key address carries it (`x5c`), and its expiry is reported and warned about from 30 days before. The hub cannot make a certificate itself (plain Java cannot sign one), so this is how a certificate comes in.
 
 ## Later
 

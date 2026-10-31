@@ -20,6 +20,7 @@
   <properties>
     <java.version>21</java.version>
     <sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
+    <oauth2-oidc-sdk.version>11.38.2</oauth2-oidc-sdk.version>
   </properties>
 
   <dependencies>
@@ -49,6 +50,13 @@
     <dependency>
       <groupId>org.eclipse.angus</groupId>
       <artifactId>angus-mail</artifactId>
+    </dependency>
+    <!-- Sign-in with an identity provider (svcmon.oidc): OpenID Connect, PKCE, private_key_jwt, ID token checks.
+         Apache-2.0; brings nimbus-jose-jwt, json-smart, content-type and lang-tag. -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>oauth2-oidc-sdk</artifactId>
+      <version>${oauth2-oidc-sdk.version}</version>
     </dependency>
 
     <dependency>

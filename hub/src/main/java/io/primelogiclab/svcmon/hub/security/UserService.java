@@ -10,10 +10,12 @@ import io.primelogiclab.svcmon.hub.audit.AuditService.Actor;
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.core.ApiException;
 import io.primelogiclab.svcmon.hub.model.Role;
+import io.primelogiclab.svcmon.hub.model.SessionRecord;
 import io.primelogiclab.svcmon.hub.model.UserRecord;
 import io.primelogiclab.svcmon.hub.store.UserRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -25,11 +27,15 @@ import org.springframework.stereotype.Service;
  * network, so the well-known initial one cannot be tried from outside. Every failed sign-in gets the same answer,
  * whether the name, the password or the account was wrong, and costs the same time. The audit (see
  * {@link AuditService}) does record which it was, for the administrators.
+ * <p>
+ * Someone who signs in with the identity provider (svcmon.oidc) has a user too, made at their first sign-in. It has
+ * no password, and its role comes from the provider at every sign-in, so neither can be changed here; an
+ * administrator can still turn it off.
  */
 @Service
 public class UserService {
 
-    static final Pattern USERNAME = Pattern.compile("[A-Za-z0-9._@-]{1,64}");
+    public static final Pattern USERNAME = Pattern.compile("[A-Za-z0-9._@-]{1,64}");
 
     public enum Status { OK, WRONG, THROTTLED, INSIDE_ONLY, DISABLED }
 
@@ -39,6 +45,18 @@ public class UserService {
             return new SignInResult(status, null, null, 0);
         }
     }
+
+    public enum ProviderStatus { OK, NO_ROLE, DISABLED, USERNAME_TAKEN, USERNAME_UNUSABLE }
+
+    /** {@code session} and {@code user} are set when the status is OK. */
+    public record ProviderSignInResult(ProviderStatus status, SessionService.Issued session, UserRecord user) {
+        static ProviderSignInResult of(ProviderStatus status) {
+            return new ProviderSignInResult(status, null, null);
+        }
+    }
+
+    /** What the audit says about a sign-in with the identity provider. */
+    static final String VIA_PROVIDER = "identity provider";
 
     /** A user and the temporary password they were given, which appears only here. */
     public record WithPassword(UserRecord user, String temporaryPassword) {
@@ -95,14 +113,18 @@ public class UserService {
         boolean sizeOk = password != null && password.length() <= PasswordHasher.MAX_LENGTH;
         UserRecord user = username == null || !USERNAME.matcher(username).matches() ? null
                 : users.findByUsername(username).orElse(null);
-        // Always hash, against a stand-in when there is no such user, so the time does not say which part was wrong.
-        boolean passwordOk = hasher.verify(sizeOk ? password : "", user != null ? user.passwordHash() : dummy());
+        // Always hash, against a stand-in when there is no such user or the user has no password, so the time does
+        // not say which part was wrong.
+        boolean hasPassword = user != null && !user.viaProvider();
+        boolean passwordOk = hasher.verify(sizeOk ? password : "", hasPassword ? user.passwordHash() : dummy())
+                && hasPassword;
         if (user == null || !passwordOk || !sizeOk || user.disabled()) {
             throttle.failed(client, username, inside);
             // A name nobody has is not written down: it may be a password typed into the wrong box.
             log.warn("Wrong sign-in from {} for {}", client,
                     user == null ? "an unknown user" : "user '" + user.username() + "'" + (user.disabled() ? " (disabled)" : ""));
-            String reason = user == null ? "unknown_user" : !passwordOk || !sizeOk ? "wrong_password" : "account_disabled";
+            String reason = user == null ? "unknown_user" : user.viaProvider() ? "provider_account"
+                    : !passwordOk || !sizeOk ? "wrong_password" : "account_disabled";
             audit.signIn("sign_in", reason, user == null ? Actor.UNKNOWN : Actor.user(user.username()), client, null, null);
             return SignInResult.of(Status.WRONG);
         }
@@ -122,12 +144,88 @@ public class UserService {
     }
 
     /**
+     * Signs in someone the identity provider vouched for. They are found by the provider's issuer and subject, never
+     * by name, so nobody becomes an existing user by having the same name at the provider; their first sign-in
+     * makes their user, with no password. {@code username} is the name the provider gave (null when it gave none
+     * that fits), {@code role} what their provider roles map to (null: neither role, refused). The role replaces the
+     * hub's at every sign-in, so a role removed at the provider ends access at the next sign-in; a user turned off on
+     * the hub stays out whatever the provider says.
+     */
+    public ProviderSignInResult signInWithProvider(String issuer, String subject, String username, Role role,
+                                                   String client, String userAgent) {
+        UserRecord user = users.findByProvider(issuer, subject).orElse(null);
+        String name = user != null ? user.username() : username;
+        Actor who = name == null ? Actor.UNKNOWN : user != null ? Actor.user(name) : new Actor(name, "provider");
+        if (role == null) {
+            int ended = user == null ? 0 : sessions.endAll(user.id());
+            log.warn("Refused a sign-in with the identity provider from {} for {}: none of the roles that give access",
+                    client, name == null ? "a person without a usable name" : "'" + name + "'");
+            audit.signIn("sign_in", "no_role", who, client, null, ended > 0 ? ended + " sign-in(s) ended" : VIA_PROVIDER);
+            return ProviderSignInResult.of(ProviderStatus.NO_ROLE);
+        }
+        long now = System.currentTimeMillis();
+        if (user == null) {
+            if (username == null) {
+                log.warn("Refused a sign-in with the identity provider from {}: the ID token has no usable name", client);
+                audit.signIn("sign_in", "username_unusable", who, client, null, VIA_PROVIDER);
+                return ProviderSignInResult.of(ProviderStatus.USERNAME_UNUSABLE);
+            }
+            if (users.findByUsername(username).isPresent()) {
+                log.warn("Refused a sign-in with the identity provider from {}: another user is already named '{}'",
+                        client, username);
+                audit.signIn("sign_in", "username_taken", who, client, null, VIA_PROVIDER);
+                return ProviderSignInResult.of(ProviderStatus.USERNAME_TAKEN);
+            }
+            user = new UserRecord(UUID.randomUUID().toString(), username, role, UserRecord.NO_PASSWORD, false, false,
+                    now, null, null, issuer, subject);
+            try {
+                users.insert(user);
+            } catch (DataIntegrityViolationException e) {
+                // The same person's first sign-in in two tabs at once, or the name was just taken.
+                user = users.findByProvider(issuer, subject).orElse(null);
+                if (user == null) {
+                    audit.signIn("sign_in", "username_taken", who, client, null, VIA_PROVIDER);
+                    return ProviderSignInResult.of(ProviderStatus.USERNAME_TAKEN);
+                }
+            }
+            log.info("User '{}' was made by their first sign-in with the identity provider, with the role {}",
+                    username, role);
+        } else {
+            if (user.disabled()) {
+                log.warn("Refused a sign-in with the identity provider from {} for user '{}': the account is disabled",
+                        client, user.username());
+                audit.signIn("sign_in", "account_disabled", who, client, null, VIA_PROVIDER);
+                return ProviderSignInResult.of(ProviderStatus.DISABLED);
+            }
+            if (role != user.role()) {
+                users.setRole(user.id(), role);
+                log.info("User '{}' now has the role {}, from the identity provider", user.username(), role);
+            }
+            String id = user.id();
+            if (username != null && !username.equals(user.username())
+                    && users.findByUsername(username).filter(other -> !other.id().equals(id)).isEmpty()) {
+                users.setUsername(id, username);
+                log.info("User '{}' is now named '{}', as at the identity provider", user.username(), username);
+            }
+            user = users.findById(id).orElseThrow();
+        }
+        users.signedIn(user.id(), now);
+        SessionService.Issued session = sessions.create(user, client, userAgent, SessionRecord.PROVIDER);
+        log.info("User '{}' signed in with the identity provider from {}", user.username(), client);
+        audit.signIn("sign_in", "ok", Actor.user(user.username()), client, null, VIA_PROVIDER);
+        return new ProviderSignInResult(ProviderStatus.OK, session, user);
+    }
+
+    /**
      * Sets the signed-in user's own password after checking the current one. Their other sessions end and this one
      * gets a new cookie value, which is returned.
      */
     public SessionService.Issued changeOwnPassword(SessionService.Signed who, String current, String next,
                                                    String client, boolean inside) {
         UserRecord user = who.user();
+        if (user.viaProvider()) {
+            throw providerAccount();
+        }
         if (throttle.waitSeconds(client, user.username(), inside) > 0) {
             if (audit.once("password-throttled:" + user.id())) {
                 audit.signIn("password_changed", "too_many_attempts", Actor.user(user.username()), client, null, null);
@@ -172,8 +270,8 @@ public class UserService {
             throw ApiException.conflict("username_taken", "There is already a user named '" + username + "'");
         }
         String temporary = PasswordHasher.generate();
-        UserRecord u = new UserRecord(UUID.randomUUID().toString(), username, role, hasher.hash(temporary), true,
-                false, System.currentTimeMillis(), null, null);
+        UserRecord u = UserRecord.withPassword(UUID.randomUUID().toString(), username, role, hasher.hash(temporary),
+                true, false, System.currentTimeMillis(), null, null);
         users.insert(u);
         log.info("User '{}' was created with the role {}", username, role);
         return new WithPassword(u, temporary);
@@ -189,6 +287,10 @@ public class UserService {
         boolean disable = Boolean.TRUE.equals(disabled) && !u.disabled();
         if ((role != null && role != u.role()) || disabled != null && disabled != u.disabled()) {
             notYourself(u, actorId);
+        }
+        if (role != null && role != u.role() && u.viaProvider()) {
+            throw ApiException.conflict("provider_managed", "This user's role comes from the identity provider at each"
+                    + " sign-in; change their roles there");
         }
         if ((demote || disable) && isLastAdmin(u)) {
             throw lastAdmin();
@@ -211,6 +313,9 @@ public class UserService {
     public WithPassword resetPassword(String id, String actorId) {
         UserRecord u = find(id);
         notYourself(u, actorId);
+        if (u.viaProvider()) {
+            throw providerAccount();
+        }
         String temporary = PasswordHasher.generate();
         users.setPassword(id, hasher.hash(temporary), true, null);
         sessions.endAll(id);
@@ -241,6 +346,11 @@ public class UserService {
 
     private boolean isLastAdmin(UserRecord u) {
         return u.role() == Role.ADMIN && !u.disabled() && users.countEnabledAdmins() <= 1;
+    }
+
+    private static ApiException providerAccount() {
+        return ApiException.conflict("provider_account", "This user signs in with the identity provider and has no"
+                + " password on the hub");
     }
 
     private static ApiException lastAdmin() {

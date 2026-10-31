@@ -17,6 +17,7 @@ import io.primelogiclab.svcmon.hub.model.CheckDef;
 import io.primelogiclab.svcmon.hub.model.CheckType;
 import io.primelogiclab.svcmon.hub.model.RunFrom;
 import io.primelogiclab.svcmon.hub.model.ServerInfo;
+import io.primelogiclab.svcmon.hub.oidc.ProviderSignIn;
 import io.primelogiclab.svcmon.hub.security.NetworkPolicy;
 import io.primelogiclab.svcmon.hub.store.AlertChannelRepo;
 import io.primelogiclab.svcmon.hub.store.CheckRepo;
@@ -48,7 +49,8 @@ public class StartupSummary {
 
     /** Everything the summary prints, so the layout can be tested without a running hub. */
     record Facts(String version, List<String> urls, Path database, String dashboard, List<String> corsOrigins,
-                 String access, List<CheckDef> checks, List<ServerInfo> servers, List<AlertChannel> channels) {
+                 String access, String signIn, List<CheckDef> checks, List<ServerInfo> servers,
+                 List<AlertChannel> channels) {
     }
 
     private final HubProperties props;
@@ -59,12 +61,14 @@ public class StartupSummary {
     private final CheckRepo checks;
     private final AlertChannelRepo channels;
     private final NetworkPolicy network;
+    private final ProviderSignIn provider;
 
     public StartupSummary(HubProperties props, Environment env, @Value("${svcmon.version:dev}") String version,
                           ServerRepo servers, CheckRepo checks, AlertChannelRepo channels, UiHostingConfig uiHosting,
-                          NetworkPolicy network) {
+                          NetworkPolicy network, ProviderSignIn provider) {
         this.props = props;
         this.network = network;
+        this.provider = provider;
         this.uiHosting = uiHosting;
         this.env = env;
         this.version = version;
@@ -87,7 +91,7 @@ public class StartupSummary {
 
     String describe() {
         return render(new Facts(version, urls(), props.dataDir().toAbsolutePath().normalize().resolve("svcmon.db"),
-                uiHosting.served(), props.corsAllowedOrigins(), network.describe(),
+                uiHosting.served(), props.corsAllowedOrigins(), network.describe(), provider.describe(),
                 checks.findAll(), servers.findAll(), channels.findAll()));
     }
 
@@ -119,6 +123,7 @@ public class StartupSummary {
                 ? "off"
                 : "browser access allowed from " + String.join(", ", f.corsOrigins()));
         line(out, "Access", f.access());
+        line(out, "Sign-in", f.signIn());
 
         List<AlertChannel> enabledChannels = f.channels().stream().filter(AlertChannel::enabled).toList();
         line(out, "Alerts", enabledChannels.isEmpty()

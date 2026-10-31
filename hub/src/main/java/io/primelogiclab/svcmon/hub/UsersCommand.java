@@ -86,6 +86,11 @@ final class UsersCommand {
                         : " Users: " + String.join(", ", names)));
                 return 1;
             }
+            if (user.viaProvider()) {
+                err.println("User '" + user.username() + "' signs in with the identity provider and has no password"
+                        + " on the hub; give their account the role at the provider, or reset another user.");
+                return 1;
+            }
             String temporary = PasswordHasher.generate();
             users.setPassword(user.id(), new PasswordHasher().hash(temporary), true, null);
             users.setDisabled(user.id(), false);

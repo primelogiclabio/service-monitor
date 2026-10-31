@@ -22,7 +22,9 @@ public class UserRepo {
             rs.getInt("disabled") != 0,
             rs.getLong("created_at"),
             Rows.lng(rs, "password_changed_at"),
-            Rows.lng(rs, "last_sign_in_at"));
+            Rows.lng(rs, "last_sign_in_at"),
+            rs.getString("provider_issuer"),
+            rs.getString("provider_subject"));
 
     private final JdbcClient jdbc;
 
@@ -32,8 +34,9 @@ public class UserRepo {
 
     public void insert(UserRecord u) {
         jdbc.sql("INSERT INTO users (id, username, role, password_hash, must_change_password, disabled, created_at, "
-                        + "password_changed_at, last_sign_in_at) VALUES (:id, :username, :role, :hash, :mustChange, "
-                        + ":disabled, :createdAt, :changedAt, :signedInAt)")
+                        + "password_changed_at, last_sign_in_at, provider_issuer, provider_subject) VALUES (:id, "
+                        + ":username, :role, :hash, :mustChange, :disabled, :createdAt, :changedAt, :signedInAt, "
+                        + ":issuer, :subject)")
                 .param("id", u.id())
                 .param("username", u.username())
                 .param("role", u.role().name())
@@ -43,7 +46,19 @@ public class UserRepo {
                 .param("createdAt", u.createdAt())
                 .param("changedAt", u.passwordChangedAt())
                 .param("signedInAt", u.lastSignInAt())
+                .param("issuer", u.providerIssuer())
+                .param("subject", u.providerSubject())
                 .update();
+    }
+
+    /** The identity provider's user with this issuer and subject; the name plays no part. */
+    public Optional<UserRecord> findByProvider(String issuer, String subject) {
+        return jdbc.sql("SELECT * FROM users WHERE provider_issuer = :i AND provider_subject = :s")
+                .param("i", issuer).param("s", subject).query(MAPPER).optional();
+    }
+
+    public void setUsername(String id, String username) {
+        jdbc.sql("UPDATE users SET username = :u WHERE id = :id").param("id", id).param("u", username).update();
     }
 
     public Optional<UserRecord> findById(String id) {

@@ -19,7 +19,7 @@ class UiHostingConfigTest {
     private static HubProperties props(boolean enabled, Path uiDir, String embedded) {
         return new HubProperties(Path.of("."), 30, 30, 90, null, false, uiDir, List.of(), false, 50, null, true, 200,
                 HubProperties.Users.DEFAULT, HubProperties.Sessions.DEFAULT, enabled, embedded,
-                HubProperties.Access.DEFAULT, HubProperties.Audit.DEFAULT);
+                HubProperties.Access.DEFAULT, HubProperties.Audit.DEFAULT, HubProperties.Oidc.DEFAULT);
     }
 
     @Test

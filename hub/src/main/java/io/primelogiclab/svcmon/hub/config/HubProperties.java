@@ -39,7 +39,59 @@ public record HubProperties(
         /** Whether people may use the hub from outside the internal network; agents are never affected. */
         @DefaultValue Access access,
         /** How long the audit of sign-ins and changes is kept. */
-        @DefaultValue Audit audit) {
+        @DefaultValue Audit audit,
+        /** Sign-in with an identity provider (OpenID Connect), run by the hub itself; off unless issuer is set. */
+        @DefaultValue Oidc oidc) {
+
+    /**
+     * An identity provider people sign in with, besides their password. The hub runs the sign-in itself (the
+     * authorization code flow with PKCE) and proves who it is to the provider with a key pair ({@code
+     * private-key-jwt}), one it makes or one from files, so there is no client secret to keep. Provider roles, read from the ID token at
+     * {@code rolesClaim}, decide the hub role: {@code adminRole} makes an ADMIN, {@code readRole} a READ user, and
+     * someone with neither is refused. From outside the internal network, a hub with a provider takes only the
+     * provider's sign-in.
+     */
+    public record Oidc(
+            /** The provider's issuer (https://auth.example.com/realms/main); unset turns provider sign-in off. */
+            String issuer,
+            /** The client id the provider gave the hub. */
+            String clientId,
+            /** How the hub proves who it is at the provider's token endpoint. */
+            @DefaultValue("private-key-jwt") ClientAuth clientAuth,
+            /** A file holding the client secret, for {@code client-auth: client-secret} only; never the secret itself. */
+            Path clientSecretFile,
+            /**
+             * The hub's private key as a PKCS#8 PEM file (signing-keys-tool's {@code -private.pem}), instead of the
+             * key pair the hub makes itself; needs {@code certificateFile}.
+             */
+            Path privateKeyFile,
+            /** The self-signed certificate for that key ({@code -cert.pem}), for providers that want one (Entra ID). */
+            Path certificateFile,
+            /** RS256 or PS256: how the hub signs its proof with its RSA key. */
+            @DefaultValue("RS256") String signingAlgorithm,
+            /** Scopes asked for; openid is required. */
+            @DefaultValue({"openid", "profile", "email"}) List<String> scopes,
+            /** Where the ID token lists the person's roles, as a dotted path (realm_access.roles for Keycloak). */
+            @DefaultValue("roles") String rolesClaim,
+            /** The provider role that makes someone a hub administrator. Required. */
+            String adminRole,
+            /** The provider role that makes someone a read-only hub user; unset means administrators only. */
+            String readRole,
+            /** The ID token claim that names the hub user; email is tried when it is missing or unusable. */
+            @DefaultValue("preferred_username") String usernameClaim,
+            /** The sign-in button's text. */
+            @DefaultValue("Sign in with single sign-on") String buttonLabel) {
+
+        public enum ClientAuth { PRIVATE_KEY_JWT, CLIENT_SECRET }
+
+        public static final Oidc DEFAULT = new Oidc(null, null, ClientAuth.PRIVATE_KEY_JWT, null, null, null, "RS256",
+                List.of("openid", "profile", "email"), "roles", null, null, "preferred_username",
+                "Sign in with single sign-on");
+
+        public boolean enabled() {
+            return issuer != null && !issuer.isBlank();
+        }
+    }
 
     /** Days the audit keeps each kind of event, 1 to 3650; older events are deleted. */
     public record Audit(

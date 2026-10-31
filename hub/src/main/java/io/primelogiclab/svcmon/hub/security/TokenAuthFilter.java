@@ -11,6 +11,7 @@ import io.primelogiclab.svcmon.hub.audit.AuditService.Actor;
 import io.primelogiclab.svcmon.hub.live.LiveHandler;
 import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
+import io.primelogiclab.svcmon.hub.oidc.OidcSettings;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,8 +39,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <p>
  * Where a person's request comes from can refuse it before any of that (see {@link NetworkPolicy}): from outside the
  * internal network an API token never works, a user only when svcmon.access.allow-outside is true and the request
- * came over HTTPS. The /agent/ calls are never refused for where they come
- * from: agents connect out to the hub from wherever their servers are.
+ * came over HTTPS, and on a hub with an identity provider only when they signed in with it. The /agent/ calls are
+ * never refused for where they come from: agents connect out to the hub from wherever their servers are.
  * <p>
  * Each change a person makes (a POST, PUT, PATCH or DELETE that got past the sign-in) goes to the audit once it has
  * been answered, refused ones included; a refusal for where a request comes from goes there as a sign-in event (see
@@ -89,6 +90,12 @@ public class TokenAuthFilter extends OncePerRequestFilter {
             chain.doFilter(req, resp);
             return;
         }
+        if (PROVIDER_SIGN_IN.contains(path)) {
+            // Where the browser goes to sign in with the identity provider and comes back, and the hub's public key;
+            // OidcController applies the network rules, and answers a refusal with a redirect the page explains.
+            chain.doFilter(req, resp);
+            return;
+        }
         String header = req.getHeader("Authorization");
         if (isSignIn(req)) {
             // Signing in, out and asking who is signed in need no sign-in; they read the cookie themselves. Signing
@@ -97,7 +104,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
                 reject(resp, 403, "cross_site", "This request must come from the hub's own page");
                 return;
             }
-            NetworkPolicy.Refusal refusal = req.getMethod().equals("POST") ? network.forUser(req) : null;
+            NetworkPolicy.Refusal refusal = req.getMethod().equals("POST") ? network.forPassword(req) : null;
             if (refusal != null) {
                 refuse(req, resp, path, refusal);
                 return;
@@ -187,6 +194,12 @@ public class TokenAuthFilter extends OncePerRequestFilter {
             reject(resp, 401, "no_session", "The sign-in has ended; sign in again");
             return;
         }
+        // A sign-in made with a password does not work from outside on a hub with an identity provider.
+        NetworkPolicy.Refusal refusal = network.forSession(req, who.session().viaProvider());
+        if (refusal != null) {
+            refuse(req, resp, path, refusal);
+            return;
+        }
         String method = req.getMethod();
         Actor actor = Actor.user(who.user().username());
         if (!isRead(method) && !fromThisSite(req)) {
@@ -240,6 +253,7 @@ public class TokenAuthFilter extends OncePerRequestFilter {
     static final String AGENT = "/api/v1/agent/";
     static final String ME = "/api/v1/me";
     static final String PASSWORD = "/api/v1/me/password";
+    static final Set<String> PROVIDER_SIGN_IN = Set.of(OidcSettings.START, OidcSettings.CALLBACK, OidcSettings.JWKS);
 
     static Set<Scope> required(String method, String path) {
         if (path.equals("/api/v1/agent/register")) {
@@ -250,7 +264,8 @@ public class TokenAuthFilter extends OncePerRequestFilter {
         }
         if (path.startsWith("/api/v1/tokens") || path.startsWith("/api/v1/enrollment-tokens")
                 || path.startsWith("/api/v1/alert-channels") || path.startsWith("/api/v1/join-keys")
-                || path.equals("/api/v1/users") || path.startsWith("/api/v1/users/") || path.equals("/api/v1/audit")) {
+                || path.equals("/api/v1/users") || path.startsWith("/api/v1/users/") || path.equals("/api/v1/audit")
+                || path.equals("/api/v1/oidc")) {
             return EnumSet.of(Scope.ADMIN);
         }
         // Everyone's own: their password, their sessions (an administrator sees all), a ticket for the live view.

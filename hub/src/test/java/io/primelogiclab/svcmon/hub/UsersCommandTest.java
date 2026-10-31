@@ -61,9 +61,10 @@ class UsersCommandTest {
     void aResetGivesATemporaryPasswordTurnsTheAccountOnAndEndsItsSignIns(@TempDir Path dir) {
         JdbcClient jdbc = database(dir);
         UserRepo users = new UserRepo(jdbc);
-        users.insert(new UserRecord("u1", "root", Role.READ, new PasswordHasher().hash("forgotten password!"), false, true,
-                0, 0L, null));
-        new SessionRepo(jdbc).insert(new SessionRecord("s1", "u1", "h", 0, 0, Long.MAX_VALUE, null, null));
+        users.insert(UserRecord.withPassword("u1", "root", Role.READ, new PasswordHasher().hash("forgotten password!"),
+                false, true, 0, 0L, null));
+        new SessionRepo(jdbc).insert(new SessionRecord("s1", "u1", "h", 0, 0, Long.MAX_VALUE, null, null,
+                SessionRecord.PASSWORD));
 
         Result r = run("users", "reset", "ROOT", "--svcmon.data-dir=" + dir);
         assertEquals(0, r.code(), r.err());
@@ -89,7 +90,8 @@ class UsersCommandTest {
 
     @Test
     void anUnknownNameListsTheUsersAndBadArgumentsShowTheUsage(@TempDir Path dir) {
-        new UserRepo(database(dir)).insert(new UserRecord("u1", "root", Role.ADMIN, "x", false, false, 0, null, null));
+        new UserRepo(database(dir)).insert(UserRecord.withPassword("u1", "root", Role.ADMIN, "x", false, false, 0, null,
+                null));
         Result unknown = run("users", "reset", "nobody", "--svcmon.data-dir=" + dir);
         assertEquals(1, unknown.code());
         assertTrue(unknown.err().contains("Users: root"), unknown.err());
