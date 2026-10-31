@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -16,7 +17,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -239,6 +242,52 @@ class ApiIntegrationTest {
                 "\\\\\\\\.\\\\pipe\\\\podman-machine-default")) {
             assertEquals(201, call("POST", "/api/v1/checks", ADMIN, head
                     + "\"target\":\"pipe-test\",\"config\":{\"socket\":\"" + pipe + "\"}}").status(), pipe);
+        }
+    }
+
+    @Test
+    void headerValuesAreShownMaskedAndKeptWhenSentBack() throws Exception {
+        String secret = "Bearer header-secret-0123456789";
+        List<String> seen = new CopyOnWriteArrayList<>();
+        HttpServer target = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        target.createContext("/", exchange -> {
+            seen.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+        target.start();
+        try {
+            String head = "{\"name\":\"with a token\",\"type\":\"HTTP\",\"target\":\"http://127.0.0.1:"
+                    + target.getAddress().getPort() + "/health\",\"enabled\":false,\"config\":";
+            Resp made = call("POST", "/api/v1/checks", ADMIN,
+                    head + "{\"headers\":{\"Authorization\":\"" + secret + "\",\"Accept\":\"text/plain\"}}}");
+            assertEquals(201, made.status());
+            String id = (String) made.map().get("id");
+            Map<String, Object> masked = Map.of("Authorization", "********", "Accept", "********");
+            assertEquals(masked, made.obj("config").get("headers"), "not even in the answer to the create");
+            Resp read = call("GET", "/api/v1/checks/" + id, ADMIN, null);
+            assertEquals(masked, read.obj("config").get("headers"));
+            assertFalse(json.writeValueAsString(call("GET", "/api/v1/checks", ADMIN, null).list()).contains("header-secret"));
+
+            // Sent back as it was read, as the dashboard's switch and edit form do, the values stay.
+            String back = head + json.writeValueAsString(read.obj("config")) + "}";
+            Resp put = call("PUT", "/api/v1/checks/" + id, ADMIN, back);
+            assertEquals(200, put.status());
+            assertEquals(masked, put.obj("config").get("headers"));
+            assertEquals(200, call("POST", "/api/v1/checks/" + id + "/run", ADMIN, null).status());
+            assertEquals(List.of(secret), seen, "the target still gets the real value");
+
+            // A masked header with nothing stored behind it is refused, not stored as the mask; a new value replaces.
+            Resp renamed = call("PUT", "/api/v1/checks/" + id, ADMIN, back.replace("Authorization", "X-Api-Key"));
+            assertEquals(400, renamed.status());
+            assertTrue(String.valueOf(renamed.map().get("message")).contains("X-Api-Key"));
+            assertEquals(400, call("POST", "/api/v1/checks", ADMIN, back).status(), "a new check has nothing stored");
+            assertEquals(200, call("PUT", "/api/v1/checks/" + id, ADMIN,
+                    head + "{\"headers\":{\"Authorization\":\"Bearer rotated\",\"Accept\":\"********\"}}}").status());
+            assertEquals(200, call("POST", "/api/v1/checks/" + id + "/run", ADMIN, null).status());
+            assertEquals(List.of(secret, "Bearer rotated"), seen);
+        } finally {
+            target.stop(0);
         }
     }
 

@@ -28,26 +28,27 @@ public class CheckController {
         this.checks = checks;
     }
 
+    // Every answer shows header values masked; a header sent back masked keeps its stored value.
     @GetMapping
     public List<CheckDef> list() {
-        return checks.list();
+        return checks.list().stream().map(CheckDef::withHeadersMasked).toList();
     }
 
     @GetMapping("/{id}")
     public CheckDef get(@PathVariable String id) {
-        return checks.get(id);
+        return checks.get(id).withHeadersMasked();
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CheckDef create(@RequestBody CheckRequest request) {
-        return checks.create(request);
+        return checks.create(request).withHeadersMasked();
     }
 
     /** Replaces the whole check; omitted optional fields return to their defaults. */
     @PutMapping("/{id}")
     public CheckDef replace(@PathVariable String id, @RequestBody CheckRequest request) {
-        return checks.replace(id, request);
+        return checks.replace(id, request).withHeadersMasked();
     }
 
     @DeleteMapping("/{id}")

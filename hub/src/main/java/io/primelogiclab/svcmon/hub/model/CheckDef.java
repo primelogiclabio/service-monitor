@@ -1,5 +1,6 @@
 package io.primelogiclab.svcmon.hub.model;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -27,9 +28,28 @@ public record CheckDef(
                 enabled, createdAt, CheckSource.HUB, false);
     }
 
+    /** Shown in place of a header's value (the same mask as the alert channels' secrets). */
+    public static final String MASK = "********";
+
     public CheckDef {
         config = config == null ? Map.of() : config;
         source = source == null ? CheckSource.HUB : source;
+    }
+
+    /**
+     * This check as the API shows it: a header's value may be a secret (an API token, say), so only the header names
+     * are shown. Agents and checkers use the check itself.
+     */
+    public CheckDef withHeadersMasked() {
+        if (!(config.get("headers") instanceof Map<?, ?> headers) || headers.isEmpty()) {
+            return this;
+        }
+        Map<String, Object> hidden = new LinkedHashMap<>();
+        headers.keySet().forEach(k -> hidden.put(String.valueOf(k), MASK));
+        Map<String, Object> shown = new LinkedHashMap<>(config);
+        shown.put("headers", hidden);
+        return new CheckDef(id, name, type, target, shown, intervalSeconds, timeoutMs, failuresBeforeDown, runFrom,
+                serverId, enabled, createdAt, source, removedFromFile);
     }
 
     public CheckDef withEnabled(boolean value) {

@@ -1,6 +1,7 @@
 package io.primelogiclab.svcmon.hub.core;
 
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -48,7 +49,7 @@ public class CheckService {
     }
 
     public CheckDef create(CheckRequest req) {
-        CheckDef def = build(UUID.randomUUID().toString(), req, System.currentTimeMillis());
+        CheckDef def = build(UUID.randomUUID().toString(), withStoredHeaders(req, Map.of()), System.currentTimeMillis());
         checks.insert(def);
         scheduler.schedule(def);
         return def;
@@ -56,11 +57,40 @@ public class CheckService {
 
     public CheckDef replace(String id, CheckRequest req) {
         CheckDef existing = get(id);
-        CheckDef def = build(id, req, existing.createdAt()).withSource(existing.source(), existing.removedFromFile());
+        CheckDef def = build(id, withStoredHeaders(req, existing.config()), existing.createdAt())
+                .withSource(existing.source(), existing.removedFromFile());
         guardDeclared(existing, def);
         checks.update(def);
         scheduler.schedule(def);
         return def;
+    }
+
+    /**
+     * The API shows header values masked (see {@link CheckDef#withHeadersMasked}). A header sent back with the mask
+     * keeps the value stored for it, so a check read and sent back unchanged loses nothing. A masked header the check
+     * has no value for is refused rather than stored as the mask.
+     */
+    static CheckRequest withStoredHeaders(CheckRequest req, Map<String, Object> stored) {
+        if (req.config() == null || !(req.config().get("headers") instanceof Map<?, ?> headers)) {
+            return req;
+        }
+        Map<?, ?> old = stored.get("headers") instanceof Map<?, ?> m ? m : Map.of();
+        Map<String, Object> kept = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : headers.entrySet()) {
+            String header = String.valueOf(e.getKey());
+            if (!CheckDef.MASK.equals(e.getValue())) {
+                kept.put(header, e.getValue());
+            } else if (old.get(header) != null) {
+                kept.put(header, old.get(header));
+            } else {
+                throw ApiException.badRequest("Header " + header + " is masked, but the check has no value for it;"
+                        + " send its value");
+            }
+        }
+        Map<String, Object> config = new LinkedHashMap<>(req.config());
+        config.put("headers", kept);
+        return new CheckRequest(req.name(), req.type(), req.target(), config, req.intervalSeconds(), req.timeoutMs(),
+                req.failuresBeforeDown(), req.runFrom(), req.serverId(), req.enabled());
     }
 
     /** A check an agent declared is changed in the agent's file, so only its on/off switch can be set here. */
