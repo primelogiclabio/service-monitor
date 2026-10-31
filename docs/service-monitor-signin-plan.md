@@ -29,7 +29,7 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 | 2 | Internal-only access | Done, https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
 | 3 | Audit of sign-ins and changes | Done, https://github.com/primelogiclabio/service-monitor/pull/41 and https://github.com/primelogiclabio/service-monitor-ui/pull/18 |
 | 4 | The gateway as a gate only | Done, https://github.com/primelogiclabio/service-monitor/pull/42 and https://github.com/primelogiclabio/service-monitor-ui/pull/19 |
-| 5 | Sign-in with an identity provider, run by the hub: provider roles mapped, no client secret | Built, in review |
+| 5 | Sign-in with an identity provider, run by the hub: provider roles mapped, no client secret | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/47 and https://github.com/primelogiclabio/service-monitor-ui/pull/23 |
 
 Phases 0 to 4 are in the 0.1.0 release. With phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
