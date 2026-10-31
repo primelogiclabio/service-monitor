@@ -189,7 +189,7 @@ Things to know and handle yourself:
 ## 8. Limits of this statement
 
 - It has not been reviewed by an independent party, and this repository has no separate security-reporting process yet.
-- Sign-in with an identity provider has been tested against a stand-in provider only, not yet against a real one.
+- Sign-in with an identity provider has been tested against a stand-in provider and against Keycloak 26.8.1 on the same machine, not yet against Entra ID or other providers.
 - The macOS agent installer and service checks have never run on a real Mac. Container checks and agent-declared checks have run against Docker Desktop on Windows but not yet as an installed service, on Linux or against Podman.
 - The licence information for libraries comes from their published build files and licence files; check them again when you update a dependency.
 - Counts and versions will change as the code does. The date at the top says when they were checked.
