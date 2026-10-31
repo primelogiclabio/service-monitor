@@ -10,7 +10,7 @@ The hub is the central dashboard for every connected agent and the only place al
 
 - **Sign-in is a user name and password.** No API token and no hub address on the sign-in page: the dashboard is served by the hub it talks to.
 - **A new hub has `admin` / `admin`.** That password, and any temporary one an administrator gives out, works only from the internal network and allows nothing but choosing a new password.
-- **A Settings screen replaces Tokens:** your own password and sign-ins, users (read-only or administrator), revoking agent credentials, and listing and revoking the CLI's tokens.
+- **A Settings screen replaces Tokens:** your own password and sign-ins, users (read-only or administrator), revoking agent credentials, and listing and revoking the CLI's tokens. Making them there came later (https://github.com/primelogiclabio/service-monitor-ui/pull/21); a token belongs to no account, so the help says to revoke a leaver's tokens.
 - **Internal only by default.** `svcmon.access.allow-outside` (in `application.yml`, false by default) refuses people outside the internal network; the sign-in page says it is not allowed. Opened, the intended public set-up is a gateway that signs people in first (Keycloak, Oracle OAM or another), then the hub's own sign-in.
 - **No one-time codes for now.** Behind a gateway they were judged more than needed; they stay on the list for a hub reachable without one.
 - **The CLI keeps API tokens.** It is not exposed publicly, so those tokens work from the internal network only. Agents keep their own credentials and are never affected by where they connect from.
@@ -27,9 +27,9 @@ Each phase is a hub pull request, plus a dashboard one where needed, merged when
 | 1 | Users and cookie sessions, forced password change, Settings screen, `users reset` | Done, https://github.com/primelogiclabio/service-monitor/pull/38 and https://github.com/primelogiclabio/service-monitor-ui/pull/16 |
 | 2 | Internal-only access | Done, https://github.com/primelogiclabio/service-monitor/pull/40 and https://github.com/primelogiclabio/service-monitor-ui/pull/17 |
 | 3 | Audit of sign-ins and changes | Done, https://github.com/primelogiclabio/service-monitor/pull/41 and https://github.com/primelogiclabio/service-monitor-ui/pull/18 |
-| 4 | The gateway as a gate only | Built, in review: https://github.com/primelogiclabio/service-monitor/pull/42 and https://github.com/primelogiclabio/service-monitor-ui/pull/19 |
+| 4 | The gateway as a gate only | Done, https://github.com/primelogiclabio/service-monitor/pull/42 and https://github.com/primelogiclabio/service-monitor-ui/pull/19 |
 
-Phases 0 to 3 should all be in the next release. Phase 1 alone is safe to run inside a network; with phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
+Every phase is in the 0.1.0 release. With phase 2, a hub reachable from outside refuses the people there unless `allow-outside` is set.
 
 ### Phase 1, as built
 
