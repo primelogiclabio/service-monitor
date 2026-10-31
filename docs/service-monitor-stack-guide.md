@@ -265,7 +265,7 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 1. **Agents only connect out.** A monitored server opens no inbound port for the monitor.
 2. **Someone lists what is monitored.** An admin in the hub, or the person setting up the server in its `checks.json`. Nothing is discovered and monitored on its own; the helper commands only list what exists.
 3. **TLS ends at the load balancer.** The hub speaks plain HTTP inside the network and must work behind `X-Forwarded-*` headers.
-4. **Secrets stay hidden.** Tokens (only fingerprints are stored), webhook addresses, header values, signing secrets and the SMTP password never leave the hub unmasked and never appear in logs or errors.
+4. **Secrets stay hidden.** Tokens (only fingerprints are stored), webhook addresses, header values, signing secrets and the SMTP password never leave the hub unmasked and never appear in logs or errors. HTTP checks' header values are masked in every answer too; only the agent that runs the check gets them.
 5. **Be strict.** Unknown settings are rejected, so a typo fails loudly. Names and messages from agents are treated as untrusted (Slack markup is escaped, Discord mentions are off, mail headers cannot be injected).
 6. **Free everywhere.** Everything is open source, and the hub and agent run on Windows, Linux and macOS.
 

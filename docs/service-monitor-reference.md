@@ -442,7 +442,7 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 | `GET /status` | read | Roll-up: summary, clusters, servers, checks |
 | `GET /live` (WebSocket) | read, sent in the first frame | Pushes the same roll-up whenever it changes, for the dashboard's Live switch; see below |
 | `GET /servers/{id}/status` | read | One server with its checks |
-| `GET/POST /checks`, `GET/PUT/DELETE /checks/{id}` | read / admin | Manage checks |
+| `GET/POST /checks`, `GET/PUT/DELETE /checks/{id}` | read / admin | Manage checks. HTTP header values (`config.headers`) are shown masked (`********`); an update that sends a masked value back keeps the stored one, and a masked header the check has no value for is refused. The agent that runs the check gets the real values |
 | `POST /checks/{id}/run` | admin | Run a hub-side check now |
 | `GET /checks/{id}/results?since=&limit=` | read | History, newest first |
 | `GET /servers`, `GET /servers/{id}`, `PATCH /servers/{id}`, `DELETE /servers/{id}` | read / admin | Servers and clusters |

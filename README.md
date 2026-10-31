@@ -62,7 +62,7 @@ cd ../service-monitor-ui && npm ci && npm run build      # dashboard; copy dist/
 - **Agents only connect out.** The hub is the portal: it stores results, rolls them up, sends alerts and serves the API and dashboard. A server counts as down when its heartbeats stop.
 - **Someone lists what is monitored**, an admin in the hub or the person setting up the server in its `checks.json`. Nothing is discovered and monitored on its own.
 - **TLS ends at your load balancer.** The hub speaks plain HTTP inside the network, so only the hub is exposed, and it works behind `X-Forwarded-*` headers.
-- **Secrets stay in the hub**: only token hashes are stored, and webhook addresses, signing secrets and the SMTP password are masked in every answer and never logged.
+- **Secrets stay in the hub**: only token hashes are stored, and webhook addresses, signing secrets, the SMTP password and HTTP checks' header values are masked in every answer and never logged.
 
 ## Documentation
 

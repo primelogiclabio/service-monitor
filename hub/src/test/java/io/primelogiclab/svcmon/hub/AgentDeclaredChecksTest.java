@@ -190,6 +190,31 @@ class AgentDeclaredChecksTest {
     }
 
     @Test
+    void aDeclaredHeaderStaysOffTheApiAndTheSwitchStillWorks() throws Exception {
+        Agent a = enroll();
+        String secret = "Bearer declared-secret-0123456789";
+        String file = "[{\"type\":\"HTTP\",\"target\":\"https://example.test/\",\"name\":\"Api\","
+                + "\"config\":{\"headers\":{\"Authorization\":\"" + secret + "\"}}}]";
+        String id = (String) declare(a, file).get(0).get("checkId");
+        Map<String, Object> agentConfig = map(call("GET", "/api/v1/agent/config", a.token(), null));
+        assertTrue(json.writeValueAsString(agentConfig).contains(secret), "the agent gets the real value");
+
+        Map<String, Object> def = checkOf(id);
+        Map<?, ?> config = (Map<?, ?>) def.get("config");
+        assertEquals(Map.of("Authorization", "********"), config.get("headers"));
+
+        // The dashboard's switch sends the check back as it read it, masked header and all.
+        String off = "{\"name\":\"Api\",\"type\":\"HTTP\",\"target\":\"https://example.test/\",\"serverId\":\""
+                + a.serverId() + "\",\"runFrom\":\"AGENT\",\"config\":" + json.writeValueAsString(config)
+                + ",\"intervalSeconds\":" + def.get("intervalSeconds") + ",\"timeoutMs\":" + def.get("timeoutMs")
+                + ",\"failuresBeforeDown\":" + def.get("failuresBeforeDown") + ",\"enabled\":false}";
+        Resp switched = call("PUT", "/api/v1/checks/" + id, ADMIN, off);
+        assertEquals(200, switched.status(), switched.body());
+        assertEquals(List.of("unchanged"), results(declare(a, file)), "the stored value is still the file's");
+        assertFalse(json.writeValueAsString(checkOf(id)).contains("declared-secret"));
+    }
+
+    @Test
     void badEntriesAreRefusedAndDoNoHarm() throws Exception {
         Agent a = enroll();
         List<Map<String, Object>> out = declare(a, "[{\"type\":\"CONTAINER\",\"target\":\"web\"},"
