@@ -204,6 +204,7 @@ ${stats.map(([k, v]) => `<div class="stat"><b>${esc(k)}</b><span>${esc(v)}</span
   </div>
 </header>
 <main>
+${out.join('\n')}
 ${body}
 </main>
 <button id="navbtn" type="button" aria-expanded="false" aria-controls="navpanel">Sections</button>
