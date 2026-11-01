@@ -47,7 +47,7 @@ svcmon agent check add http http://localhost:8080/health
 
 Prefer a file? `svcmon agent check init` writes `checks.example.json` to edit into `checks.json`. Checks can also be added in the dashboard or with `svcmon check add` from anywhere.
 
-**4. Read the result** in the dashboard, or with `svcmon login --hub ... --token ...` and then `svcmon status`. Alerts go to webhooks, Slack, Discord or email once you add a channel.
+**4. Read the result** in the dashboard, or with `svcmon login --hub ... --token ...` and then `svcmon status`. Alerts go to webhooks, Slack, Discord or email once you add a channel (in the dashboard under Settings, Alerts, or with `svcmon alert add`).
 
 ### Build from source
 
