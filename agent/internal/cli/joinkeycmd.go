@@ -94,7 +94,7 @@ func (e *env) joinKeyList(args []string) int {
 		return exitOK
 	}
 	tw := tabwriter.NewWriter(e.out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tCLUSTER\tSERVERS\tLAST USED\tCREATED\tEXPIRES")
+	fmt.Fprintln(tw, "ID\tNAME\tCLUSTER\tSERVERS\tLAST USED\tMADE BY\tCREATED\tEXPIRES")
 	for _, k := range keys {
 		cluster, used, exp := "any", "-", "never"
 		if k.Cluster != "" {
@@ -106,7 +106,7 @@ func (e *env) joinKeyList(args []string) int {
 		if k.ExpiresAt != nil {
 			exp = fmtMillis(*k.ExpiresAt)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\t%s\n", shortID(k.ID), k.Name, cluster, k.UseCount, used, fmtMillis(k.CreatedAt), exp)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", shortID(k.ID), k.Name, cluster, k.UseCount, used, madeBy(k), fmtMillis(k.CreatedAt), exp)
 	}
 	tw.Flush()
 	return exitOK

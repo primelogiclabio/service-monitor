@@ -73,6 +73,24 @@ func shortID(id string) string {
 	return id
 }
 
+// madeBy says who made a token, as the hub recorded it; "-" for a token made before the hub kept that.
+func madeBy(t hubapi.TokenView) string {
+	switch t.CreatedByKind {
+	case "hub":
+		return "hub"
+	case "token":
+		return "token " + t.CreatedBy
+	case "join_key":
+		return "join key " + t.CreatedBy
+	case "enrollment_token":
+		return "enrollment token " + t.CreatedBy
+	}
+	if t.CreatedBy == "" {
+		return "-"
+	}
+	return t.CreatedBy
+}
+
 func printStatus(w io.Writer, st hubapi.Status) {
 	s := st.Summary
 	fmt.Fprintf(w, "Overall: %s   servers: %d up, %d warn, %d down   checks: %d up, %d warn, %d down, %d unknown\n",

@@ -132,7 +132,7 @@ location @signin  { return 302 /oauth2/start?rd=$scheme://$http_host$request_uri
 
 ## Users and sign-in
 
-People sign in to the dashboard with a user name and password. Each user is an **administrator** (`ADMIN`, may change anything) or **read-only** (`READ`, may look at everything but the user list, tokens and alert channels, and change only their own password). API tokens stay for the CLI and scripts; agents keep their own credentials. Turn user sign-in off with `svcmon.users.enabled: false` (then only API tokens work).
+People sign in to the dashboard with a user name and password. Each user is an **administrator** (`ADMIN`, may change anything) or **read-only** (`READ`, may look at everything but the user list, tokens and alert channels, and change only their own password). API tokens stay for the CLI and scripts; agents keep their own credentials. Each token records who made it (Settings > API tokens, `svcmon token list`), and keeps working when that user is deleted: revoke it there. Turn user sign-in off with `svcmon.users.enabled: false` (then only API tokens work).
 
 - **First start:** a hub without users creates the administrator `admin` (`svcmon.users.initial-admin-username`) with the password `admin` (`svcmon.users.initial-admin-password`). Both settings are used only to create that account. That password, and any temporary one an administrator gives out, works **only from the internal network** and must be changed at the first sign-in: until then the hub answers everything else with 403 `password_change_required`. The log says so at every start while an administrator still has one. A hub upgraded from the local admin account keeps that account's password, as user `admin` (or `svcmon.users.initial-admin-username`); the old `svcmon.local-admin.*` settings stop the hub with a message that names their replacements.
 - **Passwords:** 12 to 128 characters, not the user name; no composition rules. Only a salted PBKDF2-HMAC-SHA256 hash (600,000 rounds) is stored; a password is never logged or returned.
@@ -249,7 +249,7 @@ The hub keeps a record of who signed in and who changed what. Administrators rea
 | Part | Kept | What is in it |
 |---|---|---|
 | Sign-ins | 30 days (`svcmon.audit.sign-in-days`) | Signing in, with the reason a failure failed (`unknown_user`, `wrong_password`, `account_disabled`, `initial_password_inside_only`); too many attempts; refused for where it came from (`outside_not_allowed`, `insecure_transport`); signing out; a sign-in ended by its owner or an administrator; password changes (and wrong current passwords); resets, by an administrator or with `users reset` |
-| Changes | 365 days (`svcmon.audit.change-days`) | Every POST, PUT, PATCH and DELETE a person sends under `/api/`, whether it worked or not (except those that are sign-in events: signing in and out, password changes and resets, ending a sign-in), as its route (`DELETE /api/v1/checks/{id}`), the id or user name it was about and the outcome (`ok` or the hub's error code); each agent that registers, with the name of the enrollment token or join key it used |
+| Changes | 365 days (`svcmon.audit.change-days`) | Every POST, PUT, PATCH and DELETE a person sends under `/api/`, whether it worked or not (except those that are sign-in events: signing in and out, password changes and resets, ending a sign-in), as its route (`DELETE /api/v1/checks/{id}`), the id or user name it was about and the outcome (`ok` or the hub's error code); a token, enrollment token or join key made or revoked is named, with the first 8 characters of its id (as `svcmon token list` shows it); each agent that registers, with the name of the enrollment token or join key it used |
 
 Each event also has the time, who it was (a user name, an API token's name, or `unknown`), the client address and whether that is inside or outside.
 
@@ -340,7 +340,7 @@ svcmon server web01              # one server with its checks
 svcmon check list                # also: show, run, rm <check>
 svcmon check history <check> --since 2h
 svcmon token create --name ci --scope read
-svcmon token list                # also: token revoke <id>
+svcmon token list                # with who made each; also: token revoke <id>
 svcmon join-key create --name "app servers" --cluster prod   # reusable; also: join-key list, join-key revoke <id>
 svcmon agent enroll --hub http://hub:8080 --token svm_e_...   # enroll without installing the service
 svcmon agent check add cpu --warn 80 --crit 90   # on the server: edit checks.json and send it; also: check rm, check list, check init
@@ -446,9 +446,9 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 | `POST /checks/{id}/run` | admin | Run a hub-side check now |
 | `GET /checks/{id}/results?since=&limit=` | read | History, newest first |
 | `GET /servers`, `GET /servers/{id}`, `PATCH /servers/{id}`, `DELETE /servers/{id}` | read / admin | Servers and clusters |
-| `GET/POST /tokens`, `DELETE /tokens/{id}` | admin | API tokens (ADMIN or READ) |
+| `GET/POST /tokens`, `DELETE /tokens/{id}` | admin | API tokens (ADMIN or READ). The list has every token, each with who made it: `createdBy` (a name) and `createdByKind` (`user`, `token`, `join_key` or `enrollment_token` for an agent's credential, `hub` for one made at start-up); both absent for tokens made before the hub recorded it |
 | `POST /enrollment-tokens` | admin | One-time token to register an agent |
-| `GET/POST /join-keys`, `DELETE /join-keys/{id}` | admin | Reusable join keys: register any number of agents until revoked or expired; optional cluster |
+| `GET/POST /join-keys`, `DELETE /join-keys/{id}` | admin | Reusable join keys: register any number of agents until revoked or expired; optional cluster; who made each, as for `/tokens` |
 | `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked |
 | `POST /alert-channels/{id}/test` | admin | Send one test alert now |
 | `POST /agent/register`, `GET /agent/config`, `POST /agent/report`, `PUT /agent/checks` | enroll or join key / agent | Agent protocol (agents only call out). `PUT /agent/checks` declares the agent's own checks and is refused when `svcmon.agent-declared-checks` is set to false |

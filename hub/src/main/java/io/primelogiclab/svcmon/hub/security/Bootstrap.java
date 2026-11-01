@@ -1,5 +1,6 @@
 package io.primelogiclab.svcmon.hub.security;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService.Actor;
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.store.TokenRepo;
@@ -39,12 +40,13 @@ public class Bootstrap implements ApplicationRunner {
             if (props.bootstrapAdminToken().length() < 32) {
                 throw new IllegalStateException("svcmon.bootstrap-admin-token must be at least 32 characters");
             }
-            tokens.issueWithValue("bootstrap", Scope.ADMIN, props.bootstrapAdminToken());
+            tokens.issueWithValue("bootstrap", Scope.ADMIN, props.bootstrapAdminToken(), Actor.HUB);
             log.info("Admin token created from svcmon.bootstrap-admin-token");
             return;
         }
         if (noAdmin || props.newAdminToken()) {
-            TokenService.Issued issued = tokens.issue(noAdmin ? "initial-admin" : "recovery-admin", Scope.ADMIN, null, null);
+            TokenService.Issued issued = tokens.issue(noAdmin ? "initial-admin" : "recovery-admin", Scope.ADMIN, null,
+                    null, Actor.HUB);
             System.out.println();
             System.out.println("==================================================================");
             System.out.println(" New admin token (shown once, store it somewhere safe):");

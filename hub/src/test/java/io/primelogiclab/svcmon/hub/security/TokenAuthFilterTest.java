@@ -87,7 +87,7 @@ class TokenAuthFilterTest {
     void theHubsOwnTokensAreStillCheckedAsTheHubsOwnTokens() throws Exception {
         var tokens = mock(TokenService.class);
         var record = new io.primelogiclab.svcmon.hub.model.TokenRecord("id", "cli", Scope.ADMIN, null, "hash", 0L, null,
-                null, null, 0);
+                null, null, 0, null, null);
         org.mockito.Mockito.when(tokens.authenticate("test-admin-token-0123456789abcdef0123456789abcdef"))
                 .thenReturn(java.util.Optional.of(record));
         var filter = new TokenAuthFilter(tokens, mock(SessionService.class), INSIDE_ONLY, mock(AuditService.class));

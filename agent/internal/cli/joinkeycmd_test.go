@@ -33,7 +33,7 @@ func (h *joinHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	switch {
-	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/join-keys":
+	case r.Method == http.MethodGet && (r.URL.Path == "/api/v1/join-keys" || r.URL.Path == "/api/v1/tokens"):
 		_ = json.NewEncoder(w).Encode(keys)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/join-keys":
 		issued := hubapi.IssuedToken{ID: "key-1234567", Name: body["name"].(string), Scope: "JOIN", Token: "svm_j_secret"}
@@ -125,15 +125,49 @@ func TestJoinKeyCreateRejectsMistakesBeforeContactingTheHub(t *testing.T) {
 func TestJoinKeyListShowsUseAndNeverTheKey(t *testing.T) {
 	used := int64(1_800_000_000_000)
 	_, _, run := newJoinHub(t,
-		hubapi.TokenView{ID: "aaaa1111-x", Name: "fleet", Scope: "JOIN", CreatedAt: used, UsedAt: &used, UseCount: 7},
+		hubapi.TokenView{ID: "aaaa1111-x", Name: "fleet", Scope: "JOIN", CreatedAt: used, UsedAt: &used, UseCount: 7,
+			CreatedBy: "alice", CreatedByKind: "user"},
 		hubapi.TokenView{ID: "bbbb2222-y", Name: "staging", Scope: "JOIN", CreatedAt: used, Cluster: "staging"})
 	code, out, _ := run("join-key", "list")
 	if code != exitOK {
 		t.Fatal(out)
 	}
-	for _, want := range []string{"SERVERS", "fleet", "any", "7", "staging", "never"} {
+	for _, want := range []string{"SERVERS", "fleet", "any", "7", "staging", "never", "MADE BY", "alice"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestTokenListSaysWhoMadeEachToken(t *testing.T) {
+	_, _, run := newJoinHub(t,
+		hubapi.TokenView{ID: "aaaa1111-x", Name: "ci", Scope: "READ", CreatedBy: "ops laptop", CreatedByKind: "token"},
+		hubapi.TokenView{ID: "bbbb2222-y", Name: "agent:web01", Scope: "AGENT", CreatedBy: "fleet", CreatedByKind: "join_key"},
+		hubapi.TokenView{ID: "cccc3333-z", Name: "old", Scope: "READ"})
+	code, out, _ := run("token", "list")
+	if code != exitOK {
+		t.Fatal(out)
+	}
+	for _, want := range []string{"MADE BY", "token ops laptop", "join key fleet"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMadeByNamesTheKindOfMaker(t *testing.T) {
+	for _, c := range []struct {
+		by, kind, want string
+	}{
+		{"alice", "user", "alice"},
+		{"ops", "token", "token ops"},
+		{"fleet", "join_key", "join key fleet"},
+		{"web-token", "enrollment_token", "enrollment token web-token"},
+		{"hub", "hub", "hub"},
+		{"", "", "-"},
+	} {
+		if got := madeBy(hubapi.TokenView{CreatedBy: c.by, CreatedByKind: c.kind}); got != c.want {
+			t.Errorf("madeBy(%q, %q) = %q, want %q", c.by, c.kind, got, c.want)
 		}
 	}
 }

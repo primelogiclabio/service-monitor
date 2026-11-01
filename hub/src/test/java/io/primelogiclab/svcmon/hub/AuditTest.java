@@ -240,6 +240,8 @@ class AuditTest {
         assertEquals("POST /api/v1/enrollment-tokens", issued.get("action"));
         assertEquals("bootstrap", issued.get("actor"), "an API token is named by its name");
         assertEquals("token", issued.get("actorKind"));
+        assertEquals("web-token", issued.get("target"));
+        assertEquals("5 minutes, id " + shortId(map(enroll)), issued.get("detail"));
         String body = auditBody("").body();
         assertFalse(body.contains("/agent/report") || body.contains("/agent/config"));
         assertFalse(body.contains(enrollToken) || body.contains(agentToken) || body.contains(ADMIN_TOKEN));
@@ -247,6 +249,35 @@ class AuditTest {
 
     @Test
     @Order(7)
+    void tokenChangesNameTheTokenAndItsShortIdButNeverItsValue() throws Exception {
+        HttpResponse<String> made = send("POST", "/api/v1/tokens", admin, "{\"name\":\"ci-reader\",\"scope\":\"READ\"}");
+        assertEquals(201, made.statusCode(), made.body());
+        Map<String, Object> token = map(made);
+        assertEquals(204, send("DELETE", "/api/v1/tokens/" + token.get("id"), admin, null).statusCode());
+        HttpResponse<String> key = send("POST", "/api/v1/join-keys", admin, "{\"name\":\"edge-fleet\",\"cluster\":\"edge\"}");
+        assertEquals(201, key.statusCode(), key.body());
+        assertEquals(204, send("DELETE", "/api/v1/join-keys/" + map(key).get("id"), admin, null).statusCode());
+
+        List<Map<String, Object>> changes = events("?category=change");
+        assertEquals(List.of(
+                        "DELETE /api/v1/join-keys/{id}|edge-fleet|id " + shortId(map(key)),
+                        "POST /api/v1/join-keys|edge-fleet|cluster edge, id " + shortId(map(key)),
+                        "DELETE /api/v1/tokens/{id}|ci-reader|id " + shortId(token),
+                        "POST /api/v1/tokens|ci-reader|READ, id " + shortId(token)),
+                changes.stream().limit(4).map(e -> e.get("action") + "|" + e.get("target") + "|" + e.get("detail"))
+                        .toList());
+        assertTrue(changes.stream().limit(4).allMatch(e -> "admin".equals(e.get("actor"))));
+        String body = auditBody("").body();
+        assertFalse(body.contains((String) token.get("token")) || body.contains((String) map(key).get("token")));
+        assertFalse(body.contains((String) token.get("id")), "a revoke names the token, not its whole id");
+    }
+
+    private static String shortId(Map<String, Object> issued) {
+        return ((String) issued.get("id")).substring(0, 8);
+    }
+
+    @Test
+    @Order(8)
     void theAuditIsReadPageByPageNewestFirst() throws Exception {
         Map<String, Object> first = map(auditBody("?limit=2"));
         List<?> page = (List<?>) first.get("events");
@@ -262,7 +293,7 @@ class AuditTest {
     }
 
     @Test
-    @Order(8)
+    @Order(9)
     void oldEventsArePurgedAfterTheirCategorysDays() {
         long now = System.currentTimeMillis();
         long day = TimeUnit.DAYS.toMillis(1);

@@ -10,7 +10,6 @@ import io.primelogiclab.svcmon.hub.core.AgentService.ReportResponse;
 import io.primelogiclab.svcmon.hub.core.DeclaredChecksService;
 import io.primelogiclab.svcmon.hub.core.DeclaredChecksService.DeclareRequest;
 import io.primelogiclab.svcmon.hub.core.DeclaredChecksService.DeclareResponse;
-import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.security.TokenAuthFilter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -57,8 +56,7 @@ public class AgentController {
     public RegisterResponse register(@RequestAttribute(TokenAuthFilter.ATTR) TokenRecord token,
                                      @RequestBody RegisterRequest request, HttpServletRequest req) {
         RegisterResponse registered = agents.register(token, request);
-        audit.change("agent_registered", "ok", new AuditService.Actor(token.name(),
-                        token.scope() == Scope.JOIN ? "join_key" : "enrollment_token"), req.getRemoteAddr(),
+        audit.change("agent_registered", "ok", AuditService.Actor.registeredWith(token), req.getRemoteAddr(),
                 "POST /api/v1/agent/register", request.name(), request.cluster() == null ? null : "cluster " + request.cluster());
         return registered;
     }

@@ -9,6 +9,7 @@ import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService.Actor;
 import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.store.TokenRepo;
@@ -32,23 +33,26 @@ public class TokenService {
         this.tokens = tokens;
     }
 
-    public Issued issue(String name, Scope scope, String serverId, Long expiresAt) {
-        return store(name, scope, serverId, expiresAt, generate(scope), null);
+    /** {@code by} is who asked for it, kept with the token so the lists can say who made each one. */
+    public Issued issue(String name, Scope scope, String serverId, Long expiresAt, Actor by) {
+        return store(name, scope, serverId, expiresAt, generate(scope), null, by);
     }
 
     /** A join key: registers any number of agents, optionally only into one cluster, until revoked or expired. */
-    public Issued issueJoinKey(String name, String cluster, Long expiresAt) {
-        return store(name, Scope.JOIN, null, expiresAt, generate(Scope.JOIN), cluster);
+    public Issued issueJoinKey(String name, String cluster, Long expiresAt, Actor by) {
+        return store(name, Scope.JOIN, null, expiresAt, generate(Scope.JOIN), cluster, by);
     }
 
     /** Stores a caller-supplied token value (used for the optional bootstrap admin token). */
-    public Issued issueWithValue(String name, Scope scope, String raw) {
-        return store(name, scope, null, null, raw, null);
+    public Issued issueWithValue(String name, Scope scope, String raw, Actor by) {
+        return store(name, scope, null, null, raw, null, by);
     }
 
-    private Issued store(String name, Scope scope, String serverId, Long expiresAt, String raw, String cluster) {
+    private Issued store(String name, Scope scope, String serverId, Long expiresAt, String raw, String cluster,
+                         Actor by) {
         TokenRecord rec = new TokenRecord(UUID.randomUUID().toString(), name, scope, serverId, hash(raw),
-                System.currentTimeMillis(), expiresAt, null, cluster, 0);
+                System.currentTimeMillis(), expiresAt, null, cluster, 0, by == null ? null : by.name(),
+                by == null ? null : by.kind());
         tokens.insert(rec);
         return new Issued(rec, raw);
     }
