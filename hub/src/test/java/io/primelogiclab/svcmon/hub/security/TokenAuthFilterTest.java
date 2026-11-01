@@ -87,7 +87,7 @@ class TokenAuthFilterTest {
     void theHubsOwnTokensAreStillCheckedAsTheHubsOwnTokens() throws Exception {
         var tokens = mock(TokenService.class);
         var record = new io.primelogiclab.svcmon.hub.model.TokenRecord("id", "cli", Scope.ADMIN, null, "hash", 0L, null,
-                null, null, 0, null, null);
+                null, null, 0, null, null, null);
         org.mockito.Mockito.when(tokens.authenticate("test-admin-token-0123456789abcdef0123456789abcdef"))
                 .thenReturn(java.util.Optional.of(record));
         var filter = new TokenAuthFilter(tokens, mock(SessionService.class), INSIDE_ONLY, mock(AuditService.class));
@@ -97,6 +97,51 @@ class TokenAuthFilterTest {
         assertEquals(200, run(filter, req, chain).getStatus());
         assertSame(req, chain.getRequest());
         assertSame(record, req.getAttribute(TokenAuthFilter.ATTR));
+    }
+
+    private static TokenAuthFilter limitedFilter(io.primelogiclab.svcmon.hub.model.TokenRecord record,
+                                                 TokenService.Limit limit) {
+        var tokens = mock(TokenService.class);
+        org.mockito.Mockito.when(tokens.authenticate("owned-token-0123456789abcdef0123456789abcdef"))
+                .thenReturn(java.util.Optional.of(record));
+        org.mockito.Mockito.when(tokens.limit(record)).thenReturn(limit);
+        return new TokenAuthFilter(tokens, mock(SessionService.class), INSIDE_ONLY, mock(AuditService.class));
+    }
+
+    private static io.primelogiclab.svcmon.hub.model.TokenRecord owned(Scope scope) {
+        return new io.primelogiclab.svcmon.hub.model.TokenRecord("id", "alice-cli", scope, null, "hash", 0L, null, null,
+                null, 0, "alice", "user", "u1");
+    }
+
+    @Test
+    void aTokenWhoseUserIsDisabledIsSuspended() throws Exception {
+        for (Scope scope : new Scope[] {Scope.ADMIN, Scope.JOIN}) {
+            var filter = limitedFilter(owned(scope), TokenService.Limit.SUSPENDED);
+            var path = scope == Scope.JOIN ? "/api/v1/agent/register" : "/api/v1/status";
+            var chain = new MockFilterChain();
+            var resp = run(filter, bearer(scope == Scope.JOIN ? "POST" : "GET", path,
+                    "owned-token-0123456789abcdef0123456789abcdef"), chain);
+            assertEquals(403, resp.getStatus(), scope.name());
+            assertTrue(resp.getContentAsString().contains("token_suspended"), resp.getContentAsString());
+            assertNull(chain.getRequest(), scope.name());
+        }
+    }
+
+    @Test
+    void anAdminTokenWhoseUserIsReadOnlyCanOnlyRead() throws Exception {
+        var filter = limitedFilter(owned(Scope.ADMIN), TokenService.Limit.READ_ONLY);
+        var read = bearer("GET", "/api/v1/status", "owned-token-0123456789abcdef0123456789abcdef");
+        var chain = new MockFilterChain();
+        assertEquals(200, run(filter, read, chain).getStatus());
+        assertSame(read, chain.getRequest());
+        assertEquals(Scope.READ, ((io.primelogiclab.svcmon.hub.model.TokenRecord) read.getAttribute(TokenAuthFilter.ATTR))
+                .scope(), "what the request handlers see, so /me and the sessions list say READ too");
+
+        var write = new MockFilterChain();
+        var resp = run(filter, bearer("POST", "/api/v1/checks", "owned-token-0123456789abcdef0123456789abcdef"), write);
+        assertEquals(403, resp.getStatus());
+        assertTrue(resp.getContentAsString().contains("read-only"), resp.getContentAsString());
+        assertNull(write.getRequest());
     }
 
     /**

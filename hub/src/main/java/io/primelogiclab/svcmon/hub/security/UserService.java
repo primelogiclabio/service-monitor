@@ -12,6 +12,7 @@ import io.primelogiclab.svcmon.hub.core.ApiException;
 import io.primelogiclab.svcmon.hub.model.Role;
 import io.primelogiclab.svcmon.hub.model.SessionRecord;
 import io.primelogiclab.svcmon.hub.model.UserRecord;
+import io.primelogiclab.svcmon.hub.store.TokenRepo;
 import io.primelogiclab.svcmon.hub.store.UserRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,16 +67,18 @@ public class UserService {
 
     private final HubProperties.Users cfg;
     private final UserRepo users;
+    private final TokenRepo tokens;
     private final SessionService sessions;
     private final PasswordHasher hasher;
     private final LoginThrottle throttle;
     private final AuditService audit;
     private volatile String dummyHash;
 
-    public UserService(HubProperties props, UserRepo users, SessionService sessions, PasswordHasher hasher,
-                       LoginThrottle throttle, AuditService audit) {
+    public UserService(HubProperties props, UserRepo users, TokenRepo tokens, SessionService sessions,
+                       PasswordHasher hasher, LoginThrottle throttle, AuditService audit) {
         this.cfg = props.users() == null ? HubProperties.Users.DEFAULT : props.users();
         this.users = users;
+        this.tokens = tokens;
         this.sessions = sessions;
         this.hasher = hasher;
         this.throttle = throttle;
@@ -278,8 +281,9 @@ public class UserService {
     }
 
     /**
-     * Changes another user's role or turns them off or on. {@code actorId} is the administrator doing it, or null
-     * for an API token. Either change ends the user's sessions, so it takes effect at once.
+     * Changes another user's role or turns them off or on. {@code actorId} is the administrator doing it (also when
+     * through a token that acts for them), or null for a token that acts for nobody. Either change ends the user's
+     * sessions, so it takes effect at once; the tokens that act for them follow at their next use (TokenService).
      */
     public UserRecord update(String id, Role role, Boolean disabled, String actorId) {
         UserRecord u = find(id);
@@ -306,7 +310,14 @@ public class UserService {
         if ((role != null && role != u.role()) || disable) {
             sessions.endAll(id);
         }
-        return find(id);
+        UserRecord after = find(id);
+        int owned = tokens.countUsableOwnedBy(id, System.currentTimeMillis());
+        if (owned > 0 && (after.disabled() != u.disabled() || after.role() != u.role())) {
+            log.info("{} token(s) acting for user '{}' {}", owned, u.username(), after.disabled() ? "are suspended"
+                    : after.role() == Role.READ ? "can only read (join keys and enrollment tokens are suspended)"
+                    : "work fully again");
+        }
+        return after;
     }
 
     /** Gives a user a new temporary password, to be changed at their next sign-in, and ends their sessions. */
@@ -323,14 +334,22 @@ public class UserService {
         return new WithPassword(find(id), temporary);
     }
 
-    public void delete(String id, String actorId) {
+    /**
+     * Deletes a user, and with them (the database's cascade) every token that acts for them: they saw each value once
+     * and may have kept it. Agents' own credentials act for nobody, so servers keep reporting. Returns how many of those
+     * tokens could still have been used.
+     */
+    public int delete(String id, String actorId) {
         UserRecord u = find(id);
         notYourself(u, actorId);
         if (isLastAdmin(u)) {
             throw lastAdmin();
         }
+        int revoked = tokens.countUsableOwnedBy(id, System.currentTimeMillis());
         users.delete(id);
-        log.info("User '{}' was deleted", u.username());
+        log.info("User '{}' was deleted{}", u.username(),
+                revoked > 0 ? "; " + revoked + " token(s) acting for them were revoked" : "");
+        return revoked;
     }
 
     /** The account a throttled attempt was for, when there is one; a name nobody has may be a mistyped password. */

@@ -73,8 +73,13 @@ func shortID(id string) string {
 	return id
 }
 
-// madeBy says who made a token, as the hub recorded it; "-" for a token made before the hub kept that.
+// madeBy says who made a token, as the hub recorded it, and whether the user it acts for limits it now; "-" for a
+// token made before the hub kept that.
 func madeBy(t hubapi.TokenView) string {
+	return maker(t) + limitNote(t.Limit)
+}
+
+func maker(t hubapi.TokenView) string {
 	switch t.CreatedByKind {
 	case "hub":
 		return "hub"
@@ -89,6 +94,17 @@ func madeBy(t hubapi.TokenView) string {
 		return "-"
 	}
 	return t.CreatedBy
+}
+
+// limitNote marks a token that the account of the user it acts for limits: disabled, or read-only.
+func limitNote(limit string) string {
+	switch limit {
+	case "suspended":
+		return " (suspended)"
+	case "read_only":
+		return " (read-only now)"
+	}
+	return ""
 }
 
 func printStatus(w io.Writer, st hubapi.Status) {

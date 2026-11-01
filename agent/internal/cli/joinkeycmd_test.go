@@ -172,6 +172,31 @@ func TestMadeByNamesTheKindOfMaker(t *testing.T) {
 	}
 }
 
+func TestListsMarkATokenItsUserLimits(t *testing.T) {
+	_, _, run := newJoinHub(t,
+		hubapi.TokenView{ID: "aaaa1111-x", Name: "alice-cli", Scope: "ADMIN", CreatedBy: "alice", CreatedByKind: "user",
+			OwnerID: "u1", Limit: "read_only"},
+		hubapi.TokenView{ID: "bbbb2222-y", Name: "bob-key", Scope: "JOIN", CreatedBy: "bob", CreatedByKind: "user",
+			OwnerID: "u2", Limit: "suspended"},
+		hubapi.TokenView{ID: "cccc3333-z", Name: "hub-ci", Scope: "READ", CreatedBy: "bootstrap", CreatedByKind: "token"})
+	code, out, _ := run("token", "list")
+	if code != exitOK {
+		t.Fatal(out)
+	}
+	for _, want := range []string{"alice (read-only now)", "bob (suspended)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "token bootstrap (") {
+		t.Errorf("a token that works fully is not marked:\n%s", out)
+	}
+	code, out, _ = run("join-key", "list")
+	if code != exitOK || !strings.Contains(out, "bob (suspended)") {
+		t.Errorf("join-key list lacks the mark (exit %d):\n%s", code, out)
+	}
+}
+
 func TestJoinKeyRevokeByIDPrefix(t *testing.T) {
 	hub, _, run := newJoinHub(t,
 		hubapi.TokenView{ID: "aaaa1111-x", Name: "fleet", Scope: "JOIN"},

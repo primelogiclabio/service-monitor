@@ -7,8 +7,7 @@ import java.util.stream.Stream;
 import io.primelogiclab.svcmon.hub.audit.AuditService;
 import io.primelogiclab.svcmon.hub.model.Role;
 import io.primelogiclab.svcmon.hub.model.UserRecord;
-import io.primelogiclab.svcmon.hub.security.SessionService;
-import io.primelogiclab.svcmon.hub.security.TokenAuthFilter;
+import io.primelogiclab.svcmon.hub.security.TokenService;
 import io.primelogiclab.svcmon.hub.security.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -96,7 +95,10 @@ public class UserController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String id, HttpServletRequest req) {
         named(req, id);
-        users.delete(id, actor(req));
+        int revoked = users.delete(id, actor(req));
+        if (revoked > 0) {
+            req.setAttribute(AuditService.DETAIL_ATTR, revoked + " token(s) revoked");
+        }
     }
 
     /** Names the user a change is about in the audit, by name rather than id; returns the name, or null. */
@@ -109,8 +111,11 @@ public class UserController {
         return name;
     }
 
-    /** The administrator's own user id, or null when an ADMIN API token is calling. */
+    /**
+     * The administrator's own user id, also when they call with a token that acts for them (which their own delete
+     * would revoke), or null for a token that acts for nobody.
+     */
     private static String actor(HttpServletRequest req) {
-        return req.getAttribute(TokenAuthFilter.USER_ATTR) instanceof SessionService.Signed who ? who.user().id() : null;
+        return TokenService.ownerOf(req);
     }
 }

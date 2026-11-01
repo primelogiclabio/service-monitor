@@ -102,7 +102,7 @@ public class AgentService {
                 trim(req.os(), 100), trim(req.agentVersion(), 50), now, now);
         servers.insert(server);
         TokenService.Issued agentToken = tokens.issue("agent:" + name, Scope.AGENT, server.id(), null,
-                Actor.registeredWith(enroll));
+                Actor.registeredWith(enroll), null);
         return new RegisterResponse(server.id(), agentToken.raw(), props.agentHeartbeatSeconds());
     }
 

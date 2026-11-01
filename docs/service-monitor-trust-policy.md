@@ -104,7 +104,7 @@ In one SQLite file in its data folder:
 
 - the servers (name, cluster, operating system text, agent version, last seen) and the checks (type, target, settings, interval);
 - every check result for 30 days (`svcmon.retention-days`), then it is deleted;
-- API tokens, as SHA-256 fingerprints only, never the tokens themselves, each with its name and who made it (a user name, an API token's name, the join key or enrollment token an agent registered with, or the hub);
+- API tokens, as SHA-256 fingerprints only, never the tokens themselves, each with its name, who made it (a user name, an API token's name, the join key or enrollment token an agent registered with, or the hub) and, for a token a person made, the hub user it acts for;
 - alert channels, including their secrets: webhook and Slack or Discord addresses, signing secrets and the SMTP password;
 - the users: name, role, password as a salted PBKDF2 hash, when they last signed in and changed their password; for someone who signs in with an identity provider, no password but the provider's issuer and the person's subject there (an opaque id), which link the hub user to that account;
 - while someone is signed in: a SHA-256 fingerprint of their cookie, how they signed in (password or identity provider), the client address, the browser's own description of itself (user agent) and the times; deleted when the sign-in ends;

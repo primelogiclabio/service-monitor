@@ -193,4 +193,8 @@ type TokenView struct {
 	// Who made it: a user, token, join key or enrollment token name, or "hub"; empty for tokens older than that record.
 	CreatedBy     string `json:"createdBy,omitempty"`
 	CreatedByKind string `json:"createdByKind,omitempty"` // user, token, join_key, enrollment_token or hub
+	// The user the token acts for, empty for one that acts for nobody (the hub's, an agent's), and what that user's
+	// account does to it now: "suspended" (disabled) or "read_only"; empty when it works fully.
+	OwnerID string `json:"ownerId,omitempty"`
+	Limit   string `json:"limit,omitempty"`
 }

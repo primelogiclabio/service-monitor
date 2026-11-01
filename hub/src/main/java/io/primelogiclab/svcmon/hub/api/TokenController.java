@@ -41,11 +41,13 @@ public class TokenController {
 
     /**
      * useCount is only set for join keys: how many servers they registered (usedAt is the last time). createdBy and
-     * createdByKind say who made it (user, token, join_key, enrollment_token or hub); absent for older tokens.
+     * createdByKind say who made it (user, token, join_key, enrollment_token or hub); absent for older tokens. ownerId
+     * is the user it acts for (absent: nobody), and limit what that user's account does to it now: "suspended"
+     * (disabled, or read-only for a join key or enrollment token) or "read_only"; absent when it works fully.
      */
     public record TokenView(String id, String name, Scope scope, String serverId, long createdAt,
                             Long expiresAt, Long usedAt, String cluster, Integer useCount, String createdBy,
-                            String createdByKind) {
+                            String createdByKind, String ownerId, String limit) {
     }
 
     private final TokenService tokens;
@@ -58,7 +60,7 @@ public class TokenController {
 
     @GetMapping("/tokens")
     public List<TokenView> list() {
-        return repo.findAll().stream().map(TokenController::view).toList();
+        return repo.findAll().stream().map(this::view).toList();
     }
 
     /** Creates an ADMIN or READ API token (for the CLI, a console, scripts). */
@@ -72,7 +74,7 @@ public class TokenController {
             throw ApiException.badRequest("scope must be ADMIN or READ");
         }
         TokenService.Issued issued = tokens.issue(req.name().trim(), req.scope(), null, null,
-                AuditService.actorOf(http));
+                AuditService.actorOf(http), TokenService.ownerOf(http));
         return audited(http, issued, req.scope().name());
     }
 
@@ -95,13 +97,13 @@ public class TokenController {
         }
         String name = req == null || req.name() == null || req.name().isBlank() ? "enrollment" : req.name().trim();
         long expires = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(ttl);
-        return audited(http, tokens.issue(name, Scope.ENROLL, null, expires, AuditService.actorOf(http)),
-                ttl + " minutes");
+        return audited(http, tokens.issue(name, Scope.ENROLL, null, expires, AuditService.actorOf(http),
+                TokenService.ownerOf(http)), ttl + " minutes");
     }
 
     @GetMapping("/join-keys")
     public List<TokenView> joinKeys() {
-        return repo.findAll().stream().filter(t -> t.scope() == Scope.JOIN).map(TokenController::view).toList();
+        return repo.findAll().stream().filter(t -> t.scope() == Scope.JOIN).map(this::view).toList();
     }
 
     /**
@@ -125,8 +127,8 @@ public class TokenController {
             }
             expires = System.currentTimeMillis() + TimeUnit.DAYS.toMillis(req.expiresInDays());
         }
-        return audited(http, tokens.issueJoinKey(req.name().trim(), cluster, expires, AuditService.actorOf(http)),
-                cluster == null ? null : "cluster " + cluster);
+        return audited(http, tokens.issueJoinKey(req.name().trim(), cluster, expires, AuditService.actorOf(http),
+                TokenService.ownerOf(http)), cluster == null ? null : "cluster " + cluster);
     }
 
     /** Stops a join key working. Servers it already registered keep their own credentials and are not affected. */
@@ -157,8 +159,14 @@ public class TokenController {
         http.setAttribute(AuditService.DETAIL_ATTR, about == null ? id : about + ", " + id);
     }
 
-    private static TokenView view(TokenRecord r) {
+    private TokenView view(TokenRecord r) {
+        String limit = switch (tokens.limit(r)) {
+            case NONE -> null;
+            case READ_ONLY -> "read_only";
+            case SUSPENDED -> "suspended";
+        };
         return new TokenView(r.id(), r.name(), r.scope(), r.serverId(), r.createdAt(), r.expiresAt(), r.usedAt(),
-                r.cluster(), r.scope() == Scope.JOIN ? r.useCount() : null, r.createdBy(), r.createdByKind());
+                r.cluster(), r.scope() == Scope.JOIN ? r.useCount() : null, r.createdBy(), r.createdByKind(),
+                r.ownerUserId(), limit);
     }
 }
