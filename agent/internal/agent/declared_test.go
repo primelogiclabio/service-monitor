@@ -211,6 +211,29 @@ func TestAHubThatRefusesIsRetriedAndLoggedOnce(t *testing.T) {
 	}
 }
 
+func TestARejectedURLIsLoggedWithoutItsLogin(t *testing.T) {
+	dir := t.TempDir()
+	path := writeChecks(t, dir, `{"checks":[{"type":"http","target":"https://watch:s3cret@intranet.example/health"},`+
+		`{"type":"service","target":"getty@tty1"}]}`)
+	hub := &declareHub{response: hubapi.DeclareResponse{Results: []hubapi.DeclareResult{
+		{Index: 0, Result: "rejected", Error: "HTTP target must not contain a user name or password"},
+		{Index: 1, Result: "rejected", Error: "no such service"},
+	}}}
+	var logs bytes.Buffer
+	a := declaringAgent(t, hub, path, &logs)
+	if !a.syncDeclared(context.Background()) {
+		t.Fatal("the hub took the declaration")
+	}
+	for _, want := range []string{"entry 1 (http https://intranet.example/health)", "entry 2 (service getty@tty1)"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("log lacks %q: %q", want, logs.String())
+		}
+	}
+	if strings.Contains(logs.String(), "s3cret") || strings.Contains(logs.String(), "watch") {
+		t.Fatalf("the log shows the login: %q", logs.String())
+	}
+}
+
 func TestRunDeclaresAtStartAndThenAsksForTheListAgain(t *testing.T) {
 	dir := t.TempDir()
 	path := writeChecks(t, dir, `{"checks":[{"type":"cpu"}]}`)

@@ -106,6 +106,24 @@ func TestAgentCheckAddKeepsTheFileWhenTheHubCannotBeReached(t *testing.T) {
 	}
 }
 
+func TestAgentCheckAddRefusesALoginInAURL(t *testing.T) {
+	cfg, sent := declareSetup(t, "", hubapi.DeclareResponse{})
+	code, out, errOut := agentCheckRun(t, "add", "http", "https://watch:s3cret@intranet.example/health", "--config", cfg)
+	if code == exitOK || !strings.Contains(errOut, "must not contain a user name or password") || *sent != nil {
+		t.Fatalf("exit %d, sent %v: %s%s", code, *sent, out, errOut)
+	}
+	if strings.Contains(errOut, "s3cret") {
+		t.Fatalf("the error shows the password: %s", errOut)
+	}
+	if list := checksIn(t, cfg); len(list) != 0 {
+		t.Fatalf("file: %+v", list)
+	}
+	// An @ after the host is not a login.
+	if code, out, errOut := agentCheckRun(t, "add", "http", "https://example.com/go?mail=a@b.example", "--no-declare", "--config", cfg); code != exitOK {
+		t.Fatalf("exit %d: %s%s", code, out, errOut)
+	}
+}
+
 func TestAgentCheckNoDeclareSendsNothing(t *testing.T) {
 	cfg, sent := declareSetup(t, "", hubapi.DeclareResponse{})
 	code, out, errOut := agentCheckRun(t, "add", "cpu", "--no-declare", "--config", cfg)

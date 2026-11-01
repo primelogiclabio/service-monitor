@@ -169,7 +169,11 @@ public class DeclaredChecksService {
         return new Outcome(index, def.id(), "created", null);
     }
 
-    /** The id the file gives, or the type and target. The prefix keeps the two kinds from colliding. */
+    /**
+     * The id the file gives, or the type and target. The prefix keeps the two kinds from colliding. An HTTP target is
+     * keyed without a login in its URL: the hub refuses one and removed the stored ones (V9), so a file that still has
+     * it keeps matching its check (and is rejected) instead of switching that check off.
+     */
     private static String keyOf(Declared d) {
         if (d.id() != null && !d.id().isBlank()) {
             String id = d.id().trim();
@@ -181,7 +185,9 @@ public class DeclaredChecksService {
         if (d.type() == null) {
             throw ApiException.badRequest("type is required");
         }
-        return "type:" + d.type().name() + ":" + (d.target() == null ? "" : d.target().trim());
+        String target = d.target() == null ? "" : d.target().trim();
+        return "type:" + d.type().name() + ":"
+                + (d.type() == CheckType.HTTP ? CheckService.withoutUrlLogin(target) : target);
     }
 
     private static String nameOf(Declared d) {

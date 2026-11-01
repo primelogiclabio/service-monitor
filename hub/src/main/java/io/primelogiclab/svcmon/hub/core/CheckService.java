@@ -178,6 +178,25 @@ public class CheckService {
                 runFrom, r.serverId(), enabled, createdAt);
     }
 
+    /**
+     * The URL without the user name and password before its host ({@code https://user:pw@host/} becomes
+     * {@code https://host/}), or the text unchanged when it holds none. HTTP targets may not hold one (see
+     * validateTarget); this is for URLs stored or declared before that.
+     */
+    public static String withoutUrlLogin(String url) {
+        if (url == null) {
+            return null;
+        }
+        String login;
+        try {
+            login = URI.create(url).getRawUserInfo();
+        } catch (IllegalArgumentException e) {
+            return url;
+        }
+        int at = login == null ? -1 : url.indexOf("//" + login + "@");
+        return at < 0 ? url : url.substring(0, at + 2) + url.substring(at + 3 + login.length());
+    }
+
     /** A unix socket path, or a Windows named pipe: \\.\pipe\name, //./pipe/name or npipe:////./pipe/name. */
     private static boolean validSocket(String socket) {
         if (socket.length() > 256 || socket.chars().anyMatch(ch -> ch < 0x20 || ch == 0x7f)) {
@@ -206,6 +225,11 @@ public class CheckService {
                 if (uri.getHost() == null || scheme == null
                         || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
                     throw ApiException.badRequest("HTTP target must be an http:// or https:// URL");
+                }
+                // Checks only show that the site answers; a login in the URL would be shown to readers and alerted.
+                if (uri.getRawUserInfo() != null) {
+                    throw ApiException.badRequest("HTTP target must not contain a user name or password: checks do not"
+                            + " sign in (for a page behind a login, add 401 to expectStatus)");
                 }
             }
             case TCP -> {

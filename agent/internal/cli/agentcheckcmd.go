@@ -135,6 +135,10 @@ func (e *env) agentCheckAdd(args []string) int {
 	if len(pos) == 2 {
 		entry.Target = pos[1]
 	}
+	if typ == "HTTP" && agent.HasURLLogin(entry.Target) {
+		return e.fail(errors.New("an HTTP check's URL must not contain a user name or password: checks do not sign in" +
+			" (for a page behind a login, accept its 401 with --expect-status 200-299,401)"))
+	}
 
 	path := agent.ChecksPath(*cfgPath)
 	list, _, err := agent.LoadChecks(path)
