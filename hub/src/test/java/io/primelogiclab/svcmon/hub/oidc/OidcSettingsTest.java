@@ -26,7 +26,7 @@ class OidcSettingsTest {
     private static HubProperties props(String publicUrl, Oidc oidc) {
         return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), false, 50, publicUrl, true, 200,
                 HubProperties.Users.DEFAULT, HubProperties.Sessions.DEFAULT, true, "classpath:/ui/",
-                HubProperties.Access.DEFAULT, HubProperties.Audit.DEFAULT, oidc);
+                HubProperties.Access.DEFAULT, HubProperties.Audit.DEFAULT, oidc, HubProperties.Secrets.DEFAULT);
     }
 
     private static Oidc oidc(String issuer, String clientId, ClientAuth auth, Path secret, String alg, List<String> scopes,

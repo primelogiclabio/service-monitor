@@ -95,7 +95,8 @@ class HubInitTest {
         Set<String> notForUsers = Set.of("embedded-ui"); // only tests change where the jar's dashboard sits
         List<String> missing = new ArrayList<>();
         for (Class<?> type : new Class<?>[] {HubProperties.class, HubProperties.Users.class, HubProperties.Sessions.class,
-                HubProperties.Access.class, HubProperties.Audit.class, HubProperties.Oidc.class}) {
+                HubProperties.Access.class, HubProperties.Audit.class, HubProperties.Oidc.class,
+                HubProperties.Secrets.class}) {
             for (RecordComponent c : type.getRecordComponents()) {
                 String name = kebab(c.getName());
                 if (!notForUsers.contains(name) && !text.contains(name + ":")) {

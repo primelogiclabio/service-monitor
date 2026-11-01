@@ -41,7 +41,20 @@ public record HubProperties(
         /** How long the audit of sign-ins and changes is kept. */
         @DefaultValue Audit audit,
         /** Sign-in with an identity provider (OpenID Connect), run by the hub itself; off unless issuer is set. */
-        @DefaultValue Oidc oidc) {
+        @DefaultValue Oidc oidc,
+        /** The key the hub encrypts the secrets it stores with. */
+        @DefaultValue Secrets secrets) {
+
+    /**
+     * Alert channel secrets and HTTP check header values are stored encrypted (AES-256-GCM) with a key the hub makes
+     * and keeps in a file of its own, so a copy of the database alone does not give them away.
+     */
+    public record Secrets(
+            /** The key file; unset means secrets-key.json in the data folder. A path elsewhere keeps it out of the folder's backups. */
+            Path keyFile) {
+
+        public static final Secrets DEFAULT = new Secrets(null);
+    }
 
     /**
      * An identity provider people sign in with, besides their password. The hub runs the sign-in itself (the

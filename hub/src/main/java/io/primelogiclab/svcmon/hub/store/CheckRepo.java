@@ -8,6 +8,8 @@ import io.primelogiclab.svcmon.hub.model.CheckDef;
 import io.primelogiclab.svcmon.hub.model.CheckSource;
 import io.primelogiclab.svcmon.hub.model.CheckType;
 import io.primelogiclab.svcmon.hub.model.RunFrom;
+import io.primelogiclab.svcmon.hub.secrets.SecretBox;
+import io.primelogiclab.svcmon.hub.secrets.SecretFields;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -24,15 +26,19 @@ public class CheckRepo {
     private final JsonMapper json;
     private final RowMapper<CheckDef> mapper;
 
-    public CheckRepo(JdbcClient jdbc, JsonMapper json) {
+    private final SecretBox box;
+
+    /** HTTP header values are stored encrypted with the hub's key; everything above this class sees them plain. */
+    public CheckRepo(JdbcClient jdbc, JsonMapper json, SecretBox box) {
         this.jdbc = jdbc;
         this.json = json;
+        this.box = box;
         this.mapper = (rs, i) -> new CheckDef(
                 rs.getString("id"),
                 rs.getString("name"),
                 CheckType.valueOf(rs.getString("type")),
                 rs.getString("target"),
-                json.readValue(rs.getString("config"), MAP_TYPE),
+                SecretFields.check(json.readValue(rs.getString("config"), MAP_TYPE), box::open),
                 rs.getInt("interval_seconds"),
                 rs.getInt("timeout_ms"),
                 rs.getInt("failures_before_down"),
@@ -68,7 +74,7 @@ public class CheckRepo {
         p.put("name", c.name());
         p.put("type", c.type().name());
         p.put("target", c.target());
-        p.put("config", json.writeValueAsString(c.config()));
+        p.put("config", json.writeValueAsString(SecretFields.check(c.config(), box::seal)));
         p.put("interval", c.intervalSeconds());
         p.put("timeout", c.timeoutMs());
         p.put("failures", c.failuresBeforeDown());

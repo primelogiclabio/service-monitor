@@ -11,6 +11,8 @@ import java.util.stream.Collectors;
 import io.primelogiclab.svcmon.hub.model.AlertChannel;
 import io.primelogiclab.svcmon.hub.model.AlertType;
 import io.primelogiclab.svcmon.hub.model.Status;
+import io.primelogiclab.svcmon.hub.secrets.SecretBox;
+import io.primelogiclab.svcmon.hub.secrets.SecretFields;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -27,20 +29,27 @@ public class AlertChannelRepo {
     private final JsonMapper json;
     private final RowMapper<AlertChannel> mapper;
 
-    public AlertChannelRepo(JdbcClient jdbc, JsonMapper json) {
+    private final SecretBox box;
+
+    /** The secrets in a channel's config are stored encrypted with the hub's key; everything above sees them plain. */
+    public AlertChannelRepo(JdbcClient jdbc, JsonMapper json, SecretBox box) {
         this.jdbc = jdbc;
         this.json = json;
-        this.mapper = (rs, i) -> new AlertChannel(
-                rs.getString("id"),
-                rs.getString("name"),
-                AlertType.valueOf(rs.getString("type")),
-                json.readValue(rs.getString("config"), MAP_TYPE),
-                parseStatuses(rs.getString("statuses")),
-                rs.getInt("enabled") != 0,
-                rs.getLong("created_at"),
-                Rows.lng(rs, "last_attempt_at"),
-                Rows.lng(rs, "last_success_at"),
-                rs.getString("last_error"));
+        this.box = box;
+        this.mapper = (rs, i) -> {
+            AlertType type = AlertType.valueOf(rs.getString("type"));
+            return new AlertChannel(
+                    rs.getString("id"),
+                    rs.getString("name"),
+                    type,
+                    SecretFields.channel(type, json.readValue(rs.getString("config"), MAP_TYPE), box::open),
+                    parseStatuses(rs.getString("statuses")),
+                    rs.getInt("enabled") != 0,
+                    rs.getLong("created_at"),
+                    Rows.lng(rs, "last_attempt_at"),
+                    Rows.lng(rs, "last_success_at"),
+                    rs.getString("last_error"));
+        };
     }
 
     static Set<Status> parseStatuses(String csv) {
@@ -62,7 +71,7 @@ public class AlertChannelRepo {
         p.put("id", c.id());
         p.put("name", c.name());
         p.put("type", c.type().name());
-        p.put("config", json.writeValueAsString(c.config()));
+        p.put("config", json.writeValueAsString(SecretFields.channel(c.type(), c.config(), box::seal)));
         p.put("statuses", joinStatuses(c.statuses()));
         p.put("enabled", c.enabled() ? 1 : 0);
         p.put("createdAt", c.createdAt());

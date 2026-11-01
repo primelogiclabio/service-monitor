@@ -23,6 +23,10 @@ public class HubApplication {
         if (args.length > 0 && args[0].equals("oidc")) {
             System.exit(OidcCommand.run(args, System.out, System.err));
         }
+        // "secrets status|rotate-key|forget-unreadable" reaches the database and the key for its stored secrets.
+        if (args.length > 0 && args[0].equals("secrets")) {
+            System.exit(SecretsCommand.run(args, System.out, System.err));
+        }
         SpringApplication.run(HubApplication.class, args);
     }
 }
