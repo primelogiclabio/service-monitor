@@ -196,7 +196,7 @@ Keeping it safe:
 - The hub keeps an audit: sign-ins (30 days) and every change a person makes (365 days), each with who, from which address, what was called (the route, not the body) and how it ended. It is written where the hub already knows the answer (the sign-in code, and the authentication filter once a write has been answered), so a new endpoint is covered without being taught to log itself. What it leaves out is the point: no request body, password, token or cookie, and a name nobody has is written as "unknown". Agents appear only when they register, so the table is about people.
 - The admin's allowlist limits what an agent reports.
 - HTTP checks' header values (often an API token) are masked in every API answer in the same way, and an update that sends the mask back keeps the stored value; only the agent that runs the check gets them.
-- Alert channels: webhook, Slack, Discord and email are built, with secrets masked in every response. The Shoutrrr project (Go, MIT) lists around thirty services and is a useful reference for what to add later, such as Telegram and ntfy.
+- Alert channels: webhook, Slack, Discord and email are built, with secrets masked in every response, and managed from the API, the CLI or the dashboard's Settings. The Shoutrrr project (Go, MIT) lists around thirty services and is a useful reference for what to add later, such as Telegram and ntfy.
 
 ## 9. Build order
 
