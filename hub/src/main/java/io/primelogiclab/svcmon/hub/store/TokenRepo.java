@@ -24,7 +24,8 @@ public class TokenRepo {
             rs.getString("cluster"),
             rs.getInt("use_count"),
             rs.getString("created_by"),
-            rs.getString("created_by_kind"));
+            rs.getString("created_by_kind"),
+            rs.getString("owner_user_id"));
 
     private final JdbcClient jdbc;
 
@@ -34,8 +35,8 @@ public class TokenRepo {
 
     public void insert(TokenRecord t) {
         jdbc.sql("INSERT INTO tokens (id, name, scope, server_id, token_hash, created_at, expires_at, used_at, cluster, "
-                        + "created_by, created_by_kind) VALUES (:id, :name, :scope, :serverId, :hash, :createdAt, "
-                        + ":expiresAt, :usedAt, :cluster, :createdBy, :createdByKind)")
+                        + "created_by, created_by_kind, owner_user_id) VALUES (:id, :name, :scope, :serverId, :hash, "
+                        + ":createdAt, :expiresAt, :usedAt, :cluster, :createdBy, :createdByKind, :owner)")
                 .param("id", t.id())
                 .param("name", t.name())
                 .param("scope", t.scope().name())
@@ -47,7 +48,21 @@ public class TokenRepo {
                 .param("cluster", t.cluster())
                 .param("createdBy", t.createdBy())
                 .param("createdByKind", t.createdByKind())
+                .param("owner", t.ownerUserId())
                 .update();
+    }
+
+    /**
+     * How many of the tokens acting for this user could still be used: not expired, and not an enrollment token that has
+     * done its one registration. What deleting, disabling or demoting the user does to.
+     */
+    public int countUsableOwnedBy(String userId, long now) {
+        return jdbc.sql("SELECT COUNT(*) FROM tokens WHERE owner_user_id = :u"
+                        + " AND (expires_at IS NULL OR expires_at >= :now) AND NOT (scope = 'ENROLL' AND used_at IS NOT NULL)")
+                .param("u", userId)
+                .param("now", now)
+                .query(Integer.class)
+                .single();
     }
 
     public Optional<TokenRecord> find(String id) {

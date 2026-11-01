@@ -170,6 +170,12 @@ public class LiveHandler extends TextWebSocketHandler {
             close(client, CloseStatus.POLICY_VIOLATION.withReason("unauthorized"));
             return;
         }
+        if (tokens.limit(token) == TokenService.Limit.SUSPENDED) {
+            log.warn("Rejected live connection from {}: token '{}' acts for a user who is disabled or may no longer use"
+                    + " it", client.session.getRemoteAddress(), token.name());
+            close(client, CloseStatus.POLICY_VIOLATION.withReason("token suspended"));
+            return;
+        }
         if (token.scope() != Scope.READ && token.scope() != Scope.ADMIN) {
             log.warn("Rejected live connection from {}: token '{}' has scope {}", client.session.getRemoteAddress(),
                     token.name(), token.scope());

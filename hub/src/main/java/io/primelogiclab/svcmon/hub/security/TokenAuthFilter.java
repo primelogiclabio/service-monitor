@@ -135,10 +135,28 @@ public class TokenAuthFilter extends OncePerRequestFilter {
             reject(resp, 401, "unauthorized", "Sign in, or send a valid bearer token");
             return;
         }
+        TokenService.Limit limit = tokens.limit(token.get());
+        if (limit == TokenService.Limit.SUSPENDED) {
+            log.warn("Rejected {} {} from {}: token '{}' acts for a user who is disabled or may no longer use it",
+                    req.getMethod(), path, req.getRemoteAddr(), token.get().name());
+            String message = "This token acts for a user who is disabled or may no longer use it";
+            if (isPerson(token.get())) {
+                rejectChange(req, resp, new Actor(token.get().name(), "token"), "token_suspended", message);
+            } else {
+                reject(resp, 403, "token_suspended", message);
+            }
+            return;
+        }
+        if (limit == TokenService.Limit.READ_ONLY) {
+            token = Optional.of(token.get().withScope(Scope.READ));
+        }
         if (!required(req.getMethod(), path).contains(token.get().scope())) {
-            log.warn("Rejected {} {} from {}: token '{}' has scope {}", req.getMethod(), path, req.getRemoteAddr(),
-                    token.get().name(), token.get().scope());
-            String message = "This token's scope does not allow " + req.getMethod() + " " + path;
+            log.warn("Rejected {} {} from {}: token '{}' has scope {}{}", req.getMethod(), path, req.getRemoteAddr(),
+                    token.get().name(), token.get().scope(), limit == TokenService.Limit.READ_ONLY
+                            ? " while the user it acts for is read-only" : "");
+            String message = limit == TokenService.Limit.READ_ONLY
+                    ? "This token can only read while the user it acts for is read-only"
+                    : "This token's scope does not allow " + req.getMethod() + " " + path;
             if (isPerson(token.get())) {
                 rejectChange(req, resp, new Actor(token.get().name(), "token"), "forbidden", message);
             } else {

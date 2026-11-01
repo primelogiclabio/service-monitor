@@ -132,7 +132,7 @@ class TokenCreatorTest {
     @Test
     void aTokenFromBeforeTheHubRecordedItHasNoMaker() throws Exception {
         repo.insert(new TokenRecord("old-token-id", "from 0.2.3", Scope.READ, null, "0".repeat(64),
-                System.currentTimeMillis(), null, null, null, 0, null, null));
+                System.currentTimeMillis(), null, null, null, 0, null, null, null));
         Map<String, Object> old = listed("old-token-id");
         assertNull(old.get("createdBy"));
         assertNull(old.get("createdByKind"));

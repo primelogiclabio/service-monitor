@@ -146,7 +146,7 @@ class JoinKeyTest {
 
     @Test
     void anExpiredKeyIsRefused() throws Exception {
-        String raw = tokens.issueJoinKey("old", null, System.currentTimeMillis() - 1000, null).raw();
+        String raw = tokens.issueJoinKey("old", null, System.currentTimeMillis() - 1000, null, null).raw();
         assertEquals(401, register(raw, "late01", null).status());
 
         Map<String, Object> key = createKey("{\"name\":\"month\",\"expiresInDays\":30}");

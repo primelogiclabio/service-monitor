@@ -46,7 +46,7 @@ public class Bootstrap implements ApplicationRunner {
         }
         if (noAdmin || props.newAdminToken()) {
             TokenService.Issued issued = tokens.issue(noAdmin ? "initial-admin" : "recovery-admin", Scope.ADMIN, null,
-                    null, Actor.HUB);
+                    null, Actor.HUB, null);
             System.out.println();
             System.out.println("==================================================================");
             System.out.println(" New admin token (shown once, store it somewhere safe):");
