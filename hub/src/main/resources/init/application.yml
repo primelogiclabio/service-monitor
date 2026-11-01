@@ -21,6 +21,12 @@
 # svcmon:
 ##   The SQLite database lives here (created on first start). Back up this folder.
 #   data-dir: ./data
+##   The key the hub encrypts its stored secrets with (alert channel secrets, HTTP check header values), made at the
+##   first start; secrets-key.json in data-dir unless set. Without it those secrets cannot be read, so keep a copy,
+##   apart from copies of the database: a file elsewhere stays out of the data folder's backups. To see how they
+##   stand, or to change the key:  java -jar svcmon-hub.jar secrets status|rotate-key
+#   secrets:
+#     key-file: /etc/svcmon-hub/secrets-key.json
 ##   Raw check results older than this many days are deleted.
 #   retention-days: 30
 ##   How often agents are told to send a heartbeat and their results, in seconds.

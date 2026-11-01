@@ -262,6 +262,18 @@ Text is cut to one line of at most 200 characters. The agents' own calls (report
 
 `GET /api/v1/audit` answers newest first, as `{"events": [...], "next": <id>}`. It takes `category` (`sign_in` or `change`; both when left out), `limit` (1 to 500, 100 by default) and `before`: pass `next` to get the page after. `next` is absent on the last page. Old events are deleted every few hours, each part after its own number of days (1 to 3650).
 
+## Stored secrets
+
+The hub stores the alert channels' secrets (webhook, Slack and Discord addresses, webhook header values, signing secrets, the SMTP password) and HTTP checks' header values encrypted, with AES-256-GCM. The key is made at the first start and kept in `secrets-key.json` in the data folder, readable only by the hub's account on Linux and macOS (on Windows the data folder's permissions protect it), or in the file `svcmon.secrets.key-file` names. Nothing else is encrypted: names, targets and the other settings stay readable in the database.
+
+- **What it protects:** a copy of the database without the key, such as a backup of `svcmon.db` alone or a dump of it, gives none of the secrets away. Someone who can also read the key file can read them, so keep the key out of the database's backups: point `svcmon.secrets.key-file` at a file outside the data folder (a mounted secret, say) and back it up on its own.
+- **Keep a copy of the key.** Without it the stored secrets cannot be read. A hub whose key file is missing, or does not open what is stored, refuses to start and names the file; it never makes a new key over secrets it cannot read.
+- `java -jar svcmon-hub.jar secrets status` shows where the key file is and how many secrets are encrypted, not yet encrypted (the hub encrypts them at its next start) or unreadable, and where.
+- `secrets rotate-key` makes a new key and encrypts every stored secret with it again. The old key stays in the file until nothing uses it, so stopping halfway leaves everything readable. Stopping the hub first is safest.
+- `secrets forget-unreadable` is for a key that is lost for good: it removes the secrets no key can read (and makes a new key file when there is none), switches off the alert channels that lost one, and lists what to enter again.
+
+Like `users reset`, these commands read the hub's settings (`application.yml` in the current folder, `--svcmon.*` flags) and need someone who may write the data folder.
+
 ## Build the agent and CLI
 
 Needs Go 1.27 or newer (https://go.dev/dl/). One command builds every platform, with no C toolchain:
@@ -358,6 +370,8 @@ An upgrade keeps everything that identifies the installation: the hub's database
 
 **From a hub that used a provider's sign-in or the dashboard's proxy mode.** The hub no longer accepts a provider's tokens, and the dashboard always signs in with the hub's own accounts. Settings under `svcmon.jwt` and `svcmon.ui.proxy` stop the hub with a message, also when they come from environment variables (`SVCMON_JWT_ISSUER` and the like), and so do leftover `SVCMON_LOCALADMIN_*` variables. Remove them. Make the gateway a gate (see "Behind a sign-in gateway"): nginx stops adding the token and gates `/` and `/api/` instead, leaving `/api/v1/agent/` and `/api/v1/health` alone. Remove `"proxy"` from the dashboard's `config.json` if it is served from a folder. People then sign in with a hub account: an administrator who signed in only through the provider needs one (the old local admin became the user `admin`), made from inside with `users reset` or by another administrator.
 
+**To a hub that encrypts stored secrets (after 0.2.3).** At its first start the hub makes `secrets-key.json` in the data folder and encrypts the alert channel secrets and HTTP check header values already stored; the log says how many. It then rebuilds the database file once (`VACUUM`), so no copy of them as they were is left in its free space or its log; a large database takes a moment. An older hub cannot read them, so going back needs the copy of the data folder taken before the upgrade. Back up the key file from now on (see "Stored secrets").
+
 **To a hub with sign-in with an identity provider.** The database gains the provider's issuer and subject for users and how each sign-in was made (migration V7); there is nothing to do, and sign-in with a provider stays off until `svcmon.oidc.issuer` is set. A hub that people reached through a sign-in gateway can then drop the gateway: see "Sign-in with an identity provider".
 
 **A hub that people reach from outside the internal network.** A hub with internal-only access refuses everyone outside until `svcmon.access.allow-outside: true` is set, and then only over HTTPS. Before upgrading such a hub, check that the proxy in front of it sends `X-Forwarded-For` and `X-Forwarded-Proto` (see "Access from outside the internal network"); a proxy on the same machine that does not send them makes every request look inside. Agents are not affected either way.
@@ -414,7 +428,7 @@ What triggers a message:
 A failing delivery is retried (after 0, 2 and 5 seconds by default) when the problem looks temporary, and then the error is kept and shown by `svcmon alert list` and on the dashboard's Alerts page. Deliveries run in the background, so a slow receiver never delays checks or other channels.
 
 Safety:
-- Webhook URLs, header values, signing secrets and the SMTP password are secrets. The API, CLI and dashboard show them masked, error messages never repeat a URL, and an update that sends a masked value back keeps the stored one (in the dashboard, leave the field empty). They are stored in the hub's database, so protect the data folder. On the command line prefer the environment variables `SVCMON_ALERT_URL`, `SVCMON_SMTP_PASSWORD` and `SVCMON_ALERT_SIGNING_SECRET`, which stay out of shell history and process lists.
+- Webhook URLs, header values, signing secrets and the SMTP password are secrets. The API, CLI and dashboard show them masked, error messages never repeat a URL, and an update that sends a masked value back keeps the stored one (in the dashboard, leave the field empty). They are stored in the hub's database encrypted with the hub's key (see "Stored secrets"), and the key sits in the data folder by default, so protect that folder. On the command line prefer the environment variables `SVCMON_ALERT_URL`, `SVCMON_SMTP_PASSWORD` and `SVCMON_ALERT_SIGNING_SECRET`, which stay out of shell history and process lists.
 - Slack and Discord URLs must be https. Email defaults to STARTTLS and refuses to fall back to clear text; `--security none` is for a trusted internal relay.
 - An email carries a plain-text part and an HTML part, so every client shows something readable: a coloured status band with the status written out, what happened, the check's message, a details table and, when `svcmon.public-url` is set, an "Open in dashboard" button to the server's page. The HTML has no images, scripts, web fonts or tracking; every name, target and message an agent supplies is escaped, and text-direction tricks are removed. A channel's `format` (`--format`) is `html` by default; `text` sends the plain text alone, for pagers and email-to-SMS gateways. Channels made before this setting existed get HTML.
 - With a signing secret, webhook bodies are signed: the hub sends `X-Svcmon-Signature: sha256=<HMAC-SHA256 of the body>`. The JSON has `event`, `kind` (`check`, `server` or `test`), `hub`, `time`, `subject`, `from`, `to` and `message`.
@@ -473,6 +487,7 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 |---|---|---|
 | `server.port` | 8080 | HTTP port |
 | `svcmon.data-dir` | `./data` | Where the SQLite database lives |
+| `svcmon.secrets.key-file` | unset | The key file the stored secrets are encrypted with; unset means `secrets-key.json` in the data folder. See "Stored secrets" |
 | `svcmon.retention-days` | 30 | Raw results older than this are deleted |
 | `svcmon.agent-heartbeat-seconds` | 30 | How often agents are told to report |
 | `svcmon.agent-stale-seconds` | 90 | Silence after which a server shows as offline |

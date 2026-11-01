@@ -312,7 +312,7 @@ public class AlertChannelService {
     /** On update, a secret that is missing or masked keeps its stored value. */
     static Map<String, Object> mergeSecrets(AlertType type, Map<String, Object> incoming, Map<String, Object> existing) {
         Map<String, Object> merged = new LinkedHashMap<>(incoming == null ? Map.of() : incoming);
-        for (String key : secretKeys(type)) {
+        for (String key : type.secretKeys()) {
             if (isMasked(merged.get(key))) {
                 if (existing.get(key) != null) {
                     merged.put(key, existing.get(key));
@@ -330,17 +330,9 @@ public class AlertChannelService {
         return merged;
     }
 
-    private static List<String> secretKeys(AlertType type) {
-        return switch (type) {
-            case WEBHOOK -> List.of("url", "signingSecret");
-            case SLACK, DISCORD -> List.of("url");
-            case EMAIL -> List.of("password");
-        };
-    }
-
     static Map<String, Object> mask(AlertType type, Map<String, Object> config) {
         Map<String, Object> out = new LinkedHashMap<>(config);
-        for (String key : secretKeys(type)) {
+        for (String key : type.secretKeys()) {
             Object v = out.get(key);
             if (v == null || v.toString().isBlank()) {
                 continue;

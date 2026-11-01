@@ -2,12 +2,9 @@ package io.primelogiclab.svcmon.hub.oidc;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.security.cert.X509Certificate;
 import java.text.ParseException;
 import java.util.Base64;
@@ -19,6 +16,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import io.primelogiclab.svcmon.hub.config.PrivateFile;
 
 /**
  * The hub's own key pair, with which it proves who it is to the identity provider (private_key_jwt) instead of a
@@ -120,26 +118,10 @@ public final class HubKey implements SigningKey {
 
     /** Writes the key next to the old file and moves it into place, so a reader never sees half a file. */
     private RSAKey save(RSAKey key, boolean replace) throws IOException {
-        Files.createDirectories(file.getParent());
-        Path tmp = file.resolveSibling(FILE + ".tmp");
-        Files.deleteIfExists(tmp);
-        if (Files.getFileStore(file.getParent()).supportsFileAttributeView("posix")) {
-            Files.createFile(tmp, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
-        } else {
-            Files.createFile(tmp);
-        }
-        Files.writeString(tmp, new JWKSet((JWK) key).toString(false), StandardCharsets.UTF_8);
-        if (replace) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } else {
-            try {
-                Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE);
-            } catch (FileAlreadyExistsException e) {
-                // another process made one first: use that
-                Files.deleteIfExists(tmp);
-                cached = null;
-                return current();
-            }
+        if (!PrivateFile.write(file, new JWKSet((JWK) key).toString(false), replace)) {
+            // another process made one first: use that
+            cached = null;
+            return current();
         }
         cached = key;
         cachedTime = Files.getLastModifiedTime(file);

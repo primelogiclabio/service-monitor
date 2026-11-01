@@ -135,7 +135,6 @@ As planned above, except:
 
 - One-time codes (TOTP), for a hub that is reachable without a gateway.
 - A Content-Security-Policy header.
-- Alert channel secrets encrypted at rest.
 - Re-enrolling a server whose agent credential was revoked under its old name (today the server has to be removed first).
 - Auditing changes to the checks an agent declares.
 - Noting when an API or agent token was last used (today the Settings screen shows when each server last reported instead).
