@@ -1,6 +1,6 @@
 # Service Monitor: what it is for and what it is built with
 
-A plain-language guide for someone who knows Java well and is less sure about the rest of the stack. Facts were checked against the repositories on 2026-10-25 (hub `main` at `1630d17`, dashboard `main` at `1ae864d`). For the reasoning behind the design see `service-monitor-design.md`; for how to run it see `README.md`.
+A plain-language guide for someone who knows Java well and is less sure about the rest of the stack. Facts were checked against the repositories on 2026-11-01 (hub `main` at `f02728a`, dashboard `main` at `515aa58`). For the reasoning behind the design see `service-monitor-design.md`; for how to run it see `README.md`.
 
 ## 1. What it is for
 
@@ -78,7 +78,7 @@ These pictures come from a throwaway demo hub filled with made-up servers (the d
 | Virtual threads (Java 21, JEP 444) | Very cheap threads managed by the JVM; blocking in one costs almost nothing | `spring.threads.virtual.enabled` is on. One ordinary thread keeps time in `CheckScheduler`; every check run executes on its own virtual thread, so hundreds of slow checks do not need a big pool |
 | JdbcClient | Spring's plain-SQL helper (no JPA, no Hibernate) | The `store/` package writes SQL by hand and maps rows into Java records |
 | SQLite and `sqlite-jdbc` 3.53.4.0 | A database that is just a file | Lives in `svcmon.data-dir`. Opened in WAL mode (readers do not block the writer), with a 10 second busy timeout and foreign keys on. The jar carries the native libraries for every platform |
-| Flyway | Applies numbered SQL scripts to the database on start | `src/main/resources/db/migration/V1` to `V7`. An applied migration is never edited; a change is a new file |
+| Flyway | Applies numbered migrations to the database on start | SQL scripts in `src/main/resources/db/migration` (`V1` to `V8` and `V10`), and a data fix that needs code as a Java class in `src/main/java/db/migration` (`V9`). An applied migration is never edited; a change is a new file |
 | Spring WebSocket | A long-lived two-way connection to the browser | `/api/v1/live` pushes the status to a dashboard when it changes |
 | Angus Mail 2.0.5 | The implementation of Jakarta Mail | Sends alert emails over SMTP |
 | Nimbus OAuth 2.0 SDK 11.38 and Nimbus JOSE+JWT 10.9 | The OpenID Connect and JSON Web Token libraries that Spring Security itself uses underneath | Sign-in with an identity provider (`oidc/`): the provider's discovery document, the sign-in request with PKCE, the hub's signed proof (`private_key_jwt`) and every check on the ID token |
@@ -200,7 +200,7 @@ A "service" is a program the operating system starts at boot and restarts if it 
 
 | Name | What it is | How it is used here |
 |---|---|---|
-| GitHub and GitHub Actions | The code host and its automatic build service | CI runs the hub tests on Ubuntu and Windows, the agent tests on Ubuntu, Windows and macOS, a formatting check, a cross-compile of every platform and an installer dry run |
+| GitHub and GitHub Actions | The code host and its automatic build service | CI runs the hub tests on Ubuntu and Windows, the agent tests on Ubuntu, Windows and macOS, a formatting check, a cross-compile of every platform and an installer dry run; a `v*` tag builds every release file and a draft GitHub release (`RELEASING.md`) |
 | Protected `main` | A branch nobody pushes to directly | Changes go through a pull request, and the check named "CI passed" must be green |
 | Squash merge | Combines a pull request into one commit | How every change was merged |
 | Apache-2.0 | The licence of this project | Free to use, change and share |
@@ -240,12 +240,12 @@ The agent keeps up to 5,000 results in memory and sends them when the hub is bac
 
 | Path | What is there |
 |---|---|
-| `hub/src/main/java/io/primelogiclab/svcmon/hub/` | `api` (REST controllers), `core` (scheduler, services), `checks` (HTTP, TCP and ping runners), `alerts` (senders), `security` (tokens, sign-in), `oidc` (sign-in with an identity provider), `store` (SQL), `live` (WebSocket), `model`, `config` |
-| `hub/src/main/resources/` | `application.yml` and the Flyway migrations |
+| `hub/src/main/java/io/primelogiclab/svcmon/hub/` | `api` (REST controllers), `core` (scheduler, services), `checks` (HTTP, TCP and ping runners), `alerts` (senders), `security` (tokens, sign-in), `oidc` (sign-in with an identity provider), `audit` (who did what), `secrets` (encryption of stored secrets), `store` (SQL), `live` (WebSocket), `model`, `config` |
+| `hub/src/main/resources/` | `application.yml` and the Flyway SQL migrations (data fixes in Java are in `hub/src/main/java/db/migration`) |
 | `hub/service/` | Install and uninstall scripts for the hub as a service, with their tests |
 | `agent/cmd/svcmon/` | The program's entry point |
 | `agent/internal/` | `agent` (the run loop), `checks` (every check type), `cli` (the commands), `hubapi` (the hub client), `osservice` (the operating-system service code) |
-| `docs/` | The design document and this guide, each as Markdown and HTML |
+| `docs/` | The reference, the design document, this guide, the sign-in plan and the trust policy, each as Markdown and HTML; `docs/tools/` makes the HTML |
 | `service-monitor-ui/` (separate repository) | The dashboard: `src/`, `test/`, `scripts/seed-demo.mjs` |
 
 ## 7. Build, test and run
@@ -265,15 +265,14 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 1. **Agents only connect out.** A monitored server opens no inbound port for the monitor.
 2. **Someone lists what is monitored.** An admin in the hub, or the person setting up the server in its `checks.json`. Nothing is discovered and monitored on its own; the helper commands only list what exists.
 3. **TLS ends at the load balancer.** The hub speaks plain HTTP inside the network and must work behind `X-Forwarded-*` headers.
-4. **Secrets stay hidden.** Tokens (only fingerprints are stored), webhook addresses, header values, signing secrets and the SMTP password never leave the hub unmasked and never appear in logs or errors. HTTP checks' header values are masked in every answer too; only the agent that runs the check gets them. HTTP checks do not sign in, so a check's URL may not hold a user name or password.
+4. **Secrets stay hidden.** Tokens (only fingerprints are stored), webhook addresses, header values, signing secrets and the SMTP password never leave the hub unmasked and never appear in logs or errors. HTTP checks' header values are masked in every answer too; only the agent that runs the check gets them. In the database these secrets are encrypted with a key the hub keeps in a file of its own. HTTP checks do not sign in, so a check's URL may not hold a user name or password.
 5. **Be strict.** Unknown settings are rejected, so a typo fails loudly. Names and messages from agents are treated as untrusted (Slack markup is escaped, Discord mentions are off, mail headers cannot be injected).
 6. **Free everywhere.** Everything is open source, and the hub and agent run on Windows, Linux and macOS.
 
 ## 9. Limits and open questions
 
-- **Not built:** the multi-hub "console" role, a dashboard page for alerts, a bundled Java runtime and a release pipeline, a macOS hub installer, per-container CPU and memory, and Telegram or ntfy alert channels.
+- **Not built:** the multi-hub "console" role, a bundled Java runtime, a macOS hub installer, per-container CPU and memory, and Telegram or ntfy alert channels.
 - **Not tried on real systems:** the macOS agent installer and service checks; container checks on Linux and with Podman; agent-declared checks on an installed service.
-- **Dashboard gap:** it does not yet show where a check comes from (hub or agent file) or lock the form for a check the agent declares. The hub already refuses the edit.
 - **Resource figures** in the design document (memory, disk) are estimates, not measurements.
 - **Not covered here:** how the live deployment on a cloud server is laid out; that lives in a separate infrastructure repository.
 

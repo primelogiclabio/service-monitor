@@ -18,6 +18,8 @@ Everything the [README](../README.md) leaves out: what is built and how far it h
 | Web UI | Built in its own repository, [service-monitor-ui](https://github.com/primelogiclabio/service-monitor-ui); the hub serves it from inside its jar when built with it, or from a folder (`svcmon.ui-dir`), or it is allowed from another address (`svcmon.cors-allowed-origins`) |
 | Internal-only access (`svcmon.access.*`): people outside the internal network refused by default, or let in over HTTPS only | Built: hub and dashboard tests, and a run against a throwaway hub. In 0.1.0 and running on a Linux server, where visitors from outside over IPv4 and IPv6 were refused |
 | Audit of sign-ins and changes (Settings > Activity, `GET /api/v1/audit`) | Built: hub and dashboard tests, and a run against a throwaway hub. In 0.1.0 and running on a Linux server |
+| API tokens that record who made them, and act for that person (suspended, read-only or revoked with them) | Built after 0.2.3: hub and dashboard tests, and a run against a throwaway hub; not in a release yet |
+| Stored secrets encrypted with the hub's own key (`secrets-key.json`; `secrets status`, `rotate-key`, `forget-unreadable`) | Built after 0.2.3: hub tests, and an upgrade from 0.2.3 tried on throwaway hubs; not in a release yet |
 | Multi-hub console | Not started |
 
 ## Deployment model
