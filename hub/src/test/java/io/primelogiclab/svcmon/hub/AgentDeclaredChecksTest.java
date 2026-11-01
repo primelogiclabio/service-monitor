@@ -215,6 +215,31 @@ class AgentDeclaredChecksTest {
     }
 
     @Test
+    void aFileThatStillHasALoginInAUrlKeepsItsCheck() throws Exception {
+        Agent a = enroll();
+        // As V9 leaves a declared check whose URL had a login: stored without it, the file unchanged.
+        String clean = "[{\"type\":\"HTTP\",\"target\":\"https://intranet.example/health\",\"intervalSeconds\":30}]";
+        String id = (String) declare(a, clean).get(0).get("checkId");
+
+        Resp old = call("PUT", "/api/v1/agent/checks", a.token(),
+                "{\"checks\":" + clean.replace("https://", "https://watch:s3cret@") + "}");
+        assertEquals(200, old.status(), old.body());
+        Map<String, Object> outcome = list(new Resp(200, json.writeValueAsString(map(old).get("results")))).get(0);
+        assertEquals("rejected", outcome.get("result"));
+        assertTrue(outcome.get("error").toString().contains("user name or password"), outcome.toString());
+        assertFalse(old.body().contains("s3cret"), old.body());
+        assertEquals(List.of(), map(old).get("removed"), "the check is not switched off");
+        Map<String, Object> def = checkOf(id);
+        assertEquals("https://intranet.example/health", def.get("target"));
+        assertEquals(Boolean.TRUE, def.get("enabled"));
+
+        // Once the login is taken out of the file, it is the same check, history and all.
+        List<Map<String, Object>> fixed = declare(a, clean.replace("30", "45"));
+        assertEquals(List.of("updated"), results(fixed));
+        assertEquals(id, fixed.get(0).get("checkId"));
+    }
+
+    @Test
     void badEntriesAreRefusedAndDoNoHarm() throws Exception {
         Agent a = enroll();
         List<Map<String, Object>> out = declare(a, "[{\"type\":\"CONTAINER\",\"target\":\"web\"},"

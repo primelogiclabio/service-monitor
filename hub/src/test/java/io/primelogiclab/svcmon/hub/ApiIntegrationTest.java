@@ -246,6 +246,28 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void anHttpCheckRefusesALoginInItsUrl() throws Exception {
+        String head = "{\"name\":\"behind a login\",\"type\":\"HTTP\",\"enabled\":false,\"target\":";
+        for (String login : List.of("http://watch:s3cret@127.0.0.1:9/health", "http://s3cret@127.0.0.1:9/health",
+                "http://:s3cret@127.0.0.1:9/health")) {
+            Resp refused = call("POST", "/api/v1/checks", ADMIN, head + "\"" + login + "\"}");
+            assertEquals(400, refused.status(), login);
+            String message = String.valueOf(refused.map().get("message"));
+            assertTrue(message.contains("user name or password"), message);
+            assertFalse(message.contains("s3cret"), "the error never shows the URL: " + message);
+        }
+
+        // An @ after the host is not a login; and a check that exists cannot be given one either.
+        Resp made = call("POST", "/api/v1/checks", ADMIN, head + "\"http://127.0.0.1:9/go?mail=a@b.example\"}");
+        assertEquals(201, made.status());
+        String id = (String) made.map().get("id");
+        assertEquals(400, call("PUT", "/api/v1/checks/" + id, ADMIN,
+                head + "\"http://watch:s3cret@127.0.0.1:9/go\"}").status());
+        assertEquals("http://127.0.0.1:9/go?mail=a@b.example", call("GET", "/api/v1/checks/" + id, ADMIN, null)
+                .map().get("target"));
+    }
+
+    @Test
     void headerValuesAreShownMaskedAndKeptWhenSentBack() throws Exception {
         String secret = "Bearer header-secret-0123456789";
         List<String> seen = new CopyOnWriteArrayList<>();

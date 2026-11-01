@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -177,6 +178,23 @@ func (a *Agent) syncDeclared(ctx context.Context) bool {
 	return true
 }
 
+// HasURLLogin reports whether an HTTP check's URL has a user name or password before its host. The hub refuses
+// one: checks do not sign in, and a check's URL is shown to anyone who can read checks and printed in alerts.
+func HasURLLogin(target string) bool {
+	u, err := url.Parse(strings.TrimSpace(target))
+	return err == nil && u.User != nil
+}
+
+// withoutURLLogin is an HTTP check's URL as the log may show it: without a login, which the hub rejects.
+func withoutURLLogin(target string) string {
+	u, err := url.Parse(strings.TrimSpace(target))
+	if err != nil {
+		return "(not a valid URL)"
+	}
+	u.User = nil
+	return u.String()
+}
+
 // logDeclareProblem logs a problem once; the same one is not repeated on every config poll.
 func (a *Agent) logDeclareProblem(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
@@ -200,7 +218,11 @@ func (a *Agent) logDeclared(list []hubapi.DeclaredCheck, resp *hubapi.DeclareRes
 		}
 		what := "entry " + fmt.Sprint(r.Index+1)
 		if r.Index >= 0 && r.Index < len(list) {
-			what = fmt.Sprintf("entry %d (%s %s)", r.Index+1, list[r.Index].Type, list[r.Index].Target)
+			target := list[r.Index].Target
+			if strings.EqualFold(list[r.Index].Type, "http") {
+				target = withoutURLLogin(target)
+			}
+			what = fmt.Sprintf("entry %d (%s %s)", r.Index+1, list[r.Index].Type, target)
 		}
 		a.log.Printf("the hub rejected %s: %s", what, r.Error)
 	}
