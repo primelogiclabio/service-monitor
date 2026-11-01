@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -124,6 +125,71 @@ func TestAgentKeepsTheHubsListAndStartsOnItWhenTheHubIsDown(t *testing.T) {
 	status.Store(http.StatusBadGateway)
 	if _, fromCache, err := cachedAgent(srv.URL, cache).fetchConfigRetry(context.Background()); err != nil || !fromCache {
 		t.Fatalf("a failing hub: fromCache %v %v", fromCache, err)
+	}
+}
+
+func TestHeaderValuesAreNotKeptAndThoseChecksWaitForTheHub(t *testing.T) {
+	check, closeL := tcpCheck(t)
+	defer closeL()
+	web := hubapi.AgentCheck{ID: "c2", Type: "HTTP", Target: "http://127.0.0.1:1/health", IntervalSeconds: 30,
+		TimeoutMs: 2000, Config: map[string]any{"keyword": "ok",
+			"headers": map[string]any{"Authorization": "Bearer s3cret-value"}}}
+	cache := filepath.Join(t.TempDir(), CacheFileName)
+	var status atomic.Int32
+	srv := hubAnswering(t, []hubapi.AgentCheck{check, web}, &status)
+
+	cfg, err := cachedAgent(srv.URL, cache).fetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the file goes without: the running list keeps the header.
+	if h, _ := cfg.Checks[1].Config["headers"].(map[string]any); h["Authorization"] != "Bearer s3cret-value" {
+		t.Fatalf("the running list lost its header: %+v", cfg.Checks[1].Config)
+	}
+	data, err := os.ReadFile(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "s3cret") || strings.Contains(string(data), "Authorization") {
+		t.Fatalf("a header was kept on disk:\n%s", data)
+	}
+
+	// Started while the hub is down, the agent runs the rest; the check that needs its header waits.
+	var logged strings.Builder
+	down := cachedAgent("http://127.0.0.1:1", cache)
+	down.log = log.New(&logged, "", 0)
+	got, fromCache, err := down.fetchConfigRetry(context.Background())
+	if err != nil || !fromCache || len(got.Checks) != 1 || got.Checks[0].ID != "c1" {
+		t.Fatalf("hub down: %+v fromCache %v %v", got, fromCache, err)
+	}
+	if !strings.Contains(logged.String(), "1 check(s) need HTTP header values from the hub") {
+		t.Fatalf("the waiting check was not logged: %q", logged.String())
+	}
+}
+
+func TestAnOlderCacheWithHeaderValuesRunsAndIsRewrittenWithout(t *testing.T) {
+	web := hubapi.AgentCheck{ID: "c2", Type: "HTTP", Target: "http://127.0.0.1:1/", IntervalSeconds: 30,
+		Config: map[string]any{"headers": map[string]any{"X-Api-Key": "k-value"}}}
+	cache := filepath.Join(t.TempDir(), CacheFileName)
+	data, _ := json.Marshal(hubapi.AgentConfig{ServerID: "s1", ServerName: "web01", HeartbeatSeconds: 30,
+		Checks: []hubapi.AgentCheck{web}})
+	if err := os.WriteFile(cache, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// An agent before this change kept the values; its file still runs as it is.
+	got := cachedAgent("http://127.0.0.1:1", cache).loadCache()
+	if got == nil || len(got.Checks) != 1 || got.Checks[0].Config["headers"] == nil {
+		t.Fatalf("an older file: %+v", got)
+	}
+
+	// The hub's first answer replaces it with one without the values.
+	var status atomic.Int32
+	srv := hubAnswering(t, []hubapi.AgentCheck{web}, &status)
+	if _, err := cachedAgent(srv.URL, cache).fetchConfig(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(cache); strings.Contains(string(data), "k-value") {
+		t.Fatalf("the older file was not rewritten:\n%s", data)
 	}
 }
 
