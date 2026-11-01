@@ -22,7 +22,9 @@ public class TokenRepo {
             Rows.lng(rs, "expires_at"),
             Rows.lng(rs, "used_at"),
             rs.getString("cluster"),
-            rs.getInt("use_count"));
+            rs.getInt("use_count"),
+            rs.getString("created_by"),
+            rs.getString("created_by_kind"));
 
     private final JdbcClient jdbc;
 
@@ -31,8 +33,9 @@ public class TokenRepo {
     }
 
     public void insert(TokenRecord t) {
-        jdbc.sql("INSERT INTO tokens (id, name, scope, server_id, token_hash, created_at, expires_at, used_at, cluster) "
-                        + "VALUES (:id, :name, :scope, :serverId, :hash, :createdAt, :expiresAt, :usedAt, :cluster)")
+        jdbc.sql("INSERT INTO tokens (id, name, scope, server_id, token_hash, created_at, expires_at, used_at, cluster, "
+                        + "created_by, created_by_kind) VALUES (:id, :name, :scope, :serverId, :hash, :createdAt, "
+                        + ":expiresAt, :usedAt, :cluster, :createdBy, :createdByKind)")
                 .param("id", t.id())
                 .param("name", t.name())
                 .param("scope", t.scope().name())
@@ -42,7 +45,13 @@ public class TokenRepo {
                 .param("expiresAt", t.expiresAt())
                 .param("usedAt", t.usedAt())
                 .param("cluster", t.cluster())
+                .param("createdBy", t.createdBy())
+                .param("createdByKind", t.createdByKind())
                 .update();
+    }
+
+    public Optional<TokenRecord> find(String id) {
+        return jdbc.sql("SELECT * FROM tokens WHERE id = :id").param("id", id).query(MAPPER).optional();
     }
 
     public Optional<TokenRecord> findByHash(String hash) {

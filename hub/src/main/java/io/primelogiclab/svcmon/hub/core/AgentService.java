@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import io.primelogiclab.svcmon.hub.audit.AuditService.Actor;
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.model.CheckDef;
 import io.primelogiclab.svcmon.hub.model.CheckResult;
@@ -100,7 +101,8 @@ public class AgentService {
         ServerInfo server = new ServerInfo(UUID.randomUUID().toString(), name, cluster,
                 trim(req.os(), 100), trim(req.agentVersion(), 50), now, now);
         servers.insert(server);
-        TokenService.Issued agentToken = tokens.issue("agent:" + name, Scope.AGENT, server.id(), null);
+        TokenService.Issued agentToken = tokens.issue("agent:" + name, Scope.AGENT, server.id(), null,
+                Actor.registeredWith(enroll));
         return new RegisterResponse(server.id(), agentToken.raw(), props.agentHeartbeatSeconds());
     }
 

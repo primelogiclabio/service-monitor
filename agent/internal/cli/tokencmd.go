@@ -66,7 +66,7 @@ func (e *env) tokenList(args []string) int {
 		return e.fail(err)
 	}
 	tw := tabwriter.NewWriter(e.out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSCOPE\tNAME\tCREATED\tEXPIRES\tUSED")
+	fmt.Fprintln(tw, "ID\tSCOPE\tNAME\tMADE BY\tCREATED\tEXPIRES\tUSED")
 	for _, t := range tokens {
 		exp, used := "-", "-"
 		if t.ExpiresAt != nil {
@@ -75,7 +75,7 @@ func (e *env) tokenList(args []string) int {
 		if t.UsedAt != nil {
 			used = fmtMillis(*t.UsedAt)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(t.ID), t.Scope, t.Name, fmtMillis(t.CreatedAt), exp, used)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", shortID(t.ID), t.Scope, t.Name, madeBy(t), fmtMillis(t.CreatedAt), exp, used)
 	}
 	tw.Flush()
 	return exitOK

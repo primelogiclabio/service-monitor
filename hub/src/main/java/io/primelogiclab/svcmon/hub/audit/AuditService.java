@@ -9,6 +9,7 @@ import java.util.function.LongSupplier;
 
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.model.AuditEvent;
+import io.primelogiclab.svcmon.hub.model.Scope;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.security.NetworkPolicy;
 import io.primelogiclab.svcmon.hub.security.SessionService;
@@ -65,8 +66,16 @@ public class AuditService {
 
         public static final Actor UNKNOWN = new Actor("unknown", "unknown");
 
+        /** The hub itself, for what it makes at start-up (the first admin token). */
+        public static final Actor HUB = new Actor("hub", "hub");
+
         public static Actor user(String name) {
             return new Actor(name, "user");
+        }
+
+        /** The enrollment token or join key an agent registered with, by name. */
+        public static Actor registeredWith(TokenRecord key) {
+            return new Actor(key.name(), key.scope() == Scope.JOIN ? "join_key" : "enrollment_token");
         }
     }
 

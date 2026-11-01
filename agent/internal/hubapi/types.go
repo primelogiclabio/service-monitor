@@ -190,4 +190,7 @@ type TokenView struct {
 	UsedAt    *int64 `json:"usedAt,omitempty"`
 	Cluster   string `json:"cluster,omitempty"`
 	UseCount  int    `json:"useCount,omitempty"` // join keys: servers registered with it
+	// Who made it: a user, token, join key or enrollment token name, or "hub"; empty for tokens older than that record.
+	CreatedBy     string `json:"createdBy,omitempty"`
+	CreatedByKind string `json:"createdByKind,omitempty"` // user, token, join_key, enrollment_token or hub
 }
