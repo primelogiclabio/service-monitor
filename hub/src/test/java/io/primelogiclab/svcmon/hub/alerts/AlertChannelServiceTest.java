@@ -226,4 +226,32 @@ class AlertChannelServiceTest {
         Map<String, Object> merged = AlertChannelService.mergeSecrets(AlertType.EMAIL, incoming, existing);
         assertEquals("hunter2", merged.get("password"));
     }
+
+    @Test
+    void nullRemovesAStoredSecret() {
+        Map<String, Object> existing = new LinkedHashMap<>();
+        existing.put("url", "https://hooks.example.test/real-secret");
+        existing.put("signingSecret", "old-signing");
+        Map<String, Object> incoming = new LinkedHashMap<>();
+        incoming.put("url", "https://hooks.example.test/********");
+        incoming.put("signingSecret", null);
+        Map<String, Object> merged = AlertChannelService.mergeSecrets(AlertType.WEBHOOK, incoming, existing);
+        assertEquals("https://hooks.example.test/real-secret", merged.get("url"));
+        assertFalse(merged.containsKey("signingSecret"));
+        assertEquals(Map.of("url", "https://hooks.example.test/real-secret"), strict.normalize(AlertType.WEBHOOK, merged));
+
+        Map<String, Object> mailExisting = email();
+        mailExisting.put("username", "svc");
+        mailExisting.put("password", "hunter2");
+        Map<String, Object> mailIncoming = email();
+        mailIncoming.put("password", null);
+        Map<String, Object> mail = strict.normalize(AlertType.EMAIL,
+                AlertChannelService.mergeSecrets(AlertType.EMAIL, mailIncoming, mailExisting));
+        assertFalse(mail.containsKey("password") || mail.containsKey("username"), "the channel stops signing in");
+
+        Map<String, Object> noUrl = new LinkedHashMap<>();
+        noUrl.put("url", null);
+        Map<String, Object> withoutUrl = AlertChannelService.mergeSecrets(AlertType.WEBHOOK, noUrl, existing);
+        assertTrue(rejected(strict, AlertType.WEBHOOK, withoutUrl).contains("url is required"));
+    }
 }

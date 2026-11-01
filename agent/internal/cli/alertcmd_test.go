@@ -301,6 +301,64 @@ func TestAlertSetChangesOnlyWhatIsGiven(t *testing.T) {
 	}
 }
 
+func TestAlertSetRemovesAStoredSecret(t *testing.T) {
+	webhook := hubapi.AlertChannel{ID: "cccc3333-0000", Name: "pager", Type: "WEBHOOK", Enabled: true, Statuses: []string{"DOWN"},
+		Config: map[string]any{"url": "https://x.example/********", "signingSecret": "********"}}
+	mail := hubapi.AlertChannel{ID: "dddd4444-0000", Name: "mail", Type: "EMAIL", Enabled: true, Statuses: []string{"DOWN"},
+		Config: map[string]any{"smtpHost": "smtp.example.com", "username": "svc", "password": "********", "from": "a@example.com", "to": []any{"b@example.com"}}}
+	hub, run := newFakeHub(t, webhook, mail, slackChannel("aaaa1111-0000", "ops"))
+
+	if code, out, errOut := run("alert", "set", "pager", "--remove-signing-secret"); code != 0 {
+		t.Fatalf("exit %d: %s%s", code, out, errOut)
+	}
+	cfg := hub.last().Body["config"].(map[string]any)
+	if v, sent := cfg["signingSecret"]; !sent || v != nil {
+		t.Fatalf("the signing secret must be sent as null: %v", cfg)
+	}
+	if cfg["url"] != "https://x.example/********" {
+		t.Fatalf("the masked URL must go back as-is: %v", cfg)
+	}
+
+	if code, out, errOut := run("alert", "set", "mail", "--remove-smtp-password", "--smtp-user="); code != 0 {
+		t.Fatalf("exit %d: %s%s", code, out, errOut)
+	}
+	cfg = hub.last().Body["config"].(map[string]any)
+	if v, sent := cfg["password"]; !sent || v != nil || cfg["username"] != "" {
+		t.Fatalf("password must be null and the user name empty: %v", cfg)
+	}
+
+	before := hub.count()
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"pager", "--signing-secret", ""}, "--signing-secret is empty; to remove the stored secret use --remove-signing-secret"},
+		{[]string{"mail", "--smtp-password", " "}, "--smtp-password is empty; to remove the stored secret use --remove-smtp-password"},
+		{[]string{"pager", "--signing-secret", "s3", "--remove-signing-secret"}, "cannot be used together"},
+		{[]string{"ops", "--remove-signing-secret"}, "--remove-signing-secret does not apply to slack"},
+		{[]string{"pager", "--remove-smtp-password"}, "--remove-smtp-password does not apply to webhook"},
+	} {
+		if c, _, e := run(append([]string{"alert", "set"}, tc.args...)...); c != exitUnknown || !strings.Contains(e, tc.want) {
+			t.Errorf("%v: exit %d %q", tc.args, c, e)
+		}
+	}
+	// Each of those is refused after the lookup and before anything is changed.
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	for _, r := range hub.requests[before:] {
+		if r.Method != "GET" {
+			t.Errorf("a refused set sent %s %s", r.Method, r.Path)
+		}
+	}
+}
+
+func TestAlertAddHasNothingToRemove(t *testing.T) {
+	_, run := newFakeHub(t)
+	if c, _, e := run("alert", "add", "webhook", "--name", "x", "--url", "https://x.example/h", "--remove-signing-secret"); c == 0 || !strings.Contains(e, "remove-signing-secret") {
+		t.Errorf("exit %d %q", c, e)
+	}
+}
+
 func TestAlertEnableDisableAndRemove(t *testing.T) {
 	hub, run := newFakeHub(t, slackChannel("aaaa1111-0000", "ops"), slackChannel("bbbb2222-0000", "chat"))
 
