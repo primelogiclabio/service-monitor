@@ -17,12 +17,13 @@ var (
 	channelTypes = []string{"webhook", "slack", "discord", "email"}
 	allStatuses  = []string{"DOWN", "WARN", "UP", "UNKNOWN"}
 	flagsByType  = map[string][]string{
-		"webhook": {"url", "header", "signing-secret"},
+		"webhook": {"url", "header", "signing-secret", "remove-signing-secret"},
 		"slack":   {"url"},
 		"discord": {"url"},
-		"email":   {"smtp-host", "smtp-port", "security", "format", "smtp-user", "smtp-password", "from", "to"},
+		"email":   {"smtp-host", "smtp-port", "security", "format", "smtp-user", "smtp-password", "remove-smtp-password", "from", "to"},
 	}
-	typeSpecific = []string{"url", "header", "signing-secret", "smtp-host", "smtp-port", "security", "format", "smtp-user", "smtp-password", "from", "to"}
+	typeSpecific = []string{"url", "header", "signing-secret", "remove-signing-secret", "smtp-host", "smtp-port", "security", "format",
+		"smtp-user", "smtp-password", "remove-smtp-password", "from", "to"}
 )
 
 // listFlag collects a repeatable flag.
@@ -41,10 +42,11 @@ type channelFlags struct {
 	smtpPort                               *int
 	headers, to                            *listFlag
 	disabled                               *bool
+	removeSigningSecret, removeSmtpPass    *bool
 }
 
 func addChannelFlags(fs *flag.FlagSet, forAdd bool) *channelFlags {
-	f := &channelFlags{headers: &listFlag{}, to: &listFlag{}}
+	f := &channelFlags{headers: &listFlag{}, to: &listFlag{}, removeSigningSecret: new(bool), removeSmtpPass: new(bool)}
 	f.name = fs.String("name", "", "channel name")
 	f.on = fs.String("on", "", "statuses that trigger a message: down,warn,up,unknown or all (default down,warn,up)")
 	f.url = fs.String("url", "", "webhook, Slack or Discord URL (a secret; or set SVCMON_ALERT_URL)")
@@ -60,6 +62,9 @@ func addChannelFlags(fs *flag.FlagSet, forAdd bool) *channelFlags {
 	fs.Var(f.to, "to", "email: recipient address (repeatable or comma-separated)")
 	if forAdd {
 		f.disabled = fs.Bool("disabled", false, "create the channel switched off")
+	} else {
+		f.removeSigningSecret = fs.Bool("remove-signing-secret", false, "webhook: remove the stored signing secret, so messages are no longer signed")
+		f.removeSmtpPass = fs.Bool("remove-smtp-password", false, "email: remove the stored SMTP password (with --smtp-user= the hub stops signing in)")
 	}
 	return f
 }
@@ -139,6 +144,22 @@ func buildConfig(typ string, f *channelFlags, seen map[string]bool, base map[str
 			}
 		}
 	}
+	// On set an empty secret would be read by the hub as "keep the stored one", silently, so it is refused; removing
+	// takes its own flag and is sent as null, which the hub reads as "remove".
+	secret := func(flagName, key, value, env string, remove bool) error {
+		if remove {
+			if seen[flagName] {
+				return fmt.Errorf("--%s and --remove-%s cannot be used together", flagName, flagName)
+			}
+			cfg[key] = nil
+			return nil
+		}
+		if !forAdd && seen[flagName] && strings.TrimSpace(value) == "" {
+			return fmt.Errorf("--%s is empty; to remove the stored secret use --remove-%s", flagName, flagName)
+		}
+		text(flagName, key, value, env)
+		return nil
+	}
 	text("url", "url", *f.url, "SVCMON_ALERT_URL")
 
 	if typ == "webhook" {
@@ -153,7 +174,9 @@ func buildConfig(typ string, f *channelFlags, seen map[string]bool, base map[str
 			}
 			cfg["headers"] = headers
 		}
-		text("signing-secret", "signingSecret", *f.signingSecret, "SVCMON_ALERT_SIGNING_SECRET")
+		if err := secret("signing-secret", "signingSecret", *f.signingSecret, "SVCMON_ALERT_SIGNING_SECRET", *f.removeSigningSecret); err != nil {
+			return nil, err
+		}
 	}
 	if typ == "email" {
 		text("smtp-host", "smtpHost", *f.smtpHost, "")
@@ -163,7 +186,9 @@ func buildConfig(typ string, f *channelFlags, seen map[string]bool, base map[str
 		text("security", "security", *f.security, "")
 		text("format", "format", *f.format, "")
 		text("smtp-user", "username", *f.smtpUser, "")
-		text("smtp-password", "password", *f.smtpPass, "SVCMON_SMTP_PASSWORD")
+		if err := secret("smtp-password", "password", *f.smtpPass, "SVCMON_SMTP_PASSWORD", *f.removeSmtpPass); err != nil {
+			return nil, err
+		}
 		text("from", "from", *f.from, "")
 		if seen["to"] {
 			var to []string

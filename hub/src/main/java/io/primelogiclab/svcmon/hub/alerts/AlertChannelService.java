@@ -22,8 +22,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Creates, validates and updates alert channels. Channel settings contain secrets (webhook URLs, the SMTP
- * password, signing secrets), so they are checked strictly, never returned unmasked, and kept when an update sends
- * the masked value back.
+ * password, signing secrets), so they are checked strictly, never returned unmasked, kept when an update sends
+ * the masked value back, and removed only when an update sends null.
  */
 @Service
 public class AlertChannelService {
@@ -309,11 +309,16 @@ public class AlertChannelService {
         return v == null || v.toString().isBlank() || v.toString().contains(MASK);
     }
 
-    /** On update, a secret that is missing or masked keeps its stored value. */
+    /**
+     * On update, a secret that is missing, blank or masked keeps its stored value, and one sent as JSON null is removed.
+     * Only an explicit null removes, so a client that leaves a secret out never loses it by accident.
+     */
     static Map<String, Object> mergeSecrets(AlertType type, Map<String, Object> incoming, Map<String, Object> existing) {
         Map<String, Object> merged = new LinkedHashMap<>(incoming == null ? Map.of() : incoming);
         for (String key : type.secretKeys()) {
-            if (isMasked(merged.get(key))) {
+            if (merged.containsKey(key) && merged.get(key) == null) {
+                merged.remove(key);
+            } else if (isMasked(merged.get(key))) {
                 if (existing.get(key) != null) {
                     merged.put(key, existing.get(key));
                 } else {

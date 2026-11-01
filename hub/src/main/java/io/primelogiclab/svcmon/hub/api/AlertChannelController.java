@@ -48,8 +48,8 @@ public class AlertChannelController {
     }
 
     /**
-     * Replaces a channel's settings. A secret that is omitted or sent back masked keeps its stored value;
-     * the type cannot change.
+     * Replaces a channel's settings. A secret that is omitted or sent back masked keeps its stored value, and one
+     * sent as null is removed; the type cannot change.
      */
     @PutMapping("/{id}")
     public ChannelView replace(@PathVariable String id, @RequestBody ChannelRequest request) {

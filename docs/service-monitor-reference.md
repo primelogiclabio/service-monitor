@@ -418,6 +418,8 @@ svcmon alert add email --name sms --smtp-host smtp.example.com --from svcmon@exa
 svcmon alert test ops            # sends one test message and says whether it arrived
 svcmon alert list                # state, last success and last error for every channel
 svcmon alert set ops --on down   # changes only what you give; stored secrets are kept
+svcmon alert set pager --remove-signing-secret            # stop signing webhook bodies
+svcmon alert set mail --smtp-user= --remove-smtp-password # stop signing in to the mail server
 svcmon alert disable ops         # also: enable, rm, show
 ```
 
@@ -428,7 +430,7 @@ What triggers a message:
 A failing delivery is retried (after 0, 2 and 5 seconds by default) when the problem looks temporary, and then the error is kept and shown by `svcmon alert list` and on the dashboard's Alerts page. Deliveries run in the background, so a slow receiver never delays checks or other channels.
 
 Safety:
-- Webhook URLs, header values, signing secrets and the SMTP password are secrets. The API, CLI and dashboard show them masked, error messages never repeat a URL, and an update that sends a masked value back keeps the stored one (in the dashboard, leave the field empty). They are stored in the hub's database encrypted with the hub's key (see "Stored secrets"), and the key sits in the data folder by default, so protect that folder. On the command line prefer the environment variables `SVCMON_ALERT_URL`, `SVCMON_SMTP_PASSWORD` and `SVCMON_ALERT_SIGNING_SECRET`, which stay out of shell history and process lists.
+- Webhook URLs, header values, signing secrets and the SMTP password are secrets. The API, CLI and dashboard show them masked, error messages never repeat a URL, and an update that sends a masked value back keeps the stored one (in the dashboard, leave the field empty). To remove a signing secret or the SMTP password, send it as `null` (`--remove-signing-secret` or `--remove-smtp-password` on `svcmon alert set`, Remove in the dashboard); leaving it out or empty keeps it. They are stored in the hub's database encrypted with the hub's key (see "Stored secrets"), and the key sits in the data folder by default, so protect that folder. On the command line prefer the environment variables `SVCMON_ALERT_URL`, `SVCMON_SMTP_PASSWORD` and `SVCMON_ALERT_SIGNING_SECRET`, which stay out of shell history and process lists.
 - Slack and Discord URLs must be https. Email defaults to STARTTLS and refuses to fall back to clear text; `--security none` is for a trusted internal relay.
 - An email carries a plain-text part and an HTML part, so every client shows something readable: a coloured status band with the status written out, what happened, the check's message, a details table and, when `svcmon.public-url` is set, an "Open in dashboard" button to the server's page. The HTML has no images, scripts, web fonts or tracking; every name, target and message an agent supplies is escaped, and text-direction tricks are removed. A channel's `format` (`--format`) is `html` by default; `text` sends the plain text alone, for pagers and email-to-SMS gateways. Channels made before this setting existed get HTML.
 - With a signing secret, webhook bodies are signed: the hub sends `X-Svcmon-Signature: sha256=<HMAC-SHA256 of the body>`. The JSON has `event`, `kind` (`check`, `server` or `test`), `hub`, `time`, `subject`, `from`, `to` and `message`.
@@ -463,7 +465,7 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 | `GET/POST /tokens`, `DELETE /tokens/{id}` | admin | API tokens (ADMIN or READ). The list has every token, each with who made it: `createdBy` (a name) and `createdByKind` (`user`, `token`, `join_key` or `enrollment_token` for an agent's credential, `hub` for one made at start-up); both absent for tokens made before the hub recorded it. `ownerId` is the user it acts for (absent: nobody), and `limit` is `suspended` or `read_only` while that user's account limits it |
 | `POST /enrollment-tokens` | admin | One-time token to register an agent |
 | `GET/POST /join-keys`, `DELETE /join-keys/{id}` | admin | Reusable join keys: register any number of agents until revoked or expired; optional cluster; who made each, as for `/tokens` |
-| `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked |
+| `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked. On PUT a secret left out, empty or sent back masked keeps its stored value, and one sent as `null` is removed (the URL cannot be) |
 | `POST /alert-channels/{id}/test` | admin | Send one test alert now |
 | `POST /agent/register`, `GET /agent/config`, `POST /agent/report`, `PUT /agent/checks` | enroll or join key / agent | Agent protocol (agents only call out). `PUT /agent/checks` declares the agent's own checks and is refused when `svcmon.agent-declared-checks` is set to false |
 

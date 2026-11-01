@@ -378,6 +378,36 @@ class AlertDeliveryTest {
     }
 
     @Test
+    void aSecretSentAsNullIsRemoved() throws Exception {
+        String id = uid();
+        String path = "/hook/unsigned-" + id;
+        String channelId = channel("WEBHOOK", "unsign-" + id, Map.of("url", receivers.url(path), "signingSecret", "s3cret"), null, null);
+        String maskedUrl = (String) obj(channelView(channelId).get("config")).get("url");
+
+        // A literal null on the wire: the masked URL is kept, the signing secret goes.
+        Resp put = call("PUT", "/api/v1/alert-channels/" + channelId, ADMIN,
+                "{\"config\":{\"url\":\"" + maskedUrl + "\",\"signingSecret\":null}}");
+        assertEquals(200, put.status(), put.raw());
+        assertFalse(obj(put.map().get("config")).containsKey("signingSecret"));
+        assertEquals(true, call("POST", "/api/v1/alert-channels/" + channelId + "/test", ADMIN, null).map().get("ok"));
+        Receivers.Hit hit = awaitHits(path, 1).get(0);
+        assertNull(hit.headers().get("x-svcmon-signature"), "an unsigned channel sends no signature");
+
+        String mailId = channel("EMAIL", "nologin-" + id, Map.of("smtpHost", "127.0.0.1", "smtpPort", smtp.port(),
+                "security", "NONE", "username", "svc", "password", "hunter2", "from", "a@example.test", "to", "b@example.test"), null, null);
+        put = call("PUT", "/api/v1/alert-channels/" + mailId, ADMIN, "{\"config\":{\"smtpHost\":\"127.0.0.1\",\"smtpPort\":"
+                + smtp.port() + ",\"security\":\"NONE\",\"password\":null,\"from\":\"a@example.test\",\"to\":[\"b@example.test\"]}}");
+        assertEquals(200, put.status(), put.raw());
+        Map<String, Object> mail = obj(channelView(mailId).get("config"));
+        assertFalse(mail.containsKey("password") || mail.containsKey("username"), "the channel stops signing in: " + mail);
+
+        // The URL is required, so it cannot be removed.
+        Resp noUrl = call("PUT", "/api/v1/alert-channels/" + channelId, ADMIN, "{\"config\":{\"url\":null}}");
+        assertEquals(400, noUrl.status(), noUrl.raw());
+        assertTrue(noUrl.raw().contains("url is required"), noUrl.raw());
+    }
+
+    @Test
     void realEmailsAreMultipartWithBothPartsAndTextChannelsStayPlain() throws Exception {
         String id = uid();
         String htmlTo = "html-" + id + "@example.test";

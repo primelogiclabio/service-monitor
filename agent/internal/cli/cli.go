@@ -124,7 +124,8 @@ Hub commands (need a hub URL and token: 'svcmon login', or SVCMON_HUB / SVCMON_T
                                   "Name: value" and --signing-secret; email: --smtp-host --smtp-port
                                   --security starttls|ssl|none --smtp-user --smtp-password --from --to
                                   all: --on down,warn,up,unknown|all  --disabled
-  alert set <channel> [flags]     Change only the flags you give; stored secrets are kept
+  alert set <channel> [flags]     Change only the flags you give; stored secrets are kept unless you give
+                                  --remove-signing-secret or --remove-smtp-password
   alert enable|disable <channel>
   alert test <channel>            Send one test alert now
   alert show <channel> | alert rm <channel>
