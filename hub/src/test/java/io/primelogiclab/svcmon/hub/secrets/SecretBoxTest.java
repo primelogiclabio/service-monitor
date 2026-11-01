@@ -50,11 +50,19 @@ class SecretBoxTest {
     void aChangedValueOrAnotherKeyIsRefusedWithoutTheValue() throws Exception {
         SecretBox box = box();
         String sealed = box.seal("smtp-password");
-        char last = sealed.charAt(sealed.length() - 1);
-        String changed = sealed.substring(0, sealed.length() - 1) + (last == 'A' ? 'B' : 'A');
+        String head = SecretBox.PREFIX + SecretBox.keyId(sealed) + ":";
+        // Every character of nonce, ciphertext and tag counts, whatever the random nonce. The last one is left out:
+        // it also carries padding bits the decoder ignores, so some changes to it decode to the same bytes.
+        for (int round = 0; round < 20; round++) {
+            String value = box.seal("smtp-password");
+            for (int i = head.length(); i < value.length() - 1; i++) {
+                String changed = value.substring(0, i) + (value.charAt(i) == 'A' ? 'B' : 'A') + value.substring(i + 1);
+                assertFalse(box.opens(changed), "a change at " + i + " went unnoticed");
+            }
+        }
+        String changed = head + (sealed.charAt(head.length()) == 'A' ? 'B' : 'A') + sealed.substring(head.length() + 1);
         assertUnreadable(box, changed, "cannot be decrypted");
         assertUnreadable(box, sealed.replace(SecretBox.keyId(sealed), "00000000"), "not in");
-        assertFalse(box.opens(changed));
 
         // Another hub's key file, with its own key under the same name, does not open it either.
         Path other = Files.createTempDirectory(dir, "other").resolve(SecretKeys.FILE);
