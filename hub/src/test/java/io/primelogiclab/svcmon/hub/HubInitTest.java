@@ -96,7 +96,7 @@ class HubInitTest {
         List<String> missing = new ArrayList<>();
         for (Class<?> type : new Class<?>[] {HubProperties.class, HubProperties.Users.class, HubProperties.Sessions.class,
                 HubProperties.Access.class, HubProperties.Audit.class, HubProperties.Oidc.class,
-                HubProperties.Secrets.class}) {
+                HubProperties.Secrets.class, HubProperties.Maintenance.class}) {
             for (RecordComponent c : type.getRecordComponents()) {
                 String name = kebab(c.getName());
                 if (!notForUsers.contains(name) && !text.contains(name + ":")) {
@@ -134,6 +134,7 @@ class HubInitTest {
         assertEquals(HubProperties.Access.DEFAULT.internalNetworks(), p.access().internalNetworks());
         assertEquals(List.of("127.0.0.2"), p.access().publicProxies());
         assertEquals(HubProperties.Audit.DEFAULT, p.audit());
+        assertEquals(HubProperties.Maintenance.DEFAULT, p.maintenance());
         assertEquals(HubProperties.Oidc.ClientAuth.PRIVATE_KEY_JWT, p.oidc().clientAuth());
         assertEquals(HubProperties.Oidc.DEFAULT.scopes(), p.oidc().scopes());
         assertEquals(HubProperties.Oidc.DEFAULT.signingAlgorithm(), p.oidc().signingAlgorithm());

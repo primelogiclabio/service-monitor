@@ -81,7 +81,7 @@ func (e *env) server(args []string) int {
 	}
 	for _, cl := range st.Clusters {
 		for _, sv := range cl.Servers {
-			if strings.EqualFold(sv.Name, pos[0]) || sv.ID == pos[0] || (len(pos[0]) >= 4 && strings.HasPrefix(sv.ID, pos[0])) {
+			if serverMatches(sv, pos[0]) {
 				if *asJSON {
 					printJSON(e.out, sv)
 				} else {

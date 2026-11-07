@@ -11,6 +11,7 @@ import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.core.StatusViews.CheckView;
 import io.primelogiclab.svcmon.hub.core.StatusViews.ClusterView;
 import io.primelogiclab.svcmon.hub.core.StatusViews.Counts;
+import io.primelogiclab.svcmon.hub.core.StatusViews.MaintenanceView;
 import io.primelogiclab.svcmon.hub.core.StatusViews.ServerView;
 import io.primelogiclab.svcmon.hub.core.StatusViews.StatusResponse;
 import io.primelogiclab.svcmon.hub.core.StatusViews.Summary;
@@ -19,6 +20,7 @@ import io.primelogiclab.svcmon.hub.model.CheckState;
 import io.primelogiclab.svcmon.hub.model.ServerInfo;
 import io.primelogiclab.svcmon.hub.model.Status;
 import io.primelogiclab.svcmon.hub.store.CheckRepo;
+import io.primelogiclab.svcmon.hub.store.MaintenanceRepo;
 import io.primelogiclab.svcmon.hub.store.ServerRepo;
 import io.primelogiclab.svcmon.hub.store.StateRepo;
 import org.springframework.stereotype.Service;
@@ -33,12 +35,15 @@ public class StatusService {
     private final ServerRepo servers;
     private final StateRepo states;
     private final HubProperties props;
+    private final MaintenanceRepo maintenance;
 
-    public StatusService(CheckRepo checks, ServerRepo servers, StateRepo states, HubProperties props) {
+    public StatusService(CheckRepo checks, ServerRepo servers, StateRepo states, HubProperties props,
+                         MaintenanceRepo maintenance) {
         this.checks = checks;
         this.servers = servers;
         this.states = states;
         this.props = props;
+        this.maintenance = maintenance;
     }
 
     public StatusResponse status() {
@@ -47,6 +52,8 @@ public class StatusService {
 
         Map<String, CheckState> stateById = new HashMap<>();
         states.findAll().forEach(s -> stateById.put(s.checkId(), s));
+        Map<String, MaintenanceView> windows = new HashMap<>();
+        maintenance.findAll().forEach(m -> windows.put(m.serverId(), MaintenanceView.of(m)));
 
         Map<String, List<CheckDef>> byServer = new HashMap<>();
         List<CheckDef> hubOnly = new ArrayList<>();
@@ -82,7 +89,7 @@ public class StatusService {
             String cluster = s.cluster() == null || s.cluster().isBlank() ? DEFAULT_CLUSTER : s.cluster();
             clusters.computeIfAbsent(cluster, k -> new ArrayList<>())
                     .add(new ServerView(s.id(), s.name(), s.cluster(), s.os(), s.agentVersion(), s.lastSeen(),
-                            online, serverStatus, views));
+                            online, serverStatus, views, windows.get(s.id())));
         }
 
         List<ClusterView> clusterViews = new ArrayList<>();

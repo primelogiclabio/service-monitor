@@ -113,6 +113,27 @@ type ServerView struct {
 	AgentOnline  bool        `json:"agentOnline"`
 	Status       string      `json:"status"`
 	Checks       []CheckView `json:"checks"`
+	// Maintenance is the server's open maintenance window, or nil when its alerts go out.
+	Maintenance *Maintenance `json:"maintenance,omitempty"`
+}
+
+// Maintenance is an open maintenance window: the hub sends no alert about the server until it ends.
+type Maintenance struct {
+	ServerID      string `json:"serverId"`
+	StartedAt     int64  `json:"startedAt"`
+	EndsAt        int64  `json:"endsAt"`
+	Reason        string `json:"reason,omitempty"`
+	StartedBy     string `json:"startedBy"`
+	StartedByKind string `json:"startedByKind"`
+	// UntilBack ends the window as soon as everything that went down is back, rather than only at EndsAt.
+	UntilBack bool `json:"untilBack"`
+}
+
+// MaintenanceRequest opens a maintenance window, or moves an open one's end later.
+type MaintenanceRequest struct {
+	Minutes   int    `json:"minutes"`
+	Reason    string `json:"reason,omitempty"`
+	UntilBack bool   `json:"untilBack"`
 }
 
 type ClusterView struct {
