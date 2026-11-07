@@ -1,5 +1,7 @@
 package io.primelogiclab.svcmon.hub.api;
 
+import io.primelogiclab.svcmon.hub.alerts.MaintenanceService;
+import io.primelogiclab.svcmon.hub.alerts.MaintenanceService.MaintenanceRequest;
 import io.primelogiclab.svcmon.hub.audit.AuditService;
 import io.primelogiclab.svcmon.hub.core.AgentService;
 import io.primelogiclab.svcmon.hub.core.AgentService.AgentConfig;
@@ -7,13 +9,16 @@ import io.primelogiclab.svcmon.hub.core.AgentService.RegisterRequest;
 import io.primelogiclab.svcmon.hub.core.AgentService.RegisterResponse;
 import io.primelogiclab.svcmon.hub.core.AgentService.ReportRequest;
 import io.primelogiclab.svcmon.hub.core.AgentService.ReportResponse;
+import io.primelogiclab.svcmon.hub.core.ApiException;
 import io.primelogiclab.svcmon.hub.core.DeclaredChecksService;
 import io.primelogiclab.svcmon.hub.core.DeclaredChecksService.DeclareRequest;
 import io.primelogiclab.svcmon.hub.core.DeclaredChecksService.DeclareResponse;
+import io.primelogiclab.svcmon.hub.core.StatusViews.MaintenanceView;
 import io.primelogiclab.svcmon.hub.model.TokenRecord;
 import io.primelogiclab.svcmon.hub.security.TokenAuthFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -34,10 +39,14 @@ public class AgentController {
 
     private final AuditService audit;
 
-    public AgentController(AgentService agents, DeclaredChecksService declared, AuditService audit) {
+    private final MaintenanceService maintenance;
+
+    public AgentController(AgentService agents, DeclaredChecksService declared, AuditService audit,
+                           MaintenanceService maintenance) {
         this.agents = agents;
         this.declared = declared;
         this.audit = audit;
+        this.maintenance = maintenance;
     }
 
     /** The agent's whole list of declared checks, from the checks file beside its config. Refused when the admin turned the setting off. */
@@ -72,5 +81,26 @@ public class AgentController {
     public ReportResponse report(@RequestAttribute(TokenAuthFilter.ATTR) TokenRecord token,
                                  @RequestBody ReportRequest request) {
         return agents.report(token, request);
+    }
+
+    /**
+     * Opens (or extends) a maintenance window for the agent's own server, before a planned restart: no alert about it
+     * until everything is back or the time is up. Refused when the admin turned it off; at most
+     * svcmon.maintenance.agent-max-minutes. Recorded in the audit, like registering.
+     */
+    @PostMapping("/maintenance")
+    public MaintenanceView openMaintenance(@RequestAttribute(TokenAuthFilter.ATTR) TokenRecord token,
+                                           @RequestBody(required = false) MaintenanceRequest request,
+                                           HttpServletRequest req) {
+        return maintenance.openForAgent(token, request, req.getRemoteAddr());
+    }
+
+    /** Ends the agent's own server's window now; whatever is not as it was when it opened alerts once. */
+    @DeleteMapping("/maintenance")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void endMaintenance(@RequestAttribute(TokenAuthFilter.ATTR) TokenRecord token, HttpServletRequest req) {
+        if (!maintenance.endForAgent(token, req.getRemoteAddr())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "no_maintenance", "No maintenance window is open for this server");
+        }
     }
 }

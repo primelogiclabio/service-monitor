@@ -80,6 +80,8 @@ func Run(args []string, out, errw io.Writer) int {
 		return e.joinKeyCmd(cargs)
 	case "alert", "alerts":
 		return e.alertCmd(cargs)
+	case "maintenance":
+		return e.maintenanceCmd(cargs)
 	case "agent":
 		return e.agentCmd(cargs)
 	default:
@@ -129,6 +131,12 @@ Hub commands (need a hub URL and token: 'svcmon login', or SVCMON_HUB / SVCMON_T
   alert enable|disable <channel>
   alert test <channel>            Send one test alert now
   alert show <channel> | alert rm <channel>
+  maintenance start <server> <duration> [--reason R] [--full]
+                                  Hold back a server's alerts while it is restarted (duration 20m, 1h30m; at
+                                  most 24h). Ends early once everything that went down is back, unless --full;
+                                  whatever is not back when it ends alerts then, once
+  maintenance end <server>        End it now
+  maintenance list [--json]       Servers in maintenance
 
 Agent commands (run on a monitored server):
   agent token [--name N] [--ttl MIN]   Create a one-time enrollment token (hub side)
@@ -158,6 +166,12 @@ Agent commands (run on a monitored server):
   agent declare [--config FILE] [--dry-run]
                                   Send the checks file beside agent.json to the hub now (the agent also does
                                   this itself at start-up and when the file changes); --dry-run only checks it
+  agent maintenance [start] <duration> [--reason R] [--full] [--config FILE]
+                                  Before a planned restart, hold back this server's alerts with the agent's own
+                                  credential (as root/admin): svcmon agent maintenance 20m && reboot. The hub
+                                  caps the length (svcmon.maintenance.agent-max-minutes) and may turn it off
+  agent maintenance end [--config FILE]
+                                  End this server's maintenance window now
 
 Other: version, help
 `)

@@ -1,9 +1,9 @@
 package io.primelogiclab.svcmon.hub.alerts;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import io.primelogiclab.svcmon.hub.config.HubProperties;
 import io.primelogiclab.svcmon.hub.model.ServerInfo;
@@ -27,12 +27,21 @@ class ServerWatchdog {
     private final ServerRepo servers;
     private final HubProperties props;
     private final ApplicationEventPublisher events;
-    private final Map<String, Boolean> online = new HashMap<>();
+    private final Map<String, Boolean> online = new ConcurrentHashMap<>();
 
     ServerWatchdog(ServerRepo servers, HubProperties props, ApplicationEventPublisher events) {
         this.servers = servers;
         this.props = props;
         this.events = events;
+    }
+
+    /**
+     * Whether this watchdog last saw the server's agent online, or null before its first look. A maintenance window
+     * goes by this rather than by the time of the last report, so that what it sends as it ends and what this sends
+     * later never contradict each other.
+     */
+    Boolean seenOnline(String serverId) {
+        return online.get(serverId);
     }
 
     @Scheduled(initialDelayString = "${svcmon.watchdog-initial-delay-ms:30000}",

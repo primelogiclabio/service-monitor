@@ -43,7 +43,19 @@ public record HubProperties(
         /** Sign-in with an identity provider (OpenID Connect), run by the hub itself; off unless issuer is set. */
         @DefaultValue Oidc oidc,
         /** The key the hub encrypts the secrets it stores with. */
-        @DefaultValue Secrets secrets) {
+        @DefaultValue Secrets secrets,
+        /** Maintenance windows, which hold back a server's alerts while it is restarted. */
+        @DefaultValue Maintenance maintenance) {
+
+    /** Who may open a maintenance window besides an admin, and for how long. */
+    public record Maintenance(
+            /** Lets an agent open a window for its own server (svcmon agent maintenance); on unless turned off. */
+            @DefaultValue("true") boolean agentAllowed,
+            /** The longest window an agent may open, in minutes; an admin may open one of up to 1440. */
+            @DefaultValue("60") int agentMaxMinutes) {
+
+        public static final Maintenance DEFAULT = new Maintenance(true, 60);
+    }
 
     /**
      * Alert channel secrets and HTTP check header values are stored encrypted (AES-256-GCM) with a key the hub makes

@@ -23,7 +23,7 @@ class AlertChannelServiceTest {
         return new HubProperties(Path.of("."), 30, 30, 90, null, false, null, List.of(), insecureUrls, 50, null, false, 200,
                 HubProperties.Users.DEFAULT, HubProperties.Sessions.DEFAULT, true, "classpath:/ui/",
                 HubProperties.Access.DEFAULT, HubProperties.Audit.DEFAULT, HubProperties.Oidc.DEFAULT,
-                HubProperties.Secrets.DEFAULT);
+                HubProperties.Secrets.DEFAULT, HubProperties.Maintenance.DEFAULT);
     }
 
     private final AlertChannelService strict = new AlertChannelService(null, null, props(false));

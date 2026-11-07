@@ -2,13 +2,20 @@ package io.primelogiclab.svcmon.hub.api;
 
 import java.util.List;
 
+import io.primelogiclab.svcmon.hub.alerts.MaintenanceService;
+import io.primelogiclab.svcmon.hub.alerts.MaintenanceService.MaintenanceRequest;
+import io.primelogiclab.svcmon.hub.audit.AuditService;
+import io.primelogiclab.svcmon.hub.core.ApiException;
 import io.primelogiclab.svcmon.hub.core.ServerService;
+import io.primelogiclab.svcmon.hub.core.StatusViews.MaintenanceView;
 import io.primelogiclab.svcmon.hub.model.ServerInfo;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -22,9 +29,11 @@ public class ServerController {
     }
 
     private final ServerService servers;
+    private final MaintenanceService maintenance;
 
-    public ServerController(ServerService servers) {
+    public ServerController(ServerService servers, MaintenanceService maintenance) {
         this.servers = servers;
+        this.maintenance = maintenance;
     }
 
     @GetMapping
@@ -47,5 +56,28 @@ public class ServerController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String id) {
         servers.delete(id);
+    }
+
+    /**
+     * Opens a maintenance window: no alert about the server until it ends. Opening one that is open moves its end
+     * later (never sooner) and replaces its reason and way of ending.
+     */
+    @PostMapping("/{id}/maintenance")
+    public MaintenanceView openMaintenance(@PathVariable String id, @RequestBody(required = false) MaintenanceRequest body,
+                                           HttpServletRequest req) {
+        MaintenanceView view = maintenance.open(id, body, AuditService.actorOf(req));
+        req.setAttribute(AuditService.TARGET_ATTR, servers.get(id).name());
+        req.setAttribute(AuditService.DETAIL_ATTR, MaintenanceService.describe(body));
+        return view;
+    }
+
+    /** Ends a maintenance window now; whatever is not as it was when it opened alerts once. */
+    @DeleteMapping("/{id}/maintenance")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void endMaintenance(@PathVariable String id, HttpServletRequest req) {
+        req.setAttribute(AuditService.TARGET_ATTR, servers.get(id).name());
+        if (!maintenance.end(id, AuditService.actorOf(req))) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "no_maintenance", "No maintenance window is open for this server");
+        }
     }
 }

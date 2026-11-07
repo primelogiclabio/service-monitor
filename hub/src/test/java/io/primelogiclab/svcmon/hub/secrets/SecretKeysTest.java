@@ -58,7 +58,7 @@ class SecretKeysTest {
         return new HubProperties(dataDir, 30, 30, 90, null, false, null, List.of(), false, 50, null, true, 200,
                 HubProperties.Users.DEFAULT, HubProperties.Sessions.DEFAULT, true, "classpath:/ui/",
                 HubProperties.Access.DEFAULT, HubProperties.Audit.DEFAULT, HubProperties.Oidc.DEFAULT,
-                new HubProperties.Secrets(keyFile));
+                new HubProperties.Secrets(keyFile), HubProperties.Maintenance.DEFAULT);
     }
 
     @Test

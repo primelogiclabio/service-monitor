@@ -133,6 +133,9 @@ func printServer(w io.Writer, sv hubapi.ServerView, indent string) {
 	if sv.OS != "" {
 		details = append([]string{sv.OS}, details...)
 	}
+	if sv.Maintenance != nil {
+		details = append(details, "MAINTENANCE until "+fmtMillis(sv.Maintenance.EndsAt)+", alerts held back")
+	}
 	fmt.Fprintf(w, "%s%s [%s]  %s\n", indent, sv.Name, sv.Status, strings.Join(details, ", "))
 	printChecks(w, sv.Checks, indent+"  ")
 }

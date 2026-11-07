@@ -20,6 +20,7 @@ Everything the [README](../README.md) leaves out: what is built and how far it h
 | Audit of sign-ins and changes (Settings > Activity, `GET /api/v1/audit`) | Built: hub and dashboard tests, and a run against a throwaway hub. In 0.1.0 and running on a Linux server |
 | API tokens that record who made them, and act for that person (suspended, read-only or revoked with them) | Built after 0.2.3: hub and dashboard tests, and a run against a throwaway hub; not in a release yet |
 | Stored secrets encrypted with the hub's own key (`secrets-key.json`; `secrets status`, `rotate-key`, `forget-unreadable`) | Built after 0.2.3: hub tests, and an upgrade from 0.2.3 tried on throwaway hubs; not in a release yet |
+| Maintenance windows: a server's alerts held back while it is restarted (`svcmon maintenance`, `svcmon agent maintenance`, the dashboard) | Built after 0.2.3: hub, CLI and dashboard tests, and a run against a throwaway hub; not in a release yet |
 | Multi-hub console | Not started |
 
 ## Deployment model
@@ -253,14 +254,14 @@ The hub keeps a record of who signed in and who changed what. Administrators rea
 | Sign-ins | 30 days (`svcmon.audit.sign-in-days`) | Signing in, with the reason a failure failed (`unknown_user`, `wrong_password`, `account_disabled`, `initial_password_inside_only`); too many attempts; refused for where it came from (`outside_not_allowed`, `insecure_transport`); signing out; a sign-in ended by its owner or an administrator; password changes (and wrong current passwords); resets, by an administrator or with `users reset` |
 | Changes | 365 days (`svcmon.audit.change-days`) | Every POST, PUT, PATCH and DELETE a person sends under `/api/`, whether it worked or not (except those that are sign-in events: signing in and out, password changes and resets, ending a sign-in), as its route (`DELETE /api/v1/checks/{id}`), the id or user name it was about and the outcome (`ok` or the hub's error code); a token, enrollment token or join key made or revoked is named, with the first 8 characters of its id (as `svcmon token list` shows it); each agent that registers, with the name of the enrollment token or join key it used |
 
-Each event also has the time, who it was (a user name, an API token's name, or `unknown`), the client address and whether that is inside or outside.
+Each event also has the time, who it was (a user name, an API token's name, a server's name for its agent, `hub` for the hub itself, or `unknown`), the client address and whether that is inside or outside. Maintenance windows (see "Maintenance") are changes too: a person's as API calls, with the server and the length; an agent opening or ending its own server's window as `maintenance_started` and `maintenance_ended`; the hub ending one itself as `maintenance_ended`, with why.
 
 What it never holds:
 - A request body, so no check settings, alert addresses or secrets.
 - A password, token or cookie.
 - A name nobody has: it is written as `unknown`, since it may be a password typed into the wrong box.
 
-Text is cut to one line of at most 200 characters. The agents' own calls (reports, heartbeats, declared checks) are not recorded, and neither is reading. A refusal that repeats (too many attempts, or a script outside trying again and again) is recorded once per address every 15 minutes.
+Text is cut to one line of at most 200 characters. The agents' own calls (reports, heartbeats, declared checks) are not recorded, apart from registering and maintenance windows, and neither is reading. A refusal that repeats (too many attempts, or a script outside trying again and again) is recorded once per address every 15 minutes.
 
 `GET /api/v1/audit` answers newest first, as `{"events": [...], "next": <id>}`. It takes `category` (`sign_in` or `change`; both when left out), `limit` (1 to 500, 100 by default) and `before`: pass `next` to get the page after. `next` is absent on the last page. Old events are deleted every few hours, each part after its own number of days (1 to 3650).
 
@@ -359,6 +360,7 @@ svcmon join-key create --name "app servers" --cluster prod   # reusable; also: j
 svcmon agent enroll --hub http://hub:8080 --token svm_e_...   # enroll without installing the service
 svcmon agent check add cpu --warn 80 --crit 90   # on the server: edit checks.json and send it; also: check rm, check list, check init
 svcmon agent declare             # send checks.json to the hub now; --dry-run only checks the file
+sudo svcmon agent maintenance 20m && sudo reboot   # hold back this server's alerts while it restarts (see "Maintenance")
 svcmon agent uninstall           # stop and remove the OS service
 ```
 
@@ -438,6 +440,27 @@ Safety:
 - With a signing secret, webhook bodies are signed: the hub sends `X-Svcmon-Signature: sha256=<HMAC-SHA256 of the body>`. The JSON has `event`, `kind` (`check`, `server` or `test`), `hub`, `time`, `subject`, `from`, `to` and `message`.
 - Names and messages can come from agents, so Slack markup is escaped, Discord mentions are switched off, and mail headers cannot be injected.
 
+## Maintenance
+
+Before a planned restart, open a maintenance window for the server: while it is open the hub sends no alert about that server, neither about its agent going quiet nor about any check linked to it (its agent's checks, and hub checks given that server). Other servers keep alerting, and the dashboard still shows the truth: the server goes red while it restarts, with a Maintenance tag and the time the window ends.
+
+```bash
+svcmon maintenance start web01 30m --reason "kernel update"   # an admin, from anywhere
+sudo svcmon agent maintenance 20m && sudo reboot              # on the server, with the agent's own credential
+svcmon maintenance list                                       # servers in maintenance, until when, by whom
+svcmon maintenance end web01                                  # also: svcmon agent maintenance end
+```
+
+How a window ends:
+- **Early, once everything is back** (the default). Once something went down while it was open (the agent quiet for longer than two heartbeats, or a check no longer UP), it ends as soon as the agent reports again and every enabled check of the server has run since and is UP, or as it was before for a check that was already down. A window that nothing disturbed runs to its time. With `--full` (in the dashboard, untick "End early once everything is back") it stays open for the whole time, for work with several restarts.
+- **At its time limit**, or **by hand** (`svcmon maintenance end`, End now in the dashboard).
+- Whatever is then not as it was when the window opened alerts **once**, with a message that starts "After maintenance:", so a server that never comes back from its restart still raises an alert. A check that runs rarely holds an early end until it has run again.
+- Opening a window that is already open moves its end later, never sooner, and replaces its reason and way of ending; who opened it and how things stood then are kept.
+
+An admin opens a window for 1 minute to 24 hours. A server's agent may open one for its own server only, for at most `svcmon.maintenance.agent-max-minutes` (60), and only while `svcmon.maintenance.agent-allowed` is true (the default; false leaves windows to admins); it may always end its own server's window, since that only lets alerts out again. The reason is optional, one line of at most 200 characters, shown on the dashboard and by `svcmon maintenance list`; it is never sent in alerts or written to the audit. The audit records each window opened and ended: a person's as API calls, an agent's as `maintenance_started` and `maintenance_ended`, and the hub's own ending as `maintenance_ended` by `hub`, with why (`everything is back` or `time limit`). Windows are kept in the database, so a hub restart does not end them; deleting a server deletes its window.
+
+A check on another server, or a hub check with no server, that probes this server (its website, say) is not held back; give such a check the server (`--server web01`) to have it held back with the rest.
+
 ## API (all under `/api/v1`, JSON, `Authorization: Bearer <token>` or a signed-in user's cookie)
 
 A user's role counts as the scope of the same name. Errors are `{"error": "<code>", "message": "..."}`.
@@ -464,12 +487,13 @@ A user's role counts as the scope of the same name. Errors are `{"error": "<code
 | `POST /checks/{id}/run` | admin | Run a hub-side check now |
 | `GET /checks/{id}/results?since=&limit=` | read | History, newest first |
 | `GET /servers`, `GET /servers/{id}`, `PATCH /servers/{id}`, `DELETE /servers/{id}` | read / admin | Servers and clusters |
+| `POST /servers/{id}/maintenance`, `DELETE /servers/{id}/maintenance` | admin | Open or extend a maintenance window, `{"minutes": 1-1440, "reason": "...", "untilBack": true}`, answered with the window; end it now, 404 `no_maintenance` when none is open (see "Maintenance"). `GET /status` shows an open window as the server's `maintenance`: `startedAt`, `endsAt`, `reason`, `startedBy`, `startedByKind`, `untilBack` |
 | `GET/POST /tokens`, `DELETE /tokens/{id}` | admin | API tokens (ADMIN or READ). The list has every token, each with who made it: `createdBy` (a name) and `createdByKind` (`user`, `token`, `join_key` or `enrollment_token` for an agent's credential, `hub` for one made at start-up); both absent for tokens made before the hub recorded it. `ownerId` is the user it acts for (absent: nobody), and `limit` is `suspended` or `read_only` while that user's account limits it |
 | `POST /enrollment-tokens` | admin | One-time token to register an agent |
 | `GET/POST /join-keys`, `DELETE /join-keys/{id}` | admin | Reusable join keys: register any number of agents until revoked or expired; optional cluster; who made each, as for `/tokens` |
 | `GET/POST /alert-channels`, `GET/PUT/DELETE /alert-channels/{id}` | admin | Alert channels; secrets are always masked. On PUT a secret left out, empty or sent back masked keeps its stored value, and one sent as `null` is removed (the URL cannot be) |
 | `POST /alert-channels/{id}/test` | admin | Send one test alert now |
-| `POST /agent/register`, `GET /agent/config`, `POST /agent/report`, `PUT /agent/checks` | enroll or join key / agent | Agent protocol (agents only call out). `PUT /agent/checks` declares the agent's own checks and is refused when `svcmon.agent-declared-checks` is set to false |
+| `POST /agent/register`, `GET /agent/config`, `POST /agent/report`, `PUT /agent/checks`, `POST/DELETE /agent/maintenance` | enroll or join key / agent | Agent protocol (agents only call out). `PUT /agent/checks` declares the agent's own checks and is refused when `svcmon.agent-declared-checks` is set to false. `POST /agent/maintenance` opens or extends a maintenance window for the agent's own server (body as for `/servers/{id}/maintenance`, at most `svcmon.maintenance.agent-max-minutes`), refused with 403 `agent_maintenance_off` when `svcmon.maintenance.agent-allowed` is false; `DELETE` ends it |
 
 ### Live view (WebSocket)
 
@@ -503,6 +527,8 @@ Check types: `HTTP`, `TCP`, `PING` run on the hub or on an agent; `SERVICE`, `CO
 | `svcmon.public-url` | unset | The address people open the dashboard at (`https://monitor.example.com`, a path is fine, no query or fragment). Alert emails then get an "Open in dashboard" button; unset means no button. A wrong value stops the start-up |
 | `svcmon.agent-declared-checks` | true | Lets agents declare their own checks from a `checks.json` beside their config (see "Checks declared by the agent"). Set to false and the hub refuses declarations, so only the admin lists what is monitored |
 | `svcmon.agent-declared-checks-limit` | 200 | Most checks one server may declare (1 to 1000); more is refused. A value outside the range stops the start-up |
+| `svcmon.maintenance.agent-allowed` | true | Lets a server's agent open a maintenance window for its own server (`svcmon agent maintenance`, see "Maintenance"); false leaves windows to admins |
+| `svcmon.maintenance.agent-max-minutes` | 60 | Longest maintenance window an agent may open (1 to 1440; an admin may open one of up to 1440). A value outside the range stops the start-up |
 | `svcmon.users.enabled` | true | Sign-in with a user name and password; see "Users and sign-in" |
 | `svcmon.users.initial-admin-username` | `admin` | Name of the first administrator, created on a hub without users |
 | `svcmon.users.initial-admin-password` | `admin` | Its password, which works only from the internal network and must be changed at the first sign-in |

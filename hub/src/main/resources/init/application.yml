@@ -119,6 +119,12 @@
 #   agent-declared-checks: true
 ##   The most checks one server may declare (1 to 1000).
 #   agent-declared-checks-limit: 200
+##   Maintenance windows hold back a server's alerts while it is restarted; an admin opens one for up to 1440
+##   minutes. agent-allowed lets a server open one for itself before a restart (svcmon agent maintenance 20m), for at
+##   most agent-max-minutes (1 to 1440); false leaves it to admins.
+#   maintenance:
+#     agent-allowed: true
+#     agent-max-minutes: 60
 
 ##   ---- Alerts and the live view ----
 ##   Let Slack and Discord alert URLs use http instead of https. For tests and local receivers only.

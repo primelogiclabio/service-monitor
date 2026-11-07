@@ -20,7 +20,7 @@ class UiHostingConfigTest {
         return new HubProperties(Path.of("."), 30, 30, 90, null, false, uiDir, List.of(), false, 50, null, true, 200,
                 HubProperties.Users.DEFAULT, HubProperties.Sessions.DEFAULT, enabled, embedded,
                 HubProperties.Access.DEFAULT, HubProperties.Audit.DEFAULT, HubProperties.Oidc.DEFAULT,
-                HubProperties.Secrets.DEFAULT);
+                HubProperties.Secrets.DEFAULT, HubProperties.Maintenance.DEFAULT);
     }
 
     @Test

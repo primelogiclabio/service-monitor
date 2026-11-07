@@ -4,6 +4,7 @@ import java.util.List;
 
 import io.primelogiclab.svcmon.hub.model.CheckSource;
 import io.primelogiclab.svcmon.hub.model.CheckType;
+import io.primelogiclab.svcmon.hub.model.Maintenance;
 import io.primelogiclab.svcmon.hub.model.RunFrom;
 import io.primelogiclab.svcmon.hub.model.Status;
 
@@ -39,7 +40,25 @@ public final class StatusViews {
             Long lastSeen,
             boolean agentOnline,
             Status status,
-            List<CheckView> checks) {
+            List<CheckView> checks,
+            /** The server's open maintenance window, or null (left out of the JSON) when its alerts go out. */
+            MaintenanceView maintenance) {
+    }
+
+    /** An open maintenance window: no alert about the server is sent until it ends. */
+    public record MaintenanceView(
+            String serverId,
+            long startedAt,
+            long endsAt,
+            String reason,
+            String startedBy,
+            String startedByKind,
+            boolean untilBack) {
+
+        public static MaintenanceView of(Maintenance m) {
+            return new MaintenanceView(m.serverId(), m.startedAt(), m.endsAt(), m.reason(), m.startedBy(),
+                    m.startedByKind(), m.untilBack());
+        }
     }
 
     public record ClusterView(String name, Status status, List<ServerView> servers) {

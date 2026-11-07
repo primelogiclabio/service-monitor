@@ -32,7 +32,7 @@ import org.springframework.web.servlet.HandlerMapping;
  * Change events are written by {@link #requestDone} once a person's POST, PUT, PATCH or DELETE under /api/ has been
  * answered: the route pattern (POST /api/v1/checks/{id}), the id in the path, the outcome and who it was. A controller may add a target
  * and a detail in the request attributes {@link #TARGET_ATTR} and {@link #DETAIL_ATTR}. Agents only appear when they
- * register.
+ * register and when they open or end a maintenance window; the hub, when it ends one.
  */
 @Service
 public class AuditService {
@@ -76,6 +76,11 @@ public class AuditService {
         /** The enrollment token or join key an agent registered with, by name. */
         public static Actor registeredWith(TokenRecord key) {
             return new Actor(key.name(), key.scope() == Scope.JOIN ? "join_key" : "enrollment_token");
+        }
+
+        /** A server's agent, by the server's name, for what it asks for itself (a maintenance window). */
+        public static Actor agent(String serverName) {
+            return new Actor(serverName, "agent");
         }
     }
 

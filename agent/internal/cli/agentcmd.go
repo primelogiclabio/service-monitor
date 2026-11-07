@@ -22,7 +22,7 @@ import (
 
 func (e *env) agentCmd(args []string) int {
 	if len(args) == 0 {
-		return e.fail(errors.New("usage: svcmon agent token|enroll|install|uninstall|run|services|containers|check|declare"))
+		return e.fail(errors.New("usage: svcmon agent token|enroll|install|uninstall|run|services|containers|check|declare|maintenance"))
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -42,6 +42,8 @@ func (e *env) agentCmd(args []string) int {
 		return e.agentContainers(rest)
 	case "check":
 		return e.agentCheck(rest)
+	case "maintenance":
+		return e.agentMaintenance(rest)
 	case "declare":
 		return e.agentDeclare(rest)
 	default:

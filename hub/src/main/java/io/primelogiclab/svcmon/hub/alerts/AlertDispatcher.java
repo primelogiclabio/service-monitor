@@ -23,9 +23,10 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Listens for status changes and sends them to every enabled channel that wants that status. Each delivery runs on
- * its own virtual thread, so a slow or broken receiver never delays checks or other channels, and is retried a few
- * times when the failure looks temporary.
+ * Listens for status changes and sends them to every enabled channel that wants that status, except changes about a
+ * server in maintenance ({@link MaintenanceService}), which sends what is not back when the window ends. Each delivery
+ * runs on its own virtual thread, so a slow or broken receiver never delays checks or other channels, and is retried a
+ * few times when the failure looks temporary.
  */
 @Component
 public class AlertDispatcher {
@@ -38,15 +39,18 @@ public class AlertDispatcher {
 
     private final AlertChannelRepo channels;
     private final ServerRepo servers;
+    private final MaintenanceService maintenance;
     private final HubIdentity hub;
     private final Map<AlertType, AlertSender> senders = new EnumMap<>(AlertType.class);
     private final long[] retryDelaysMs;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     AlertDispatcher(AlertChannelRepo channels, ServerRepo servers, HubIdentity hub, List<AlertSender> all,
+                    MaintenanceService maintenance,
                     @Value("${svcmon.alert-retry-delays-ms:0,2000,5000}") long[] retryDelaysMs) {
         this.channels = channels;
         this.servers = servers;
+        this.maintenance = maintenance;
         this.hub = hub;
         this.retryDelaysMs = retryDelaysMs.length == 0 ? new long[] {0} : retryDelaysMs;
         for (AlertSender s : all) {
@@ -58,15 +62,41 @@ public class AlertDispatcher {
     public void onCheckChange(StatusChangedEvent e) {
         CheckDef c = e.check();
         String serverName = c.serverId() == null ? null : servers.find(c.serverId()).map(ServerInfo::name).orElse(null);
-        dispatch(new AlertEvent(AlertEvent.Kind.CHECK, c.id(), c.name(), c.type().name(), c.target(),
-                c.serverId(), serverName, e.from(), e.to(), e.message(), e.ts()));
+        AlertEvent event = new AlertEvent(AlertEvent.Kind.CHECK, c.id(), c.name(), c.type().name(), c.target(),
+                c.serverId(), serverName, e.from(), e.to(), e.message(), e.ts());
+        if (!muted(event)) {
+            dispatch(event);
+        }
     }
 
     @EventListener
     public void onServerChange(ServerStatusEvent e) {
         ServerInfo s = e.server();
-        dispatch(new AlertEvent(AlertEvent.Kind.SERVER, s.id(), "agent", "AGENT", null, s.id(), s.name(),
-                e.online() ? Status.DOWN : Status.UP, e.online() ? Status.UP : Status.DOWN, e.message(), e.ts()));
+        AlertEvent event = new AlertEvent(AlertEvent.Kind.SERVER, s.id(), "agent", "AGENT", null, s.id(), s.name(),
+                e.online() ? Status.DOWN : Status.UP, e.online() ? Status.UP : Status.DOWN, e.message(), e.ts());
+        if (!muted(event)) {
+            dispatch(event);
+        }
+    }
+
+    /** What is still not as it was when a maintenance window opened, sent once as it ends. */
+    @EventListener
+    void onMaintenanceEnded(MaintenanceEnded e) {
+        e.alerts().forEach(this::dispatch);
+    }
+
+    private boolean muted(AlertEvent event) {
+        try {
+            if (maintenance.mutes(event.serverId(), event.to())) {
+                log.info("Alert held back, {} is in maintenance: {} {} -> {}", event.serverName(), event.subject(),
+                        event.from(), event.to());
+                return true;
+            }
+        } catch (RuntimeException ex) {
+            // Better an alert during maintenance than none at all.
+            log.warn("Could not check for a maintenance window: {}", ex.getMessage());
+        }
+        return false;
     }
 
     /** Sends the event to every enabled channel whose statuses include the new status. Returns immediately. */
