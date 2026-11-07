@@ -1,6 +1,6 @@
 # Service Monitor: Reference
 
-Everything the [README](../README.md) leaves out: what is built and how far it has been tried, running and upgrading the hub, signing in, adding servers and checks, alerts, the API and every setting. The design is explained in [service-monitor-design.md](service-monitor-design.md), the technology in [service-monitor-stack-guide.md](service-monitor-stack-guide.md), and what the software does with data and the network in [service-monitor-trust-policy.md](service-monitor-trust-policy.md).
+Everything the [README](../README.md) leaves out: what is built and how far it has been tried, running and upgrading the hub, signing in, adding servers and checks, alerts, maintenance windows, the API and every setting. The design is explained in [service-monitor-design.md](service-monitor-design.md), the technology in [service-monitor-stack-guide.md](service-monitor-stack-guide.md), and what the software does with data and the network in [service-monitor-trust-policy.md](service-monitor-trust-policy.md).
 
 ## Status (v0.2)
 
@@ -20,7 +20,7 @@ Everything the [README](../README.md) leaves out: what is built and how far it h
 | Audit of sign-ins and changes (Settings > Activity, `GET /api/v1/audit`) | Built: hub and dashboard tests, and a run against a throwaway hub. In 0.1.0 and running on a Linux server |
 | API tokens that record who made them, and act for that person (suspended, read-only or revoked with them) | Built after 0.2.3: hub and dashboard tests, and a run against a throwaway hub; not in a release yet |
 | Stored secrets encrypted with the hub's own key (`secrets-key.json`; `secrets status`, `rotate-key`, `forget-unreadable`) | Built after 0.2.3: hub tests, and an upgrade from 0.2.3 tried on throwaway hubs; not in a release yet |
-| Maintenance windows: a server's alerts held back while it is restarted (`svcmon maintenance`, `svcmon agent maintenance`, the dashboard) | Built after 0.2.3: hub, CLI and dashboard tests, and a run against a throwaway hub; not in a release yet |
+| Maintenance windows: a server's alerts held back while it is restarted (`svcmon maintenance`, `svcmon agent maintenance`, the dashboard) | Built after 0.2.3: hub, CLI and dashboard tests, and a run against a throwaway hub with a real agent; the dashboard's dialog and banner not yet seen in a browser; not in a release yet |
 | Multi-hub console | Not started |
 
 ## Deployment model

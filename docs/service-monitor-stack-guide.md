@@ -1,6 +1,6 @@
 # Service Monitor: what it is for and what it is built with
 
-A plain-language guide for someone who knows Java well and is less sure about the rest of the stack. Facts were checked against the repositories on 2026-11-01 (hub `main` at `f02728a`, dashboard `main` at `515aa58`). For the reasoning behind the design see `service-monitor-design.md`; for how to run it see `README.md`.
+A plain-language guide for someone who knows Java well and is less sure about the rest of the stack. Facts were checked against the repositories on 2026-11-07 (hub `main` at `deb7ba4`, dashboard `main` at `d477722`). For the reasoning behind the design see `service-monitor-design.md`; for how to run it see `README.md`.
 
 ## 1. What it is for
 
@@ -78,7 +78,7 @@ These pictures come from a throwaway demo hub filled with made-up servers (the d
 | Virtual threads (Java 21, JEP 444) | Very cheap threads managed by the JVM; blocking in one costs almost nothing | `spring.threads.virtual.enabled` is on. One ordinary thread keeps time in `CheckScheduler`; every check run executes on its own virtual thread, so hundreds of slow checks do not need a big pool |
 | JdbcClient | Spring's plain-SQL helper (no JPA, no Hibernate) | The `store/` package writes SQL by hand and maps rows into Java records |
 | SQLite and `sqlite-jdbc` 3.53.4.0 | A database that is just a file | Lives in `svcmon.data-dir`. Opened in WAL mode (readers do not block the writer), with a 10 second busy timeout and foreign keys on. The jar carries the native libraries for every platform |
-| Flyway | Applies numbered migrations to the database on start | SQL scripts in `src/main/resources/db/migration` (`V1` to `V8` and `V10`), and a data fix that needs code as a Java class in `src/main/java/db/migration` (`V9`). An applied migration is never edited; a change is a new file |
+| Flyway | Applies numbered migrations to the database on start | SQL scripts in `src/main/resources/db/migration` (`V1` to `V8`, `V10` and `V11`), and a data fix that needs code as a Java class in `src/main/java/db/migration` (`V9`). An applied migration is never edited; a change is a new file |
 | Spring WebSocket | A long-lived two-way connection to the browser | `/api/v1/live` pushes the status to a dashboard when it changes |
 | Angus Mail 2.0.5 | The implementation of Jakarta Mail | Sends alert emails over SMTP |
 | Nimbus OAuth 2.0 SDK 11.38 and Nimbus JOSE+JWT 10.9 | The OpenID Connect and JSON Web Token libraries that Spring Security itself uses underneath | Sign-in with an identity provider (`oidc/`): the provider's discovery document, the sign-in request with PKCE, the hub's signed proof (`private_key_jwt`) and every check on the ID token |
@@ -236,11 +236,18 @@ A "service" is a program the operating system starts at boot and restarts if it 
 
 The agent keeps up to 5,000 results in memory and sends them when the hub is back, so a restart leaves no gap and raises no false alert.
 
+### A monitored server restarts
+
+1. Before a planned reboot, someone opens a maintenance window for the server: `svcmon agent maintenance 20m && reboot` on the server itself (with the agent's own credential, at most an hour by default), or an admin with `svcmon maintenance start web01 30m` or the Maintenance button on the server's page.
+2. While it is open, the hub sends no alert about that server: not its agent going quiet, not any check linked to it. The checks keep running and the dashboard still shows everything going down and coming back, with a Maintenance tag on the server.
+3. The window remembers how things stood when it opened. It ends at its time limit, by hand, or (by default) as soon as the restart is over and every check is back.
+4. When it ends, anything not back to how it was alerts once, with a message starting "After maintenance:", so a server that never comes back still pages someone. The alerts held back during the window are not replayed.
+
 ## 6. Where things live
 
 | Path | What is there |
 |---|---|
-| `hub/src/main/java/io/primelogiclab/svcmon/hub/` | `api` (REST controllers), `core` (scheduler, services), `checks` (HTTP, TCP and ping runners), `alerts` (senders), `security` (tokens, sign-in), `oidc` (sign-in with an identity provider), `audit` (who did what), `secrets` (encryption of stored secrets), `store` (SQL), `live` (WebSocket), `model`, `config` |
+| `hub/src/main/java/io/primelogiclab/svcmon/hub/` | `api` (REST controllers), `core` (scheduler, services), `checks` (HTTP, TCP and ping runners), `alerts` (senders, the offline watchdog, maintenance windows), `security` (tokens, sign-in), `oidc` (sign-in with an identity provider), `audit` (who did what), `secrets` (encryption of stored secrets), `store` (SQL), `live` (WebSocket), `model`, `config` |
 | `hub/src/main/resources/` | `application.yml` and the Flyway SQL migrations (data fixes in Java are in `hub/src/main/java/db/migration`) |
 | `hub/service/` | Install and uninstall scripts for the hub as a service, with their tests |
 | `agent/cmd/svcmon/` | The program's entry point |
@@ -272,7 +279,7 @@ Run these from the folder shown; on this machine Go and Node need their cache fo
 ## 9. Limits and open questions
 
 - **Not built:** the multi-hub "console" role, a bundled Java runtime, a macOS hub installer, per-container CPU and memory, and Telegram or ntfy alert channels.
-- **Not tried on real systems:** the macOS agent installer and service checks; container checks on Linux and with Podman; agent-declared checks on an installed service.
+- **Not tried on real systems:** the macOS agent installer and service checks; container checks on Linux and with Podman; agent-declared checks on an installed service; the dashboard's maintenance dialog and banner in a browser (maintenance windows were run against a throwaway hub with a real agent).
 - **Resource figures** in the design document (memory, disk) are estimates, not measurements.
 - **Not covered here:** how the live deployment on a cloud server is laid out; that lives in a separate infrastructure repository.
 
