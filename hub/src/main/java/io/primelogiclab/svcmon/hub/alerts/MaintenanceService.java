@@ -187,16 +187,32 @@ public class MaintenanceService {
 
     /**
      * Whether an alert about this server must be held back. A change to anything but UP while the window is open
-     * counts as something going down, which an early end then waits to see come back.
+     * counts as something going down, which an early end then waits to see come back. {@code changedAt} is when it
+     * happened: a check's result time, or for the agent {@link #awaySince}.
      */
-    synchronized boolean mutes(String serverId, Status to) {
-        if (serverId == null || windows.find(serverId).isEmpty()) {
+    synchronized boolean mutes(String serverId, Status to, long changedAt) {
+        Optional<Maintenance> open = serverId == null ? Optional.empty() : windows.find(serverId);
+        if (open.isEmpty()) {
             return false;
         }
         if (to != Status.UP) {
-            windows.markDisturbed(serverId, System.currentTimeMillis());
+            disturb(open.get(), changedAt);
         }
         return true;
+    }
+
+    /**
+     * Dates a disturbance by when it happened, never by when the hub looked: the agent stamps its first result back,
+     * and the hub can look before that report is stored and still find the server away. Dated then, that result would
+     * be older than the disturbance and never count, and the window would wait for the check's next run.
+     */
+    private void disturb(Maintenance m, long at) {
+        windows.markDisturbed(m.serverId(), Math.max(m.startedAt(), at));
+    }
+
+    /** When an agent last seen at {@code lastSeen} became away (see {@link #away}); {@code otherwise} if never seen. */
+    long awaySince(Long lastSeen, long otherwise) {
+        return lastSeen == null ? otherwise : lastSeen + awayMs();
     }
 
     // ---- the clock ----
@@ -230,7 +246,7 @@ public class MaintenanceService {
             return;
         }
         if (away(server, now)) {
-            windows.markDisturbed(server.id(), now);
+            disturb(m, awaySince(server.lastSeen(), m.startedAt()));
             return;
         }
         Maintenance fresh = windows.find(server.id()).orElse(null);
@@ -250,8 +266,11 @@ public class MaintenanceService {
      * of a restart that is quicker than the offline limit, so the watchdog never sees it.
      */
     private boolean away(ServerInfo s, long now) {
-        long awayMs = Math.min(2L * props.agentHeartbeatSeconds(), props.agentStaleSeconds()) * 1000L;
-        return s.lastSeen() == null || now - s.lastSeen() > awayMs;
+        return s.lastSeen() == null || now - s.lastSeen() > awayMs();
+    }
+
+    private long awayMs() {
+        return Math.min(2L * props.agentHeartbeatSeconds(), props.agentStaleSeconds()) * 1000L;
     }
 
     /**
