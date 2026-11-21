@@ -394,7 +394,7 @@ Start-Service svcmon-agent
 ```
 
 ```bash
-# Linux (not tried on a real system), as root: same idea with systemd
+# Linux, as root: same idea with systemd (run for real: an Ubuntu 26.04 server's agent, 0.2.3 to 0.3.0)
 systemctl stop svcmon-agent
 cp svcmon-agent-<version>-linux-amd64 /path/to/the/installed/svcmon
 systemctl start svcmon-agent
@@ -407,7 +407,7 @@ launchctl load -w /Library/LaunchDaemons/io.primelogiclab.svcmon.agent.plist
 
 The service is shown as "Service Monitor agent" (the hub's is "Service Monitor hub"). An agent installed by an earlier build is listed as "svcmon monitoring agent" and keeps that name through an upgrade; on Windows rename it from an elevated prompt with `sc.exe config svcmon-agent DisplayName= "Service Monitor agent"`.
 
-The Windows steps are the ones that have been run for real (hub and agent upgraded in place on the development machine); the Linux and macOS commands follow from how the installer registers the service.
+The Windows steps have been run for real (hub and agent upgraded in place on the development machine), and so have the Linux agent's (an agent installed with `svcmon agent install` on an Ubuntu 26.04 server, upgraded from 0.2.3 to 0.3.0 with the hub already on 0.3.0; it reported again within seconds); the macOS commands follow from how the installer registers the service.
 
 ## Alerts
 
