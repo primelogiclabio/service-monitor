@@ -365,10 +365,11 @@ func TestAlertEnableDisableAndRemove(t *testing.T) {
 	if code, _, _ := run("alert", "disable", "OPS"); code != 0 { // names match case-insensitively
 		t.Fatal("disable failed")
 	}
-	if r := hub.last(); r.Method != "PUT" || r.Body["enabled"] != false || !strings.HasSuffix(r.Path, "aaaa1111-0000") {
+	// Only the switch is sent: the hub keeps the stored config (and its secrets) when config is left out.
+	if r := hub.last(); r.Method != "PUT" || !reflect.DeepEqual(r.Body, map[string]any{"enabled": false}) || !strings.HasSuffix(r.Path, "aaaa1111-0000") {
 		t.Fatalf("disable request: %+v", r)
 	}
-	if code, _, _ := run("alert", "enable", "ops"); code != 0 || hub.last().Body["enabled"] != true {
+	if code, _, _ := run("alert", "enable", "ops"); code != 0 || !reflect.DeepEqual(hub.last().Body, map[string]any{"enabled": true}) {
 		t.Fatalf("enable request: %+v", hub.last())
 	}
 	if code, out, _ := run("alert", "rm", "bbbb"); code != 0 || !strings.Contains(out, `Deleted channel "chat"`) { // by ID prefix

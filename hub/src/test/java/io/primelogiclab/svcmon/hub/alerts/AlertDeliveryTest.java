@@ -408,6 +408,55 @@ class AlertDeliveryTest {
     }
 
     @Test
+    void switchingAChannelOffAndOnKeepsItsWholeConfig() throws Exception {
+        String id = uid();
+        String to1 = "one-" + id + "@example.test";
+        String to2 = "two-" + id + "@example.test";
+        String mailId = channel("EMAIL", "switch-mail-" + id, Map.of("smtpHost", "127.0.0.1", "smtpPort", smtp.port(),
+                "security", "NONE", "from", "switch@example.test", "to", List.of(to1, to2), "format", "TEXT"),
+                List.of("DOWN"), null);
+        String path = "/hook/switch-" + id;
+        String hookId = channel("WEBHOOK", "switch-hook-" + id, Map.of("url", receivers.url(path),
+                "headers", Map.of("Authorization", "Bearer abc", "X-Team", "ops"), "signingSecret", "s3cret"), null, null);
+        Map<String, Object> mailBefore = channelView(mailId);
+        Map<String, Object> hookBefore = channelView(hookId);
+
+        // What `svcmon alert disable` and `enable` send: the switch alone, with no config.
+        for (String channelId : List.of(mailId, hookId)) {
+            for (boolean enabled : List.of(false, true)) {
+                Resp put = call("PUT", "/api/v1/alert-channels/" + channelId, ADMIN, Map.of("enabled", enabled));
+                assertEquals(200, put.status(), put.raw());
+                assertEquals(enabled, put.map().get("enabled"));
+            }
+        }
+        for (String key : List.of("name", "statuses", "config")) {
+            assertEquals(mailBefore.get(key), channelView(mailId).get(key), key);
+            assertEquals(hookBefore.get(key), channelView(hookId).get(key), key);
+        }
+
+        // The masked view could hide a lost secret, so deliver: the real values must still be there.
+        assertEquals(true, call("POST", "/api/v1/alert-channels/" + mailId + "/test", ADMIN, null).map().get("ok"));
+        FakeSmtpServer.Mail mail = awaitMail("To: " + to1, 1);
+        assertEquals(List.of(to1, to2), mail.to());
+        assertTrue(mail.from().contains("switch@example.test"), mail.from());
+        assertFalse(mail.data().contains("multipart"), "still a TEXT channel");
+        assertEquals(true, call("POST", "/api/v1/alert-channels/" + hookId + "/test", ADMIN, null).map().get("ok"));
+        Receivers.Hit hit = awaitHits(path, 1).get(0);
+        assertEquals("Bearer abc", hit.headers().get("authorization"));
+        assertEquals("ops", hit.headers().get("x-team"));
+        assertEquals("sha256=" + WebhookSender.sign("s3cret", hit.body()), hit.headers().get("x-svcmon-signature"));
+
+        // A config that is sent still replaces the stored one as a whole: headers left out are dropped.
+        String maskedUrl = (String) obj(hookBefore.get("config")).get("url");
+        Resp replaced = call("PUT", "/api/v1/alert-channels/" + hookId, ADMIN, Map.of("config", Map.of("url", maskedUrl)));
+        assertEquals(200, replaced.status(), replaced.raw());
+        assertFalse(obj(replaced.map().get("config")).containsKey("headers"), replaced.raw());
+        Resp partial = call("PUT", "/api/v1/alert-channels/" + mailId, ADMIN, Map.of("config", Map.of("format", "HTML")));
+        assertEquals(400, partial.status(), partial.raw());
+        assertTrue(partial.raw().contains("smtpHost is required"), partial.raw());
+    }
+
+    @Test
     void realEmailsAreMultipartWithBothPartsAndTextChannelsStayPlain() throws Exception {
         String id = uid();
         String htmlTo = "html-" + id + "@example.test";
