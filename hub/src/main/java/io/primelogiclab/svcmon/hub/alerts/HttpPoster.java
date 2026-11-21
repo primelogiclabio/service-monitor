@@ -5,14 +5,16 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-/** POSTs JSON to a webhook URL. Redirects are not followed, and error text never contains the URL (it is a secret). */
+/**
+ * POSTs JSON to a webhook URL. Redirects are not followed, and error text never contains the URL (it is a secret),
+ * only its host and port.
+ */
 @Component
 class HttpPoster {
 
@@ -22,9 +24,11 @@ class HttpPoster {
             .build();
 
     void postJson(String url, String json, Map<String, String> headers) throws AlertDeliveryException {
+        URI uri;
         HttpRequest.Builder request;
         try {
-            request = HttpRequest.newBuilder(URI.create(url));
+            uri = URI.create(url);
+            request = HttpRequest.newBuilder(uri);
         } catch (IllegalArgumentException e) {
             throw new AlertDeliveryException("The channel's URL is not valid", false);
         }
@@ -49,11 +53,8 @@ class HttpPoster {
             }
             String body = AlertFormat.truncate(scrub(AlertFormat.oneLine(response.body()), url), 200);
             throw new AlertDeliveryException("HTTP " + code + (body.isBlank() ? "" : ": " + body), code == 429 || code >= 500);
-        } catch (HttpTimeoutException e) {
-            throw new AlertDeliveryException("Timed out waiting for the receiver", true);
         } catch (IOException e) {
-            String message = e.getMessage() == null ? "" : ": " + AlertFormat.truncate(scrub(AlertFormat.oneLine(e.getMessage()), url), 200);
-            throw new AlertDeliveryException(e.getClass().getSimpleName() + message, true);
+            throw new AlertDeliveryException(DeliveryFailure.webhook(e, uri), true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new AlertDeliveryException("Interrupted", false);
