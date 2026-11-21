@@ -64,7 +64,7 @@ public class AlertDispatcher {
         String serverName = c.serverId() == null ? null : servers.find(c.serverId()).map(ServerInfo::name).orElse(null);
         AlertEvent event = new AlertEvent(AlertEvent.Kind.CHECK, c.id(), c.name(), c.type().name(), c.target(),
                 c.serverId(), serverName, e.from(), e.to(), e.message(), e.ts());
-        if (!muted(event)) {
+        if (!muted(event, e.ts())) {
             dispatch(event);
         }
     }
@@ -74,7 +74,8 @@ public class AlertDispatcher {
         ServerInfo s = e.server();
         AlertEvent event = new AlertEvent(AlertEvent.Kind.SERVER, s.id(), "agent", "AGENT", null, s.id(), s.name(),
                 e.online() ? Status.DOWN : Status.UP, e.online() ? Status.UP : Status.DOWN, e.message(), e.ts());
-        if (!muted(event)) {
+        // Gone as of its last report as the watchdog read it, not as of the scan, which can be after it came back.
+        if (!muted(event, maintenance.awaySince(s.lastSeen(), e.ts()))) {
             dispatch(event);
         }
     }
@@ -85,9 +86,9 @@ public class AlertDispatcher {
         e.alerts().forEach(this::dispatch);
     }
 
-    private boolean muted(AlertEvent event) {
+    private boolean muted(AlertEvent event, long changedAt) {
         try {
-            if (maintenance.mutes(event.serverId(), event.to())) {
+            if (maintenance.mutes(event.serverId(), event.to(), changedAt)) {
                 log.info("Alert held back, {} is in maintenance: {} {} -> {}", event.serverName(), event.subject(),
                         event.from(), event.to());
                 return true;

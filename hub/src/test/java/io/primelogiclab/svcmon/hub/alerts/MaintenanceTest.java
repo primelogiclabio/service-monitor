@@ -18,15 +18,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.LongConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import io.primelogiclab.svcmon.hub.store.ServerRepo;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.json.JsonMapper;
@@ -65,6 +68,12 @@ class MaintenanceTest {
 
     @Autowired
     MaintenanceService maintenance;
+
+    @Autowired
+    ServerRepo servers;
+
+    @Autowired
+    ApplicationEventPublisher events;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final JsonMapper json = JsonMapper.builder().build();
@@ -164,7 +173,12 @@ class MaintenanceTest {
     }
 
     private void report(Agent a, String checkId, String status) throws Exception {
-        Map<String, Object> result = Map.of("checkId", checkId, "ts", System.currentTimeMillis(), "status", status,
+        report(a, checkId, status, System.currentTimeMillis());
+    }
+
+    /** A result the agent stamped at {@code ts}. */
+    private void report(Agent a, String checkId, String status, long ts) throws Exception {
+        Map<String, Object> result = Map.of("checkId", checkId, "ts", ts, "status", status,
                 "message", "service is " + status.toLowerCase(java.util.Locale.ROOT));
         Resp r = call("POST", "/api/v1/agent/report", a.token, Map.of("results", List.of(result)));
         assertEquals(200, r.status(), r.raw());
@@ -347,6 +361,53 @@ class MaintenanceTest {
         assertEquals("everything is back", ended.get("detail"));
         String everything = call("GET", "/api/v1/audit?limit=500", ADMIN, null).raw();
         assertFalse(everything.contains("patching"), "the reason is free text from outside and stays out of the audit");
+    }
+
+    /**
+     * The agent stamps its first result back, and before that report is stored the hub looks at the server and still
+     * finds it away. Here the hub looks a little later than the result, on purpose; on a busy machine it happens by chance.
+     */
+    private void comeBackAfterALateLook(Agent a, String checkId, LongConsumer lateLook) throws Exception {
+        a.stop();
+        awaitOffline(a);
+        long back = System.currentTimeMillis();
+        lateLook.accept(back + 100);
+        report(a, checkId, "UP", back);
+        a.beat();
+    }
+
+    @Test
+    void aResultSentAsTheAgentCameBackCountsWhenTheMaintenanceClockLooksLate() throws Exception {
+        String id = uid();
+        String hook = webhook(id);
+        Agent a = agent("late-clock-" + id).beat();
+        String ca = agentCheck(a, "svc-" + id);
+        report(a, ca, "UP");
+        assertEquals(200, open(a, 20, null, null).status());
+
+        comeBackAfterALateLook(a, ca, maintenance::tickAt);
+
+        await("the window to end", () -> window(a), w -> w == null);
+        Thread.sleep(500);
+        assertEquals(List.of(), about(hook, a), "a restart that came back sends nothing");
+    }
+
+    @Test
+    void aResultSentAsTheAgentCameBackCountsWhenTheOfflineAlertIsHeldBackLate() throws Exception {
+        String id = uid();
+        String hook = webhook(id);
+        Agent a = agent("late-alert-" + id).beat();
+        String ca = agentCheck(a, "svc-" + id);
+        report(a, ca, "UP");
+        assertEquals(200, open(a, 20, null, null).status());
+
+        // What the watchdog read before the agent's report was stored, and the offline alert it then sends.
+        comeBackAfterALateLook(a, ca, at -> events.publishEvent(new ServerStatusEvent(
+                servers.find(a.serverId).orElseThrow(), false, "No report from the agent", at)));
+
+        await("the window to end", () -> window(a), w -> w == null);
+        Thread.sleep(500);
+        assertEquals(List.of(), about(hook, a), "a restart that came back sends nothing");
     }
 
     @Test
