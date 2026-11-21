@@ -134,11 +134,14 @@ class AlertDeliveryTest {
     }
 
     /** A TCP check on a port nobody listens on, so running it gives DOWN; listen() later makes it UP. */
-    private PortCheck closedPortCheck(String name) throws Exception {
-        int free;
+    private static int freePort() throws IOException {
         try (ServerSocket s = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            free = s.getLocalPort();
+            return s.getLocalPort();
         }
+    }
+
+    private PortCheck closedPortCheck(String name) throws Exception {
+        int free = freePort();
         Resp r = call("POST", "/api/v1/checks", ADMIN, Map.of("name", name, "type", "TCP",
                 "target", "127.0.0.1:" + free, "intervalSeconds", 3600));
         assertEquals(201, r.status(), r.raw());
@@ -337,6 +340,26 @@ class AlertDeliveryTest {
         assertEquals(1, receivers.hits("/fail/test-" + id).size(), "a test is a single attempt");
 
         assertEquals(404, call("POST", "/api/v1/alert-channels/nope/test", ADMIN, null).status());
+    }
+
+    @Test
+    void aReceiverThatRefusesTheConnectionIsNamedWithTheReason() throws Exception {
+        String id = uid();
+        int port = freePort();
+        String hook = channel("WEBHOOK", "closed-" + id, Map.of("url", "http://127.0.0.1:" + port + "/hook/secret-" + id), null, null);
+        String mail = channel("EMAIL", "closed-mail-" + id, Map.of("smtpHost", "127.0.0.1", "smtpPort", port,
+                "security", "NONE", "from", "closed@example.test", "to", List.of("x@example.test")), null, null);
+
+        Resp failed = call("POST", "/api/v1/alert-channels/" + hook + "/test", ADMIN, null);
+        assertEquals(false, failed.map().get("ok"), failed.raw());
+        assertEquals("Could not connect to 127.0.0.1:" + port + ": the connection was refused", failed.map().get("error"));
+        assertEquals(failed.map().get("error"), await("the error to be kept", () -> channelView(hook), c -> c.get("lastError") != null)
+                .get("lastError"), "the dashboard and alert list show the same text");
+
+        failed = call("POST", "/api/v1/alert-channels/" + mail + "/test", ADMIN, null);
+        assertEquals(false, failed.map().get("ok"), failed.raw());
+        assertEquals("Could not connect to the mail server 127.0.0.1:" + port + ": the connection was refused",
+                failed.map().get("error"));
     }
 
     @Test

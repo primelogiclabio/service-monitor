@@ -114,8 +114,7 @@ class EmailSender implements AlertSender {
         } catch (AuthenticationFailedException e) {
             throw new AlertDeliveryException("The mail server refused the login", false);
         } catch (MessagingException e) {
-            String reason = e.getMessage() == null ? "" : ": " + AlertFormat.truncate(AlertFormat.oneLine(e.getMessage()), 200);
-            throw new AlertDeliveryException("Could not send the email" + reason, true);
+            throw new AlertDeliveryException(DeliveryFailure.mail(e, host, port), true);
         }
     }
 }
