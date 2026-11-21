@@ -101,8 +101,12 @@ public class AlertChannelService {
         if (!name.equals(existing.name()) && repo.findByName(name).isPresent()) {
             throw ApiException.conflict("An alert channel named '" + name + "' already exists");
         }
-        Map<String, Object> merged = mergeSecrets(existing.type(), req.config(), existing.config());
-        AlertChannel updated = new AlertChannel(existing.id(), name, existing.type(), normalize(existing.type(), merged),
+        // A config left out (an enable or disable sends only the switch) keeps the stored one as it is, without checking
+        // it again, so a channel can always be switched off. A config sent replaces the stored one as a whole: that is
+        // how a header or the SMTP login is dropped, and only its secrets fall back to the stored values.
+        Map<String, Object> config = req.config() == null ? existing.config()
+                : normalize(existing.type(), mergeSecrets(existing.type(), req.config(), existing.config()));
+        AlertChannel updated = new AlertChannel(existing.id(), name, existing.type(), config,
                 req.statuses() == null ? existing.statuses() : validStatuses(req.statuses()),
                 req.enabled() == null ? existing.enabled() : req.enabled(), existing.createdAt(),
                 existing.lastAttemptAt(), existing.lastSuccessAt(), existing.lastError());
